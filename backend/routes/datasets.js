@@ -1,0 +1,123 @@
+const express = require('express');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+const Dataset = require('../models/Dataset');
+const Project = require('../models/Project');
+const { auth, authorize } = require('../middleware/auth');
+
+const router = express.Router();
+
+// Configure multer for file uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadDir = 'uploads/datasets';
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({ 
+  storage: storage,
+  limits: { fileSize: 50 * 1024 * 1024 } // 50MB
+});
+
+// Get all datasets for a project
+router.get('/project/:projectId', auth, async (req, res) => {
+  try {
+    const datasets = await Dataset.find({ projectId: req.params.projectId })
+      .sort({ createdAt: -1 });
+    res.json(datasets);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Get dataset by ID
+router.get('/:id', auth, async (req, res) => {
+  try {
+    const dataset = await Dataset.findById(req.params.id)
+      .populate('projectId', 'name managerId');
+    
+    if (!dataset) {
+      return res.status(404).json({ message: 'Dataset not found' });
+    }
+
+    res.json(dataset);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Create dataset and upload files (Manager only)
+router.post('/', auth, authorize('manager', 'admin'), upload.array('files', 100), async (req, res) => {
+  try {
+    const { projectId, name, description } = req.body;
+
+    const project = await Project.findById(projectId);
+    if (!project) {
+      return res.status(404).json({ message: 'Project not found' });
+    }
+
+    if (project.managerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    const files = req.files.map(file => ({
+      filename: file.filename,
+      originalName: file.originalname,
+      path: file.path,
+      mimeType: file.mimetype,
+      size: file.size
+    }));
+
+    const dataset = new Dataset({
+      projectId,
+      name,
+      description,
+      files,
+      totalItems: files.length
+    });
+
+    await dataset.save();
+    res.status(201).json(dataset);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Delete dataset (Manager only)
+router.delete('/:id', auth, authorize('manager', 'admin'), async (req, res) => {
+  try {
+    const dataset = await Dataset.findById(req.params.id)
+      .populate('projectId', 'managerId');
+    
+    if (!dataset) {
+      return res.status(404).json({ message: 'Dataset not found' });
+    }
+
+    if (dataset.projectId.managerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    // Delete files
+    dataset.files.forEach(file => {
+      if (fs.existsSync(file.path)) {
+        fs.unlinkSync(file.path);
+      }
+    });
+
+    await dataset.deleteOne();
+    res.json({ message: 'Dataset deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+module.exports = router;

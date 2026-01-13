@@ -1,0 +1,90 @@
+const express = require('express');
+const { body, validationResult } = require('express-validator');
+const User = require('../models/User');
+const { auth, authorize } = require('../middleware/auth');
+
+const router = express.Router();
+
+// Get all users (Admin only) or get annotators (Manager can also access)
+router.get('/', auth, async (req, res) => {
+  try {
+    console.log('GET /api/users - User role:', req.user.role);
+    
+    // If manager, only return annotators
+    if (req.user.role === 'manager') {
+      const annotators = await User.find({ role: 'annotator', isActive: true })
+        .select('-password')
+        .sort({ createdAt: -1 });
+      console.log('Found annotators:', annotators.length);
+      return res.json(annotators);
+    }
+    
+    // Admin can see all users
+    if (req.user.role === 'admin') {
+      const users = await User.find().select('-password').sort({ createdAt: -1 });
+      return res.json(users);
+    }
+    
+    // Other roles cannot access
+    console.log('Access denied for role:', req.user.role);
+    res.status(403).json({ message: 'Forbidden - Only admin and manager can access this endpoint' });
+  } catch (error) {
+    console.error('Error in GET /api/users:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Get user by ID
+router.get('/:id', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id).select('-password');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Update user (Admin only)
+router.put('/:id', auth, authorize('admin'), [
+  body('role').optional().isIn(['admin', 'manager', 'annotator', 'reviewer']),
+  body('isActive').optional().isBoolean()
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      { new: true, runValidators: true }
+    ).select('-password');
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Delete user (Admin only)
+router.delete('/:id', auth, authorize('admin'), async (req, res) => {
+  try {
+    const user = await User.findByIdAndDelete(req.params.id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    res.json({ message: 'User deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+module.exports = router;
