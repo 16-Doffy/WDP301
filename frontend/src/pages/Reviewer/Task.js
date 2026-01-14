@@ -15,6 +15,7 @@ import {
 } from '@mui/material';
 import { Check as CheckIcon, Close as CloseIcon } from '@mui/icons-material';
 import axios from 'axios';
+import { API_URL } from '../../config/api';
 
 const ReviewerTask = () => {
   const { id } = useParams();
@@ -31,7 +32,7 @@ const ReviewerTask = () => {
 
   const fetchTask = async () => {
     try {
-      const response = await axios.get(`http://localhost:5000/api/tasks/${id}`);
+      const response = await axios.get(`${API_URL}/api/tasks/${id}`);
       setTask(response.data);
     } catch (error) {
       console.error('Error fetching task:', error);
@@ -44,7 +45,7 @@ const ReviewerTask = () => {
     if (window.confirm('Approve this labeling task?')) {
       setProcessing(true);
       try {
-        await axios.post(`http://localhost:5000/api/reviews/${id}/approve`);
+        await axios.post(`${API_URL}/api/reviews/${id}/approve`);
         navigate('/reviewer/tasks');
       } catch (error) {
         console.error('Error approving task:', error);
@@ -63,7 +64,7 @@ const ReviewerTask = () => {
     if (window.confirm('Reject this labeling task?')) {
       setProcessing(true);
       try {
-        await axios.post(`http://localhost:5000/api/reviews/${id}/reject`, {
+        await axios.post(`${API_URL}/api/reviews/${id}/reject`, {
           reviewComments,
           errorCategory,
         });
@@ -106,7 +107,7 @@ const ReviewerTask = () => {
           {task?.dataItem?.mimeType?.startsWith('image/') && (
             <Box sx={{ mt: 2 }}>
               <img
-                src={`http://localhost:5000/${task.dataItem.path}`}
+                src={`${API_URL}/${task.dataItem.path}`}
                 alt="Data item"
                 style={{ maxWidth: '100%', maxHeight: '500px' }}
               />

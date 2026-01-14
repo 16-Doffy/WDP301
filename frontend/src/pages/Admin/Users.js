@@ -20,6 +20,7 @@ import {
 } from '@mui/material';
 import { Edit as EditIcon } from '@mui/icons-material';
 import axios from 'axios';
+import { API_URL } from '../../config/api';
 
 const AdminUsers = () => {
   const [users, setUsers] = useState([]);
@@ -31,7 +32,7 @@ const AdminUsers = () => {
 
   const fetchUsers = async () => {
     try {
-      const response = await axios.get('http://localhost:5000/api/users');
+      const response = await axios.get(`${API_URL}/api/users`);
       setUsers(response.data);
     } catch (error) {
       console.error('Error fetching users:', error);
@@ -42,7 +43,7 @@ const AdminUsers = () => {
 
   const handleToggleActive = async (userId, currentStatus) => {
     try {
-      await axios.put(`http://localhost:5000/api/users/${userId}`, {
+      await axios.put(`${API_URL}/api/users/${userId}`, {
         isActive: !currentStatus,
       });
       fetchUsers();
@@ -53,7 +54,7 @@ const AdminUsers = () => {
 
   const handleRoleChange = async (userId, newRole) => {
     try {
-      await axios.put(`http://localhost:5000/api/users/${userId}`, {
+      await axios.put(`${API_URL}/api/users/${userId}`, {
         role: newRole,
       });
       fetchUsers();

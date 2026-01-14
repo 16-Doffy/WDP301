@@ -1,0 +1,24 @@
+{
+  "name": "data-labeling-system",
+  "version": "1.0.0",
+  "description": "Data Labeling Support System - Full Stack Application",
+  "scripts": {
+    "install-all": "cd backend && npm install && cd ../frontend && npm install",
+    "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm start",
+    "build": "cd frontend && npm run build",
+    "start": "cd backend && npm start",
+    "seed": "cd backend && npm run seed"
+  },
+  "keywords": [
+    "data-labeling",
+    "annotation",
+    "machine-learning"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

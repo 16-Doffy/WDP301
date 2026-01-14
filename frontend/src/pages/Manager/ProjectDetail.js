@@ -31,6 +31,7 @@ import {
 } from '@mui/material';
 import { Upload as UploadIcon, Assignment as AssignmentIcon, Edit as EditIcon, Delete as DeleteIcon, Add as AddIcon, ExpandMore as ExpandMoreIcon, Settings as SettingsIcon } from '@mui/icons-material';
 import axios from 'axios';
+import { API_URL } from '../../config/api';
 
 const ManagerProjectDetail = () => {
   const { id } = useParams();
@@ -75,9 +76,9 @@ const ManagerProjectDetail = () => {
   const fetchData = async () => {
     try {
       const [projectRes, datasetsRes, tasksRes] = await Promise.all([
-        axios.get(`http://localhost:5000/api/projects/${id}`),
-        axios.get(`http://localhost:5000/api/datasets/project/${id}`),
-        axios.get('http://localhost:5000/api/tasks/my-tasks'),
+        axios.get(`${API_URL}/api/projects/${id}`),
+        axios.get(`${API_URL}/api/datasets/project/${id}`),
+        axios.get(`${API_URL}/api/tasks/my-tasks`),
       ]);
 
       setProject(projectRes.data.project);
@@ -92,7 +93,7 @@ const ManagerProjectDetail = () => {
 
   const fetchAnnotators = async () => {
     try {
-      const response = await axios.get('http://localhost:5000/api/users');
+      const response = await axios.get(`${API_URL}/api/users`);
       console.log('Annotators response:', response.data);
       
       // Backend already filters annotators for managers, but we keep filter for safety
@@ -126,7 +127,7 @@ const ManagerProjectDetail = () => {
         formData.append('files', file);
       });
 
-      await axios.post('http://localhost:5000/api/datasets', formData, {
+      await axios.post(`${API_URL}/api/datasets`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
@@ -150,7 +151,7 @@ const ManagerProjectDetail = () => {
     }
 
     try {
-      const response = await axios.post('http://localhost:5000/api/tasks/assign', {
+      const response = await axios.post(`${API_URL}/api/tasks/assign`, {
         projectId: id,
         datasetId: selectedDataset,
         annotatorIds: selectedAnnotators,
@@ -170,7 +171,7 @@ const ManagerProjectDetail = () => {
 
   const handleUpdateProject = async () => {
     try {
-      await axios.put(`http://localhost:5000/api/projects/${id}`, editFormData);
+      await axios.put(`${API_URL}/api/projects/${id}`, editFormData);
       alert('Cập nhật project thành công!');
       setEditDialogOpen(false);
       fetchData();

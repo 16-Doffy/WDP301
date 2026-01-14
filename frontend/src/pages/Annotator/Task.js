@@ -18,6 +18,7 @@ import {
 } from '@mui/material';
 import { Save as SaveIcon, Send as SendIcon, ExpandMore as ExpandMoreIcon, Info as InfoIcon, Image as ImageIcon, Code as CodeIcon } from '@mui/icons-material';
 import axios from 'axios';
+import { API_URL } from '../../config/api';
 import ImageAnnotator from '../../components/ImageAnnotator';
 
 const AnnotatorTask = () => {
@@ -39,7 +40,7 @@ const AnnotatorTask = () => {
 
   const fetchTask = async () => {
     try {
-      const response = await axios.get(`http://localhost:5000/api/tasks/${id}`);
+      const response = await axios.get(`${API_URL}/api/tasks/${id}`);
       setTask(response.data);
       const initialLabels = response.data.labels || {};
       setLabels(initialLabels);
@@ -147,7 +148,7 @@ const AnnotatorTask = () => {
     
     setSaving(true);
     try {
-      await axios.put(`http://localhost:5000/api/tasks/${id}/label`, {
+      await axios.put(`${API_URL}/api/tasks/${id}/label`, {
         labels,
         status: 'in_progress',
       });
@@ -176,12 +177,12 @@ const AnnotatorTask = () => {
       setSaving(true);
       try {
         // Save labels first
-        await axios.put(`http://localhost:5000/api/tasks/${id}/label`, {
+        await axios.put(`${API_URL}/api/tasks/${id}/label`, {
           labels,
           status: 'in_progress',
         });
         // Then submit
-        await axios.post(`http://localhost:5000/api/tasks/${id}/submit`);
+        await axios.post(`${API_URL}/api/tasks/${id}/submit`);
         alert('Nộp bài thành công! Reviewer sẽ kiểm tra và phản hồi.');
         navigate('/annotator/tasks');
       } catch (error) {
@@ -289,7 +290,7 @@ const AnnotatorTask = () => {
               
               {tabValue === 0 ? (
                 <ImageAnnotator
-                  imageUrl={`http://localhost:5000/${task.dataItem.path}`}
+                  imageUrl={`${API_URL}/${task.dataItem.path}`}
                   labelSet={task?.projectId?.labelSet || []}
                   questions={task?.projectId?.questions || []}
                   onAnnotationsChange={handleAnnotationsChange}

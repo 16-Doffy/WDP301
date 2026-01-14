@@ -78,6 +78,10 @@ Sau khi chạy `npm run seed`, bạn có thể đăng nhập với các tài kho
 
 Xem file `TAI_KHOAN_MAU.md` để biết chi tiết và `HUONG_DAN_SU_DUNG.md` để biết cách sử dụng.
 
+## Deploy
+
+Xem file [DEPLOY.md](./DEPLOY.md) để biết hướng dẫn deploy chi tiết lên production server.
+
 ## Cấu trúc dự án
 
 ```

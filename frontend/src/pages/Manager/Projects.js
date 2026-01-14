@@ -25,6 +25,7 @@ import {
 } from '@mui/material';
 import { Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, ExpandMore as ExpandMoreIcon } from '@mui/icons-material';
 import axios from 'axios';
+import { API_URL } from '../../config/api';
 
 const ManagerProjects = () => {
   const [projects, setProjects] = useState([]);
@@ -45,7 +46,7 @@ const ManagerProjects = () => {
 
   const fetchProjects = async () => {
     try {
-      const response = await axios.get('http://localhost:5000/api/projects');
+      const response = await axios.get(`${API_URL}/api/projects`);
       setProjects(response.data);
     } catch (error) {
       console.error('Error fetching projects:', error);
@@ -56,7 +57,7 @@ const ManagerProjects = () => {
 
   const handleCreate = async () => {
     try {
-      await axios.post('http://localhost:5000/api/projects', formData);
+      await axios.post(`${API_URL}/api/projects`, formData);
       setOpenDialog(false);
       setFormData({ name: '', description: '', guidelines: '', labelSet: [], questions: [] });
       fetchProjects();
@@ -69,7 +70,7 @@ const ManagerProjects = () => {
   const handleDelete = async (id) => {
     if (window.confirm('Are you sure you want to delete this project?')) {
       try {
-        await axios.delete(`http://localhost:5000/api/projects/${id}`);
+        await axios.delete(`${API_URL}/api/projects/${id}`);
         fetchProjects();
       } catch (error) {
         console.error('Error deleting project:', error);

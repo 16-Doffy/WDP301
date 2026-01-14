@@ -11,6 +11,7 @@ import {
 } from '@mui/material';
 import { Folder as FolderIcon, Assignment as AssignmentIcon } from '@mui/icons-material';
 import axios from 'axios';
+import { API_URL } from '../../config/api';
 
 const ManagerDashboard = () => {
   const [stats, setStats] = useState(null);
@@ -24,8 +25,8 @@ const ManagerDashboard = () => {
   const fetchStats = async () => {
     try {
       const [projectsRes, tasksRes] = await Promise.all([
-        axios.get('http://localhost:5000/api/projects'),
-        axios.get('http://localhost:5000/api/tasks/my-tasks'),
+        axios.get(`${API_URL}/api/projects`),
+        axios.get(`${API_URL}/api/tasks/my-tasks`),
       ]);
 
       const projects = projectsRes.data;

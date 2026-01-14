@@ -8,6 +8,7 @@ import {
   CircularProgress,
 } from '@mui/material';
 import axios from 'axios';
+import { API_URL } from '../../config/api';
 
 const AdminDashboard = () => {
   const [stats, setStats] = useState(null);
@@ -20,9 +21,9 @@ const AdminDashboard = () => {
   const fetchStats = async () => {
     try {
       const [usersRes, projectsRes, tasksRes] = await Promise.all([
-        axios.get('http://localhost:5000/api/users'),
-        axios.get('http://localhost:5000/api/projects'),
-        axios.get('http://localhost:5000/api/tasks/my-tasks'),
+        axios.get(`${API_URL}/api/users`),
+        axios.get(`${API_URL}/api/projects`),
+        axios.get(`${API_URL}/api/tasks/my-tasks`),
       ]);
 
       const users = usersRes.data;

@@ -16,6 +16,7 @@ import {
 } from '@mui/material';
 import { Visibility as ViewIcon } from '@mui/icons-material';
 import axios from 'axios';
+import { API_URL } from '../../config/api';
 
 const ReviewerDashboard = () => {
   const [tasks, setTasks] = useState([]);
@@ -28,7 +29,7 @@ const ReviewerDashboard = () => {
 
   const fetchTasks = async () => {
     try {
-      const response = await axios.get('http://localhost:5000/api/reviews/pending');
+      const response = await axios.get(`${API_URL}/api/reviews/pending`);
       setTasks(response.data);
     } catch (error) {
       console.error('Error fetching tasks:', error);
