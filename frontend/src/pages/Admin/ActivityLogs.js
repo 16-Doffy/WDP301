@@ -54,10 +54,16 @@ const ActivityLogs = () => {
       if (filters.resourceType) params.append('resourceType', filters.resourceType);
 
       const response = await axios.get(`${API_URL}/api/activity-logs?${params}`);
-      setLogs(response.data.logs);
-      setTotalPages(response.data.totalPages);
+      console.log('Activity logs response:', response.data);
+      setLogs(response.data.logs || []);
+      setTotalPages(response.data.totalPages || 1);
+      
+      if (response.data.logs && response.data.logs.length === 0) {
+        console.log('No activity logs found');
+      }
     } catch (error) {
       console.error('Error fetching logs:', error);
+      console.error('Error details:', error.response?.data);
     } finally {
       setLoading(false);
     }

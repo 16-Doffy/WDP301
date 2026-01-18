@@ -22,12 +22,18 @@ import {
   Accordion,
   AccordionSummary,
   AccordionDetails,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from '@mui/material';
 import { Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, ExpandMore as ExpandMoreIcon } from '@mui/icons-material';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
+import { useAuth } from '../../context/AuthContext';
 
 const ManagerProjects = () => {
+  const { user } = useAuth();
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [openDialog, setOpenDialog] = useState(false);
@@ -37,6 +43,7 @@ const ManagerProjects = () => {
     guidelines: '',
     labelSet: [],
     questions: [],
+    status: 'draft',
   });
   const navigate = useNavigate();
 
@@ -59,7 +66,7 @@ const ManagerProjects = () => {
     try {
       await axios.post(`${API_URL}/api/projects`, formData);
       setOpenDialog(false);
-      setFormData({ name: '', description: '', guidelines: '', labelSet: [], questions: [] });
+      setFormData({ name: '', description: '', guidelines: '', labelSet: [], questions: [], status: 'draft' });
       fetchProjects();
     } catch (error) {
       console.error('Error creating project:', error);
@@ -100,13 +107,15 @@ const ManagerProjects = () => {
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h4">Projects</Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => setOpenDialog(true)}
-        >
-          New Project
-        </Button>
+        {user?.role === 'manager' && (
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => setOpenDialog(true)}
+          >
+            New Project
+          </Button>
+        )}
       </Box>
 
       <TableContainer component={Paper}>
@@ -185,6 +194,19 @@ const ManagerProjects = () => {
             required
             helperText="Hướng dẫn cho Annotator: Ví dụ: Kéo chuột để khoanh vùng đối tượng, sau đó chọn đáp án"
           />
+          <FormControl fullWidth margin="normal">
+            <InputLabel>Status</InputLabel>
+            <Select
+              value={formData.status || 'draft'}
+              label="Status"
+              onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+            >
+              <MenuItem value="draft">Draft</MenuItem>
+              <MenuItem value="active">Active</MenuItem>
+              <MenuItem value="completed">Completed</MenuItem>
+              <MenuItem value="archived">Archived</MenuItem>
+            </Select>
+          </FormControl>
           
           <Accordion sx={{ mt: 2 }}>
             <AccordionSummary expandIcon={<ExpandMoreIcon />}>
@@ -316,7 +338,7 @@ const ManagerProjects = () => {
         <DialogActions>
           <Button onClick={() => {
             setOpenDialog(false);
-            setFormData({ name: '', description: '', guidelines: '', labelSet: [], questions: [] });
+            setFormData({ name: '', description: '', guidelines: '', labelSet: [], questions: [], status: 'draft' });
           }}>Cancel</Button>
           <Button onClick={handleCreate} variant="contained">
             Create

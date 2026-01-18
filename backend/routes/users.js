@@ -2,6 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
 const { auth, authorize } = require('../middleware/auth');
+const { createActivityLog } = require('./activityLogs');
 
 const router = express.Router();
 
@@ -68,6 +69,23 @@ router.put('/:id', auth, authorize('admin'), [
       return res.status(404).json({ message: 'User not found' });
     }
 
+    // Log user update
+    const action = req.body.isActive === false ? 'user_deactivate' : 
+                   req.body.isActive === true ? 'user_activate' : 'user_update';
+    await createActivityLog(
+      req.user._id,
+      action,
+      'user',
+      user._id,
+      `${action === 'user_deactivate' ? 'Deactivated' : action === 'user_activate' ? 'Activated' : 'Updated'} user: ${user.username}`,
+      { 
+        targetUserId: user._id.toString(),
+        targetUsername: user.username,
+        changes: req.body
+      },
+      req
+    );
+
     res.json(user);
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
@@ -81,6 +99,21 @@ router.delete('/:id', auth, authorize('admin'), async (req, res) => {
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
+    
+    // Log user deletion
+    await createActivityLog(
+      req.user._id,
+      'user_delete',
+      'user',
+      req.params.id,
+      `Deleted user: ${user.username}`,
+      { 
+        deletedUsername: user.username,
+        deletedUserRole: user.role
+      },
+      req
+    );
+
     res.json({ message: 'User deleted successfully' });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });

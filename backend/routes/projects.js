@@ -3,6 +3,7 @@ const { body, validationResult } = require('express-validator');
 const Project = require('../models/Project');
 const Task = require('../models/Task');
 const { auth, authorize } = require('../middleware/auth');
+const { createActivityLog } = require('./activityLogs');
 
 const router = express.Router();
 
@@ -54,7 +55,7 @@ router.get('/:id', auth, async (req, res) => {
 });
 
 // Create project (Manager only)
-router.post('/', auth, authorize('manager', 'admin'), [
+router.post('/', auth, authorize('manager'), [
   body('name').trim().notEmpty().withMessage('Project name is required'),
   body('guidelines').trim().notEmpty().withMessage('Guidelines are required'),
   body('labelSet').optional().isArray().withMessage('labelSet must be an array'),
@@ -100,6 +101,17 @@ router.post('/', auth, authorize('manager', 'admin'), [
     await project.save();
     await project.populate('managerId', 'username fullName email');
 
+    // Log project creation
+    await createActivityLog(
+      req.user._id,
+      'project_create',
+      'project',
+      project._id,
+      `Created project: ${project.name}`,
+      { projectName: project.name, status: project.status },
+      req
+    );
+
     res.status(201).json(project);
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
@@ -118,10 +130,22 @@ router.put('/:id', auth, authorize('manager', 'admin'), async (req, res) => {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
+    const oldName = project.name;
     Object.assign(project, req.body);
     project.updatedAt = new Date();
     await project.save();
     await project.populate('managerId', 'username fullName email');
+
+    // Log project update
+    await createActivityLog(
+      req.user._id,
+      'project_update',
+      'project',
+      project._id,
+      `Updated project: ${project.name}`,
+      { oldName, newName: project.name },
+      req
+    );
 
     res.json(project);
   } catch (error) {
@@ -142,7 +166,19 @@ router.delete('/:id', auth, authorize('manager', 'admin'), async (req, res) => {
     }
 
     await Task.deleteMany({ projectId: project._id });
+    const projectName = project.name;
     await project.deleteOne();
+
+    // Log project deletion
+    await createActivityLog(
+      req.user._id,
+      'project_delete',
+      'project',
+      req.params.id,
+      `Deleted project: ${projectName}`,
+      { projectName },
+      req
+    );
 
     res.json({ message: 'Project deleted successfully' });
   } catch (error) {
@@ -189,6 +225,22 @@ router.get('/:id/export', auth, authorize('manager', 'admin'), async (req, res) 
 
       res.setHeader('Content-Type', 'application/json');
       res.setHeader('Content-Disposition', `attachment; filename="${project.name}_export_${Date.now()}.json"`);
+      
+      // Log data export
+      await createActivityLog(
+        req.user._id,
+        'export_data',
+        'project',
+        project._id,
+        `Exported ${approvedTasks.length} approved tasks from project: ${project.name} (JSON format)`,
+        { 
+          projectId: project._id.toString(),
+          format: 'json',
+          tasksCount: approvedTasks.length
+        },
+        req
+      );
+      
       res.json(exportData);
     } else if (format === 'coco') {
       // COCO format export
@@ -237,6 +289,22 @@ router.get('/:id/export', auth, authorize('manager', 'admin'), async (req, res) 
 
       res.setHeader('Content-Type', 'application/json');
       res.setHeader('Content-Disposition', `attachment; filename="${project.name}_coco_${Date.now()}.json"`);
+      
+      // Log data export
+      await createActivityLog(
+        req.user._id,
+        'export_data',
+        'project',
+        project._id,
+        `Exported ${approvedTasks.length} approved tasks from project: ${project.name} (COCO format)`,
+        { 
+          projectId: project._id.toString(),
+          format: 'coco',
+          tasksCount: approvedTasks.length
+        },
+        req
+      );
+      
       res.json(cocoData);
     } else if (format === 'csv') {
       // CSV format export
@@ -251,6 +319,22 @@ router.get('/:id/export', auth, authorize('manager', 'admin'), async (req, res) 
 
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', `attachment; filename="${project.name}_export_${Date.now()}.csv"`);
+      
+      // Log data export
+      await createActivityLog(
+        req.user._id,
+        'export_data',
+        'project',
+        project._id,
+        `Exported ${approvedTasks.length} approved tasks from project: ${project.name} (CSV format)`,
+        { 
+          projectId: project._id.toString(),
+          format: 'csv',
+          tasksCount: approvedTasks.length
+        },
+        req
+      );
+      
       res.send(csvRows.join('\n'));
     } else {
       return res.status(400).json({ message: 'Invalid format. Supported: json, csv, coco' });
@@ -261,7 +345,7 @@ router.get('/:id/export', auth, authorize('manager', 'admin'), async (req, res) 
 });
 
 // Get quality statistics for project (Manager only)
-router.get('/:id/quality', auth, authorize('manager', 'admin'), async (req, res) => {
+router.get('/:id/quality', auth, authorize('manager'), async (req, res) => {
   try {
     const project = await Project.findById(req.params.id);
     
@@ -269,7 +353,7 @@ router.get('/:id/quality', auth, authorize('manager', 'admin'), async (req, res)
       return res.status(404).json({ message: 'Project not found' });
     }
 
-    if (project.managerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    if (project.managerId.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized' });
     }
 

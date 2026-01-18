@@ -50,9 +50,27 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
   const imageRef = useRef(null);
   const containerRef = useRef(null);
 
+  // Sync initialAnnotations with state when imageUrl changes (new task loaded)
+  const prevImageUrlRef = useRef(imageUrl);
   useEffect(() => {
-    onAnnotationsChange(annotations);
-  }, [annotations, onAnnotationsChange]);
+    if (prevImageUrlRef.current !== imageUrl) {
+      prevImageUrlRef.current = imageUrl;
+      setAnnotations(initialAnnotations);
+      prevAnnotationsRef.current = JSON.stringify(initialAnnotations);
+    }
+  }, [imageUrl, initialAnnotations]);
+
+  // Use ref to track previous annotations to avoid unnecessary calls
+  const prevAnnotationsRef = useRef(JSON.stringify(initialAnnotations));
+  
+  useEffect(() => {
+    // Only call onAnnotationsChange if annotations actually changed
+    const currentAnnotationsStr = JSON.stringify(annotations);
+    if (prevAnnotationsRef.current !== currentAnnotationsStr) {
+      prevAnnotationsRef.current = currentAnnotationsStr;
+      onAnnotationsChange(annotations);
+    }
+  }, [annotations]); // Remove onAnnotationsChange from dependencies to avoid infinite loop
 
   const getImageCoordinates = (e) => {
     if (!imageRef.current) return null;

@@ -3,8 +3,18 @@ const Task = require('../models/Task');
 const Dataset = require('../models/Dataset');
 const Project = require('../models/Project');
 const { auth, authorize } = require('../middleware/auth');
+const { createActivityLog } = require('./activityLogs');
 
 const router = express.Router();
+
+// Helper function to normalize ID for comparison
+const normalizeId = (id) => {
+  if (!id) return null;
+  if (typeof id === 'string') return id;
+  if (id._id) return id._id.toString(); // Populated object
+  if (id.toString) return id.toString(); // ObjectId
+  return String(id);
+};
 
 // Get tasks for current user
 router.get('/my-tasks', auth, async (req, res) => {
@@ -22,14 +32,30 @@ router.get('/my-tasks', auth, async (req, res) => {
     }
 
     const tasks = await Task.find(query)
-      .populate('projectId', 'name labelSet guidelines')
+      .populate('projectId', 'name labelSet guidelines questions')
       .populate('datasetId', 'name')
       .populate('annotatorId', 'username fullName')
       .populate('reviewerId', 'username fullName')
       .sort({ createdAt: -1 });
 
+    if (req.user.role === 'annotator') {
+      console.log(`Found ${tasks.length} tasks for annotator ${req.user._id.toString()}`);
+      tasks.forEach((task, idx) => {
+        const taskAnnotatorId = normalizeId(task.annotatorId);
+        const currentUserId = normalizeId(req.user._id);
+        console.log(`Task ${idx + 1}:`, {
+          taskId: task._id.toString(),
+          annotatorId: taskAnnotatorId,
+          userId: currentUserId,
+          match: taskAnnotatorId === currentUserId,
+          status: task.status
+        });
+      });
+    }
+
     res.json(tasks);
   } catch (error) {
+    console.error('Error in /my-tasks:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
@@ -38,7 +64,7 @@ router.get('/my-tasks', auth, async (req, res) => {
 router.get('/:id', auth, async (req, res) => {
   try {
     const task = await Task.findById(req.params.id)
-      .populate('projectId', 'name labelSet guidelines managerId')
+      .populate('projectId', 'name labelSet guidelines questions managerId')
       .populate('datasetId', 'name')
       .populate('annotatorId', 'username fullName')
       .populate('reviewerId', 'username fullName');
@@ -49,24 +75,48 @@ router.get('/:id', auth, async (req, res) => {
 
     // Authorization check
     if (req.user.role === 'annotator') {
-      if (task.annotatorId.toString() !== req.user._id.toString()) {
-        return res.status(403).json({ message: 'Not authorized to view this task' });
+      const annotatorId = normalizeId(task.annotatorId);
+      const userId = normalizeId(req.user._id);
+      
+      console.log('Authorization check for annotator in GET /:id:', {
+        taskId: task._id.toString(),
+        annotatorId,
+        userId,
+        match: annotatorId === userId,
+        annotatorIdRaw: task.annotatorId,
+        userIdRaw: req.user._id
+      });
+      
+      if (annotatorId !== userId) {
+        return res.status(403).json({ 
+          message: 'Not authorized to view this task. This task belongs to a different annotator.',
+          debug: { annotatorId, userId, taskId: task._id.toString() }
+        });
       }
     } else if (req.user.role === 'manager') {
-      const project = await Project.findById(task.projectId._id || task.projectId);
-      if (project.managerId.toString() !== req.user._id.toString()) {
+      // Handle both populated and non-populated projectId
+      const projectId = task.projectId?._id?.toString() || task.projectId?.toString();
+      const project = await Project.findById(projectId);
+      if (!project) {
+        return res.status(404).json({ message: 'Project not found' });
+      }
+      const managerId = project.managerId?._id?.toString() || project.managerId?.toString();
+      if (managerId !== req.user._id.toString()) {
         return res.status(403).json({ message: 'Not authorized to view this task' });
       }
     } else if (req.user.role === 'reviewer') {
       // Reviewer can view submitted tasks or tasks they reviewed
-      if (task.status !== 'submitted' && 
-          (task.reviewerId && task.reviewerId.toString() !== req.user._id.toString())) {
-        return res.status(403).json({ message: 'Not authorized to view this task' });
+      if (task.status !== 'submitted') {
+        const reviewerId = task.reviewerId?._id?.toString() || task.reviewerId?.toString();
+        if (!reviewerId || reviewerId !== req.user._id.toString()) {
+          return res.status(403).json({ message: 'Not authorized to view this task' });
+        }
       }
     }
 
     res.json(task);
   } catch (error) {
+    console.error('Error fetching task:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
@@ -134,7 +184,7 @@ router.post('/assign', auth, authorize('manager', 'admin'), async (req, res) => 
         const task = new Task({
           projectId,
           datasetId,
-          annotatorId,
+          annotatorId, // This should be ObjectId
           dataItem: {
             filename: file.filename,
             originalName: file.originalName || file.filename,
@@ -144,14 +194,34 @@ router.post('/assign', auth, authorize('manager', 'admin'), async (req, res) => 
           status: 'assigned'
         });
         tasks.push(task);
+        console.log(`Creating task for annotator: ${annotatorId}, file: ${file.filename}`);
       }
     }
+    
+    console.log(`Total tasks to create: ${tasks.length} for ${annotatorIds.length} annotators`);
 
     if (tasks.length === 0) {
       return res.status(400).json({ message: 'No tasks to create' });
     }
 
     await Task.insertMany(tasks);
+    
+    // Log task assignment
+    await createActivityLog(
+      req.user._id,
+      'task_assign',
+      'task',
+      null,
+      `Assigned ${tasks.length} tasks to ${annotatorIds.length} annotator(s)`,
+      { 
+        tasksCount: tasks.length, 
+        annotatorsCount: annotatorIds.length,
+        projectId: project._id.toString(),
+        datasetId: dataset._id.toString()
+      },
+      req
+    );
+
     res.status(201).json({ 
       message: `Assigned ${tasks.length} tasks successfully`,
       tasksCreated: tasks.length,
@@ -174,8 +244,20 @@ router.put('/:id/label', auth, authorize('annotator'), async (req, res) => {
       return res.status(404).json({ message: 'Task not found' });
     }
 
-    if (task.annotatorId.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: 'Not authorized to edit this task' });
+    const annotatorId = normalizeId(task.annotatorId);
+    const userId = normalizeId(req.user._id);
+    
+    if (annotatorId !== userId) {
+      console.log('Authorization failed in PUT /:id/label:', {
+        annotatorId,
+        userId,
+        match: annotatorId === userId,
+        taskId: task._id.toString()
+      });
+      return res.status(403).json({ 
+        message: 'Not authorized to edit this task',
+        debug: { annotatorId, userId }
+      });
     }
 
     // Validate task status for editing
@@ -242,8 +324,20 @@ router.post('/:id/submit', auth, authorize('annotator'), async (req, res) => {
       return res.status(404).json({ message: 'Task not found' });
     }
 
-    if (task.annotatorId.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: 'Not authorized to submit this task' });
+    const annotatorId = normalizeId(task.annotatorId);
+    const userId = normalizeId(req.user._id);
+    
+    if (annotatorId !== userId) {
+      console.log('Authorization failed in POST /:id/submit:', {
+        annotatorId,
+        userId,
+        match: annotatorId === userId,
+        taskId: task._id.toString()
+      });
+      return res.status(403).json({ 
+        message: 'Not authorized to submit this task',
+        debug: { annotatorId, userId }
+      });
     }
 
     // Validate task status
@@ -290,6 +384,17 @@ router.post('/:id/submit', auth, authorize('annotator'), async (req, res) => {
     task.submittedAt = new Date();
     task.updatedAt = new Date();
     await task.save();
+
+    // Log task submission
+    await createActivityLog(
+      req.user._id,
+      'task_submit',
+      'task',
+      task._id,
+      `Submitted task for review`,
+      { taskId: task._id.toString() },
+      req
+    );
 
     res.json(task);
   } catch (error) {

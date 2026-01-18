@@ -32,8 +32,10 @@ import {
 import { Upload as UploadIcon, Assignment as AssignmentIcon, Edit as EditIcon, Delete as DeleteIcon, Add as AddIcon, ExpandMore as ExpandMoreIcon, Settings as SettingsIcon, Download as DownloadIcon, Assessment as AssessmentIcon } from '@mui/icons-material';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
+import { useAuth } from '../../context/AuthContext';
 
 const ManagerProjectDetail = () => {
+  const { user } = useAuth();
   const { id } = useParams();
   const navigate = useNavigate();
   const [project, setProject] = useState(null);
@@ -54,6 +56,7 @@ const ManagerProjectDetail = () => {
     guidelines: '',
     labelSet: [],
     questions: [],
+    status: 'draft',
   });
   const [qualityStats, setQualityStats] = useState(null);
   const [qualityDialogOpen, setQualityDialogOpen] = useState(false);
@@ -72,6 +75,7 @@ const ManagerProjectDetail = () => {
         guidelines: project.guidelines || '',
         labelSet: project.labelSet || [],
         questions: project.questions || [],
+        status: project.status || 'draft',
       });
     }
   }, [project]);
@@ -238,21 +242,48 @@ const ManagerProjectDetail = () => {
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
         <Box>
-          <Typography variant="h4" gutterBottom>
-            {project?.name}
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
+            <Typography variant="h4">
+              {project?.name}
+            </Typography>
+            {user?.role === 'manager' && (
+              <FormControl size="small" sx={{ minWidth: 120 }}>
+                <InputLabel>Status</InputLabel>
+                <Select
+                  value={project?.status || 'draft'}
+                  label="Status"
+                  onChange={async (e) => {
+                    try {
+                      await axios.put(`${API_URL}/api/projects/${id}`, { status: e.target.value });
+                      fetchData();
+                    } catch (error) {
+                      console.error('Error updating status:', error);
+                      alert('Lỗi khi cập nhật status: ' + (error.response?.data?.message || error.message));
+                    }
+                  }}
+                >
+                  <MenuItem value="draft">Draft</MenuItem>
+                  <MenuItem value="active">Active</MenuItem>
+                  <MenuItem value="completed">Completed</MenuItem>
+                  <MenuItem value="archived">Archived</MenuItem>
+                </Select>
+              </FormControl>
+            )}
+          </Box>
           <Typography variant="body1" color="textSecondary" gutterBottom>
             {project?.description}
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1 }}>
-          <Button
-            variant="outlined"
-            startIcon={<AssessmentIcon />}
-            onClick={handleViewQuality}
-          >
-            Chất lượng & Thống kê
-          </Button>
+          {user?.role === 'manager' && (
+            <Button
+              variant="outlined"
+              startIcon={<AssessmentIcon />}
+              onClick={handleViewQuality}
+            >
+              Chất lượng & Thống kê
+            </Button>
+          )}
           <Button
             variant="outlined"
             startIcon={<DownloadIcon />}
@@ -260,13 +291,13 @@ const ManagerProjectDetail = () => {
           >
             Xuất dữ liệu
           </Button>
-          <Button
-            variant="outlined"
-            startIcon={<SettingsIcon />}
-            onClick={() => setEditDialogOpen(true)}
-          >
+        <Button
+          variant="outlined"
+          startIcon={<SettingsIcon />}
+          onClick={() => setEditDialogOpen(true)}
+        >
             Cài đặt Project
-          </Button>
+        </Button>
         </Box>
       </Box>
 
@@ -649,6 +680,21 @@ const ManagerProjectDetail = () => {
             multiline
             rows={3}
           />
+          {user?.role === 'manager' && (
+            <FormControl fullWidth margin="normal">
+              <InputLabel>Status</InputLabel>
+              <Select
+                value={editFormData.status || 'draft'}
+                label="Status"
+                onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })}
+              >
+                <MenuItem value="draft">Draft</MenuItem>
+                <MenuItem value="active">Active</MenuItem>
+                <MenuItem value="completed">Completed</MenuItem>
+                <MenuItem value="archived">Archived</MenuItem>
+              </Select>
+            </FormControl>
+          )}
           <TextField
             fullWidth
             label="Guidelines"

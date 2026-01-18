@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -58,15 +58,24 @@ const AnnotatorTask = () => {
         }));
         setAnnotations(loadedAnnotations);
       }
+      setMessage(''); // Clear any previous error messages
     } catch (error) {
       console.error('Error fetching task:', error);
-      setMessage('Không thể tải task. Vui lòng thử lại.');
+      const errorMessage = error.response?.data?.message || error.message || 'Không thể tải task';
+      setMessage(`Lỗi: ${errorMessage}. Vui lòng kiểm tra lại hoặc liên hệ Manager.`);
+      
+      // If 403, redirect to tasks list
+      if (error.response?.status === 403) {
+        setTimeout(() => {
+          navigate('/annotator/tasks');
+        }, 2000);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const handleAnnotationsChange = (newAnnotations) => {
+  const handleAnnotationsChange = useCallback((newAnnotations) => {
     setAnnotations(newAnnotations);
     // Convert annotations to labels format
     const labelsObj = {
@@ -80,7 +89,7 @@ const AnnotatorTask = () => {
     setLabels(labelsObj);
     setLabelText(JSON.stringify(labelsObj, null, 2));
     setJsonError('');
-  };
+  }, []); // Empty dependency array - function doesn't depend on any props/state
 
   const handleLabelChange = (value) => {
     setLabelText(value);

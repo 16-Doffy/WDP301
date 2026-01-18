@@ -2,6 +2,7 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const Task = require('../models/Task');
 const { auth, authorize } = require('../middleware/auth');
+const { createActivityLog } = require('./activityLogs');
 
 const router = express.Router();
 
@@ -104,6 +105,20 @@ router.post('/:id/approve', auth, authorize('reviewer', 'admin'), async (req, re
     await task.populate('annotatorId', 'username fullName');
     await task.populate('reviewerId', 'username fullName');
 
+    // Log task approval
+    await createActivityLog(
+      req.user._id,
+      'task_approve',
+      'task',
+      task._id,
+      `Approved task submitted by ${task.annotatorId?.fullName || task.annotatorId?.username}`,
+      { 
+        taskId: task._id.toString(),
+        annotatorId: task.annotatorId?._id?.toString() || task.annotatorId?.toString()
+      },
+      req
+    );
+
     res.json(task);
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
@@ -159,6 +174,21 @@ router.post('/:id/reject', auth, authorize('reviewer', 'admin'), [
     // Populate before sending response
     await task.populate('annotatorId', 'username fullName');
     await task.populate('reviewerId', 'username fullName');
+
+    // Log task rejection
+    await createActivityLog(
+      req.user._id,
+      'task_reject',
+      'task',
+      task._id,
+      `Rejected task submitted by ${task.annotatorId?.fullName || task.annotatorId?.username}. Reason: ${task.errorCategory}`,
+      { 
+        taskId: task._id.toString(),
+        annotatorId: task.annotatorId?._id?.toString() || task.annotatorId?.toString(),
+        errorCategory: task.errorCategory
+      },
+      req
+    );
 
     res.json(task);
   } catch (error) {

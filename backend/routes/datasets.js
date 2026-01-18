@@ -5,6 +5,7 @@ const fs = require('fs');
 const Dataset = require('../models/Dataset');
 const Project = require('../models/Project');
 const { auth, authorize } = require('../middleware/auth');
+const { createActivityLog } = require('./activityLogs');
 
 const router = express.Router();
 
@@ -86,6 +87,22 @@ router.post('/', auth, authorize('manager', 'admin'), upload.array('files', 100)
     });
 
     await dataset.save();
+    
+    // Log dataset upload
+    await createActivityLog(
+      req.user._id,
+      'dataset_upload',
+      'dataset',
+      dataset._id,
+      `Uploaded dataset: ${dataset.name} with ${files.length} file(s)`,
+      { 
+        datasetName: dataset.name,
+        filesCount: files.length,
+        projectId: projectId
+      },
+      req
+    );
+
     res.status(201).json(dataset);
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
@@ -113,7 +130,20 @@ router.delete('/:id', auth, authorize('manager', 'admin'), async (req, res) => {
       }
     });
 
+    const datasetName = dataset.name;
     await dataset.deleteOne();
+    
+    // Log dataset deletion
+    await createActivityLog(
+      req.user._id,
+      'dataset_delete',
+      'dataset',
+      req.params.id,
+      `Deleted dataset: ${datasetName}`,
+      { datasetName },
+      req
+    );
+
     res.json({ message: 'Dataset deleted successfully' });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });

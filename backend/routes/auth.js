@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
 const { auth } = require('../middleware/auth');
+const { createActivityLog } = require('./activityLogs');
 
 const router = express.Router();
 
@@ -35,6 +36,17 @@ router.post('/register', [
       { userId: user._id },
       process.env.JWT_SECRET || 'your-secret-key',
       { expiresIn: '7d' }
+    );
+
+    // Log user creation
+    await createActivityLog(
+      user._id,
+      'user_create',
+      'user',
+      user._id,
+      `User ${user.username} (${user.role}) registered`,
+      { username: user.username, email: user.email, role: user.role },
+      req
     );
 
     res.status(201).json({
@@ -83,6 +95,17 @@ router.post('/login', [
       { userId: user._id },
       process.env.JWT_SECRET || 'your-secret-key',
       { expiresIn: '7d' }
+    );
+
+    // Log login
+    await createActivityLog(
+      user._id,
+      'login',
+      'system',
+      null,
+      `User ${user.username} logged in`,
+      { username: user.username, role: user.role },
+      req
     );
 
     res.json({
