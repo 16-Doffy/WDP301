@@ -10,7 +10,7 @@ const router = express.Router();
 router.get('/pending', auth, authorize('reviewer', 'admin'), async (req, res) => {
   try {
     const tasks = await Task.find({ status: 'submitted' })
-      .populate('projectId', 'name labelSet guidelines')
+      .populate('projectId', 'name labelSet guidelines questions')
       .populate('datasetId', 'name')
       .populate('annotatorId', 'username fullName')
       .sort({ submittedAt: 1 });
@@ -28,7 +28,7 @@ router.get('/reviewed', auth, authorize('reviewer', 'admin'), async (req, res) =
       status: { $in: ['approved', 'rejected'] },
       reviewerId: req.user._id 
     })
-      .populate('projectId', 'name labelSet guidelines')
+      .populate('projectId', 'name labelSet guidelines questions')
       .populate('datasetId', 'name')
       .populate('annotatorId', 'username fullName')
       .populate('reviewerId', 'username fullName')
@@ -44,7 +44,7 @@ router.get('/reviewed', auth, authorize('reviewer', 'admin'), async (req, res) =
 router.get('/all', auth, authorize('reviewer', 'admin'), async (req, res) => {
   try {
     const pendingTasks = await Task.find({ status: 'submitted' })
-      .populate('projectId', 'name labelSet guidelines')
+      .populate('projectId', 'name labelSet guidelines questions')
       .populate('datasetId', 'name')
       .populate('annotatorId', 'username fullName')
       .sort({ submittedAt: 1 });
@@ -53,7 +53,7 @@ router.get('/all', auth, authorize('reviewer', 'admin'), async (req, res) => {
       status: { $in: ['approved', 'rejected'] },
       reviewerId: req.user._id 
     })
-      .populate('projectId', 'name labelSet guidelines')
+      .populate('projectId', 'name labelSet guidelines questions')
       .populate('datasetId', 'name')
       .populate('annotatorId', 'username fullName')
       .populate('reviewerId', 'username fullName')

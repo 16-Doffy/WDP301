@@ -12,6 +12,11 @@ import {
   Select,
   MenuItem,
   Alert,
+  Chip,
+  Grid,
+  Card,
+  CardContent,
+  Divider,
 } from '@mui/material';
 import { Check as CheckIcon, Close as CloseIcon } from '@mui/icons-material';
 import axios from 'axios';
@@ -135,23 +140,141 @@ const ReviewerTask = () => {
             File: {task?.dataItem?.filename}
           </Typography>
           {task?.dataItem?.mimeType?.startsWith('image/') && (
-            <Box sx={{ mt: 2 }}>
+            <Box sx={{ mt: 2, position: 'relative', display: 'inline-block' }}>
               <img
                 src={`${API_URL}/${task.dataItem.path}`}
                 alt="Data item"
-                style={{ maxWidth: '100%', maxHeight: '500px' }}
+                style={{ maxWidth: '100%', maxHeight: '600px', display: 'block' }}
+                id="review-image"
               />
+              {/* Render bounding boxes on image */}
+              {task?.labels?.objects && Array.isArray(task.labels.objects) && task.labels.objects.map((obj, idx) => {
+                if (!obj.bbox || !Array.isArray(obj.bbox) || obj.bbox.length < 4) return null;
+                const [x1, y1, x2, y2] = obj.bbox;
+                const left = Math.min(x1, x2);
+                const top = Math.min(y1, y2);
+                const width = Math.abs(x2 - x1);
+                const height = Math.abs(y2 - y1);
+                
+                const labelInfo = task?.projectId?.labelSet?.find(l => (l.name || l) === obj.label);
+                const borderColor = labelInfo?.color || '#1976d2';
+                
+                return (
+                  <Box
+                    key={idx}
+                    sx={{
+                      position: 'absolute',
+                      left: `${left}%`,
+                      top: `${top}%`,
+                      width: `${width}%`,
+                      height: `${height}%`,
+                      border: `2px solid ${borderColor}`,
+                      backgroundColor: `${borderColor}20`,
+                      pointerEvents: 'none',
+                      boxSizing: 'border-box',
+                    }}
+                  >
+                    <Chip
+                      label={obj.label || `Object ${idx + 1}`}
+                      size="small"
+                      sx={{
+                        position: 'absolute',
+                        top: '-20px',
+                        left: 0,
+                        bgcolor: borderColor,
+                        color: 'white',
+                        fontSize: '10px',
+                        height: '18px',
+                      }}
+                    />
+                  </Box>
+                );
+              })}
             </Box>
           )}
         </Box>
-        <Paper sx={{ p: 2, bgcolor: 'grey.100', mb: 2 }}>
-          <Typography variant="subtitle2" gutterBottom>
-            Labels:
-          </Typography>
-          <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
-            {JSON.stringify(task?.labels, null, 2)}
-          </pre>
-        </Paper>
+        
+        {/* Display Labels and Answers in a structured way */}
+        {task?.labels?.objects && Array.isArray(task.labels.objects) && task.labels.objects.length > 0 ? (
+          <Paper sx={{ p: 3, mb: 2 }}>
+            <Typography variant="h6" gutterBottom>
+              Các đối tượng đã được khoanh vùng ({task.labels.objects.length})
+            </Typography>
+            <Divider sx={{ my: 2 }} />
+            <Grid container spacing={2}>
+              {task.labels.objects.map((obj, idx) => {
+                const labelInfo = task?.projectId?.labelSet?.find(l => (l.name || l) === obj.label);
+                const borderColor = labelInfo?.color || '#1976d2';
+                
+                return (
+                  <Grid item xs={12} md={6} key={idx}>
+                    <Card variant="outlined" sx={{ borderLeft: `4px solid ${borderColor}` }}>
+                      <CardContent>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                          <Chip
+                            label={`Đối tượng ${idx + 1}`}
+                            size="small"
+                            sx={{ bgcolor: borderColor, color: 'white' }}
+                          />
+                          <Chip
+                            label={obj.label || 'Chưa có label'}
+                            size="small"
+                            variant="outlined"
+                            sx={{ borderColor: borderColor, color: borderColor }}
+                          />
+                        </Box>
+                        
+                        <Typography variant="body2" color="textSecondary" gutterBottom>
+                          <strong>Vị trí:</strong> [{Math.round(obj.bbox?.[0] || 0)}%, {Math.round(obj.bbox?.[1] || 0)}%] 
+                          đến [{Math.round(obj.bbox?.[2] || 0)}%, {Math.round(obj.bbox?.[3] || 0)}%]
+                        </Typography>
+                        
+                        {/* Display Answers if project has questions */}
+                        {task?.projectId?.questions && Array.isArray(task.projectId.questions) && task.projectId.questions.length > 0 && (
+                          <Box sx={{ mt: 2 }}>
+                            <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 'bold' }}>
+                              Đáp án của Annotator:
+                            </Typography>
+                            {task.projectId.questions.map((question, qIdx) => {
+                              const answerKey = obj.answer?.[qIdx] || obj.answer?.[qIdx.toString()];
+                              const selectedOption = question.options?.find(opt => opt.key === answerKey);
+                              
+                              return (
+                                <Box key={qIdx} sx={{ mt: 1, p: 1, bgcolor: 'grey.50', borderRadius: 1 }}>
+                                  <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+                                    {question.question || `Câu hỏi ${qIdx + 1}`}
+                                  </Typography>
+                                  {answerKey ? (
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                      <Chip
+                                        label={`${answerKey}. ${selectedOption?.value || 'Đáp án ' + answerKey}`}
+                                        size="small"
+                                        color="primary"
+                                        variant="outlined"
+                                      />
+                                    </Box>
+                                  ) : (
+                                    <Typography variant="body2" color="error">
+                                      ⚠️ Chưa có đáp án
+                                    </Typography>
+                                  )}
+                                </Box>
+                              );
+                            })}
+                          </Box>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </Grid>
+                );
+              })}
+            </Grid>
+          </Paper>
+        ) : (
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            Task này chưa có labels nào được gán. Annotator cần khoanh vùng và gán nhãn trước khi submit.
+          </Alert>
+        )}
         <TextField
           fullWidth
           multiline

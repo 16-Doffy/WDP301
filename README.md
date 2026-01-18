@@ -17,17 +17,14 @@ npm install
 # Tạo file .env với nội dung:
 # PORT=5000
 # MONGODB_URI=mongodb://localhost:27017/data-labeling
-# JWT_SECRET=your-secret-key-change-in-production
+# JWT_SECRET=SE161783
 # NODE_ENV=development
 
-# Tạo tài khoản mẫu (chỉ chạy lần đầu)
-npm run seed
+
 
 npm start
 # hoặc npm run dev để chạy với nodemon
 ```
-
-**Lưu ý:** Sau khi chạy `npm run seed`, hệ thống sẽ tự động tạo các tài khoản mẫu. Xem file `TAI_KHOAN_MAU.md` để biết thông tin đăng nhập.
 
 ### Frontend
 
