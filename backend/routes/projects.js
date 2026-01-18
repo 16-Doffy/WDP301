@@ -55,9 +55,10 @@ router.get('/:id', auth, async (req, res) => {
 
 // Create project (Manager only)
 router.post('/', auth, authorize('manager', 'admin'), [
-  body('name').trim().notEmpty(),
-  body('guidelines').trim().notEmpty(),
-  body('labelSet').isArray()
+  body('name').trim().notEmpty().withMessage('Project name is required'),
+  body('guidelines').trim().notEmpty().withMessage('Guidelines are required'),
+  body('labelSet').optional().isArray().withMessage('labelSet must be an array'),
+  body('questions').optional().isArray().withMessage('questions must be an array')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -65,9 +66,35 @@ router.post('/', auth, authorize('manager', 'admin'), [
       return res.status(400).json({ errors: errors.array() });
     }
 
+    // Validate labelSet if provided
+    if (req.body.labelSet && Array.isArray(req.body.labelSet)) {
+      for (const label of req.body.labelSet) {
+        if (!label.name || label.name.trim() === '') {
+          return res.status(400).json({ message: 'All labels must have a name' });
+        }
+      }
+    }
+
+    // Validate questions if provided
+    if (req.body.questions && Array.isArray(req.body.questions)) {
+      for (const question of req.body.questions) {
+        if (!question.question || question.question.trim() === '') {
+          return res.status(400).json({ message: 'All questions must have question text' });
+        }
+        if (!question.options || !Array.isArray(question.options) || question.options.length < 2) {
+          return res.status(400).json({ message: 'Each question must have at least 2 options' });
+        }
+      }
+    }
+
     const project = new Project({
-      ...req.body,
-      managerId: req.user._id
+      name: req.body.name.trim(),
+      description: req.body.description?.trim() || '',
+      guidelines: req.body.guidelines.trim(),
+      labelSet: req.body.labelSet || [],
+      questions: req.body.questions || [],
+      managerId: req.user._id,
+      status: req.body.status || 'draft'
     });
 
     await project.save();

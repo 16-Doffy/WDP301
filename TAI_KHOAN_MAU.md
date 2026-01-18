@@ -98,7 +98,7 @@ Password: reviewer123
 
 ### Bước 4: Đăng nhập với Admin
 ```
-Email: admin@example.com
+Email: admin@gmail.com
 Password: admin123
 ```
 - Vào "Users" để quản lý tất cả users

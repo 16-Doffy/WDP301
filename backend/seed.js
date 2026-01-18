@@ -3,6 +3,7 @@ const User = require('./models/User');
 const Project = require('./models/Project');
 const Dataset = require('./models/Dataset');
 const Task = require('./models/Task');
+const SystemSettings = require('./models/SystemSettings');
 const dotenv = require('dotenv');
 
 dotenv.config();
@@ -65,6 +66,7 @@ async function seed() {
     await Project.deleteMany({});
     await Dataset.deleteMany({});
     await Task.deleteMany({});
+    // Không xóa SystemSettings, chỉ tạo nếu chưa có
     console.log('Cleared existing data');
 
     // Tạo users
@@ -166,6 +168,13 @@ async function seed() {
         await task.save();
         console.log(`Created sample task for annotator`);
       }
+    }
+
+    // Khởi tạo System Settings mặc định (nếu chưa có)
+    const existingSettings = await SystemSettings.findOne();
+    if (!existingSettings) {
+      const defaultSettings = await SystemSettings.getSettings();
+      console.log('Initialized default system settings');
     }
 
     console.log('\n=== SEED COMPLETED ===');

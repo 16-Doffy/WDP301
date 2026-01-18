@@ -167,13 +167,24 @@ router.post('/assign', auth, authorize('manager', 'admin'), async (req, res) => 
 // Update task (Annotator - for labeling)
 router.put('/:id/label', auth, authorize('annotator'), async (req, res) => {
   try {
-    const task = await Task.findById(req.params.id);
+    const task = await Task.findById(req.params.id)
+      .populate('projectId', 'labelSet');
+    
     if (!task) {
       return res.status(404).json({ message: 'Task not found' });
     }
 
     if (task.annotatorId.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: 'Not authorized' });
+      return res.status(403).json({ message: 'Not authorized to edit this task' });
+    }
+
+    // Validate task status for editing
+    if (task.status === 'submitted') {
+      return res.status(400).json({ message: 'Cannot edit task that has been submitted. Please wait for review.' });
+    }
+    
+    if (task.status === 'approved') {
+      return res.status(400).json({ message: 'Cannot edit approved task' });
     }
 
     // Allow editing if task is rejected (for revision)
@@ -184,14 +195,34 @@ router.put('/:id/label', auth, authorize('annotator'), async (req, res) => {
       task.errorCategory = undefined;
       task.reviewerId = undefined;
       task.reviewedAt = undefined;
-    } else if (task.status === 'submitted' || task.status === 'approved') {
-      return res.status(400).json({ message: 'Cannot edit task in current status' });
     }
 
-    task.labels = req.body.labels;
-    if (!req.body.status || req.body.status === 'in_progress') {
-      task.status = 'in_progress';
+    // Validate labels if provided
+    if (req.body.labels) {
+      // If project has labelSet, validate that labels use valid label names
+      if (task.projectId?.labelSet && Array.isArray(task.projectId.labelSet) && task.projectId.labelSet.length > 0) {
+        if (req.body.labels.objects && Array.isArray(req.body.labels.objects)) {
+          const validLabels = task.projectId.labelSet.map(l => l.name || l);
+          for (const obj of req.body.labels.objects) {
+            if (obj.label && !validLabels.includes(obj.label)) {
+              return res.status(400).json({ 
+                message: `Invalid label "${obj.label}". Valid labels are: ${validLabels.join(', ')}` 
+              });
+            }
+          }
+        }
+      }
+      
+      task.labels = req.body.labels;
     }
+
+    // Update status
+    if (req.body.status === 'in_progress' || !req.body.status) {
+      task.status = 'in_progress';
+    } else if (req.body.status === 'assigned') {
+      task.status = 'assigned';
+    }
+    
     task.updatedAt = new Date();
     await task.save();
 
@@ -204,13 +235,24 @@ router.put('/:id/label', auth, authorize('annotator'), async (req, res) => {
 // Submit task for review (Annotator)
 router.post('/:id/submit', auth, authorize('annotator'), async (req, res) => {
   try {
-    const task = await Task.findById(req.params.id);
+    const task = await Task.findById(req.params.id)
+      .populate('projectId', 'questions');
+    
     if (!task) {
       return res.status(404).json({ message: 'Task not found' });
     }
 
     if (task.annotatorId.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: 'Not authorized' });
+      return res.status(403).json({ message: 'Not authorized to submit this task' });
+    }
+
+    // Validate task status
+    if (task.status === 'submitted') {
+      return res.status(400).json({ message: 'Task has already been submitted' });
+    }
+    
+    if (task.status === 'approved') {
+      return res.status(400).json({ message: 'Task has already been approved' });
     }
 
     // Allow resubmission if task was rejected
@@ -221,7 +263,27 @@ router.post('/:id/submit', auth, authorize('annotator'), async (req, res) => {
       task.reviewerId = undefined;
       task.reviewedAt = undefined;
     } else if (task.status !== 'in_progress' && task.status !== 'assigned') {
-      return res.status(400).json({ message: 'Task cannot be submitted in current status' });
+      return res.status(400).json({ message: 'Task can only be submitted from "in_progress" or "assigned" status' });
+    }
+
+    // Validate that labels exist
+    if (!task.labels || Object.keys(task.labels).length === 0) {
+      return res.status(400).json({ message: 'Cannot submit task without labels. Please add labels first.' });
+    }
+
+    // Validate answers if project has questions
+    if (task.projectId?.questions && Array.isArray(task.projectId.questions) && task.projectId.questions.length > 0) {
+      if (task.labels.objects && Array.isArray(task.labels.objects)) {
+        for (const obj of task.labels.objects) {
+          // Check if answer is required and provided
+          // Note: This is a basic check - you might want more sophisticated validation
+          if (task.projectId.questions.some(q => q.required !== false) && (!obj.answer || Object.keys(obj.answer).length === 0)) {
+            return res.status(400).json({ 
+              message: 'All annotations must have answers to required questions. Please complete all questions.' 
+            });
+          }
+        }
+      }
     }
 
     task.status = 'submitted';

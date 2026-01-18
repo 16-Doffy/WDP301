@@ -24,6 +24,7 @@ import {
   People as PeopleIcon,
   Settings as SettingsIcon,
   History as HistoryIcon,
+  Build as BuildIcon,
   Logout as LogoutIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
@@ -77,6 +78,11 @@ const Layout = () => {
         text: 'Activity Logs',
         icon: <HistoryIcon />,
         path: '/admin/activity-logs',
+      });
+      baseItems.push({
+        text: 'System Settings',
+        icon: <BuildIcon />,
+        path: '/admin/settings',
       });
     }
 

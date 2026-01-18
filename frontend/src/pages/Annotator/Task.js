@@ -167,16 +167,40 @@ const AnnotatorTask = () => {
       return;
     }
 
+    // Validate labels
     if (Object.keys(labels).length === 0 || JSON.stringify(labels) === '{}') {
-      if (!window.confirm('Bạn chưa nhập labels. Bạn có chắc muốn nộp bài không?')) {
+      alert('Bạn chưa nhập labels. Vui lòng thêm labels trước khi nộp bài.');
+      return;
+    }
+
+    // Validate that labels have objects if it's object detection
+    if (labels.objects && Array.isArray(labels.objects) && labels.objects.length === 0) {
+      if (!window.confirm('Bạn chưa khoanh vùng đối tượng nào. Bạn có chắc muốn nộp bài không?')) {
         return;
       }
     }
 
-    if (window.confirm('Bạn có chắc chắn muốn nộp bài để review? Sau khi nộp, bạn sẽ không thể chỉnh sửa nữa.')) {
+    // Check if project has questions and validate answers
+    if (task?.projectId?.questions && Array.isArray(task.projectId.questions) && task.projectId.questions.length > 0) {
+      if (labels.objects && Array.isArray(labels.objects)) {
+        const missingAnswers = [];
+        labels.objects.forEach((obj, idx) => {
+          if (!obj.answer || Object.keys(obj.answer).length === 0) {
+            missingAnswers.push(`Đối tượng ${idx + 1} (${obj.label || 'chưa có label'})`);
+          }
+        });
+        
+        if (missingAnswers.length > 0) {
+          alert(`Vui lòng trả lời câu hỏi cho các đối tượng sau:\n${missingAnswers.join('\n')}`);
+          return;
+        }
+      }
+    }
+
+    if (window.confirm('Bạn có chắc chắn muốn nộp bài để review? Sau khi nộp, bạn sẽ không thể chỉnh sửa nữa cho đến khi được review.')) {
       setSaving(true);
       try {
-        // Save labels first
+        // Save labels first to ensure latest version is saved
         await axios.put(`${API_URL}/api/tasks/${id}/label`, {
           labels,
           status: 'in_progress',
@@ -186,7 +210,9 @@ const AnnotatorTask = () => {
         alert('Nộp bài thành công! Reviewer sẽ kiểm tra và phản hồi.');
         navigate('/annotator/tasks');
       } catch (error) {
-        setMessage('Lỗi khi nộp bài: ' + (error.response?.data?.message || error.message));
+        const errorMessage = error.response?.data?.message || error.message;
+        setMessage('Lỗi khi nộp bài: ' + errorMessage);
+        alert('Lỗi khi nộp bài: ' + errorMessage);
       } finally {
         setSaving(false);
       }

@@ -16,6 +16,7 @@ import ReviewerTask from './pages/Reviewer/Task';
 import AdminDashboard from './pages/Admin/Dashboard';
 import AdminUsers from './pages/Admin/Users';
 import AdminActivityLogs from './pages/Admin/ActivityLogs';
+import AdminSystemSettings from './pages/Admin/SystemSettings';
 import Layout from './components/Layout';
 
 const theme = createTheme({
@@ -56,6 +57,7 @@ function App() {
               <Route path="reviewer/tasks/:id" element={<ReviewerTask />} />
               <Route path="admin/users" element={<AdminUsers />} />
               <Route path="admin/activity-logs" element={<AdminActivityLogs />} />
+              <Route path="admin/settings" element={<AdminSystemSettings />} />
               <Route path="admin" element={<AdminDashboard />} />
             </Route>
           </Routes>

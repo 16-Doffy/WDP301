@@ -42,12 +42,17 @@ const ReviewerTask = () => {
   };
 
   const handleApprove = async () => {
-    if (window.confirm('Approve this labeling task?')) {
+    if (window.confirm('Bạn có chắc muốn phê duyệt task này? Task sẽ được đánh dấu là approved và không thể chỉnh sửa nữa.')) {
       setProcessing(true);
       try {
-        await axios.post(`${API_URL}/api/reviews/${id}/approve`);
+        await axios.post(`${API_URL}/api/reviews/${id}/approve`, {
+          reviewComments: reviewComments.trim() || undefined,
+        });
+        alert('Đã phê duyệt task thành công!');
         navigate('/reviewer/tasks');
       } catch (error) {
+        const errorMessage = error.response?.data?.message || 'Lỗi khi phê duyệt task';
+        alert(errorMessage);
         console.error('Error approving task:', error);
       } finally {
         setProcessing(false);
@@ -57,19 +62,22 @@ const ReviewerTask = () => {
 
   const handleReject = async () => {
     if (!reviewComments.trim()) {
-      alert('Please provide review comments');
+      alert('Vui lòng nhập nhận xét khi từ chối task');
       return;
     }
 
-    if (window.confirm('Reject this labeling task?')) {
+    if (window.confirm('Bạn có chắc muốn từ chối task này? Annotator sẽ nhận được phản hồi và cần chỉnh sửa lại.')) {
       setProcessing(true);
       try {
         await axios.post(`${API_URL}/api/reviews/${id}/reject`, {
-          reviewComments,
-          errorCategory,
+          reviewComments: reviewComments.trim(),
+          errorCategory: errorCategory || 'other',
         });
+        alert('Đã từ chối task thành công!');
         navigate('/reviewer/tasks');
       } catch (error) {
+        const errorMessage = error.response?.data?.message || error.response?.data?.errors?.[0]?.msg || 'Lỗi khi từ chối task';
+        alert(errorMessage);
         console.error('Error rejecting task:', error);
       } finally {
         setProcessing(false);
@@ -163,6 +171,7 @@ const ReviewerTask = () => {
             <MenuItem value="incorrect_label">Incorrect Label</MenuItem>
             <MenuItem value="missing_label">Missing Label</MenuItem>
             <MenuItem value="poor_quality">Poor Quality</MenuItem>
+            <MenuItem value="does_not_follow_guidelines">Does Not Follow Guidelines</MenuItem>
             <MenuItem value="other">Other</MenuItem>
           </Select>
         </FormControl>
