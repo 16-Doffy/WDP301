@@ -38,13 +38,31 @@ router.get('/my-tasks', auth, async (req, res) => {
 router.get('/:id', auth, async (req, res) => {
   try {
     const task = await Task.findById(req.params.id)
-      .populate('projectId', 'name labelSet guidelines')
+      .populate('projectId', 'name labelSet guidelines managerId')
       .populate('datasetId', 'name')
       .populate('annotatorId', 'username fullName')
       .populate('reviewerId', 'username fullName');
 
     if (!task) {
       return res.status(404).json({ message: 'Task not found' });
+    }
+
+    // Authorization check
+    if (req.user.role === 'annotator') {
+      if (task.annotatorId.toString() !== req.user._id.toString()) {
+        return res.status(403).json({ message: 'Not authorized to view this task' });
+      }
+    } else if (req.user.role === 'manager') {
+      const project = await Project.findById(task.projectId._id || task.projectId);
+      if (project.managerId.toString() !== req.user._id.toString()) {
+        return res.status(403).json({ message: 'Not authorized to view this task' });
+      }
+    } else if (req.user.role === 'reviewer') {
+      // Reviewer can view submitted tasks or tasks they reviewed
+      if (task.status !== 'submitted' && 
+          (task.reviewerId && task.reviewerId.toString() !== req.user._id.toString())) {
+        return res.status(403).json({ message: 'Not authorized to view this task' });
+      }
     }
 
     res.json(task);
@@ -158,8 +176,22 @@ router.put('/:id/label', auth, authorize('annotator'), async (req, res) => {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
+    // Allow editing if task is rejected (for revision)
+    if (task.status === 'rejected') {
+      task.status = 'in_progress';
+      // Clear review info when annotator starts editing rejected task
+      task.reviewComments = undefined;
+      task.errorCategory = undefined;
+      task.reviewerId = undefined;
+      task.reviewedAt = undefined;
+    } else if (task.status === 'submitted' || task.status === 'approved') {
+      return res.status(400).json({ message: 'Cannot edit task in current status' });
+    }
+
     task.labels = req.body.labels;
-    task.status = req.body.status || 'in_progress';
+    if (!req.body.status || req.body.status === 'in_progress') {
+      task.status = 'in_progress';
+    }
     task.updatedAt = new Date();
     await task.save();
 
@@ -179,6 +211,17 @@ router.post('/:id/submit', auth, authorize('annotator'), async (req, res) => {
 
     if (task.annotatorId.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    // Allow resubmission if task was rejected
+    if (task.status === 'rejected') {
+      // Clear previous review information when resubmitting
+      task.reviewComments = undefined;
+      task.errorCategory = undefined;
+      task.reviewerId = undefined;
+      task.reviewedAt = undefined;
+    } else if (task.status !== 'in_progress' && task.status !== 'assigned') {
+      return res.status(400).json({ message: 'Task cannot be submitted in current status' });
     }
 
     task.status = 'submitted';

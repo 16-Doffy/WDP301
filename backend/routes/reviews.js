@@ -20,6 +20,53 @@ router.get('/pending', auth, authorize('reviewer', 'admin'), async (req, res) =>
   }
 });
 
+// Get all reviewed tasks (approved/rejected)
+router.get('/reviewed', auth, authorize('reviewer', 'admin'), async (req, res) => {
+  try {
+    const tasks = await Task.find({ 
+      status: { $in: ['approved', 'rejected'] },
+      reviewerId: req.user._id 
+    })
+      .populate('projectId', 'name labelSet guidelines')
+      .populate('datasetId', 'name')
+      .populate('annotatorId', 'username fullName')
+      .populate('reviewerId', 'username fullName')
+      .sort({ reviewedAt: -1 });
+
+    res.json(tasks);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Get all tasks for reviewer (pending + reviewed)
+router.get('/all', auth, authorize('reviewer', 'admin'), async (req, res) => {
+  try {
+    const pendingTasks = await Task.find({ status: 'submitted' })
+      .populate('projectId', 'name labelSet guidelines')
+      .populate('datasetId', 'name')
+      .populate('annotatorId', 'username fullName')
+      .sort({ submittedAt: 1 });
+
+    const reviewedTasks = await Task.find({ 
+      status: { $in: ['approved', 'rejected'] },
+      reviewerId: req.user._id 
+    })
+      .populate('projectId', 'name labelSet guidelines')
+      .populate('datasetId', 'name')
+      .populate('annotatorId', 'username fullName')
+      .populate('reviewerId', 'username fullName')
+      .sort({ reviewedAt: -1 });
+
+    res.json({
+      pending: pendingTasks,
+      reviewed: reviewedTasks
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
 // Approve task
 router.post('/:id/approve', auth, authorize('reviewer', 'admin'), async (req, res) => {
   try {

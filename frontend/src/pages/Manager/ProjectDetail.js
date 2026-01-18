@@ -29,7 +29,7 @@ import {
   IconButton,
   Alert,
 } from '@mui/material';
-import { Upload as UploadIcon, Assignment as AssignmentIcon, Edit as EditIcon, Delete as DeleteIcon, Add as AddIcon, ExpandMore as ExpandMoreIcon, Settings as SettingsIcon } from '@mui/icons-material';
+import { Upload as UploadIcon, Assignment as AssignmentIcon, Edit as EditIcon, Delete as DeleteIcon, Add as AddIcon, ExpandMore as ExpandMoreIcon, Settings as SettingsIcon, Download as DownloadIcon, Assessment as AssessmentIcon } from '@mui/icons-material';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
 
@@ -55,6 +55,9 @@ const ManagerProjectDetail = () => {
     labelSet: [],
     questions: [],
   });
+  const [qualityStats, setQualityStats] = useState(null);
+  const [qualityDialogOpen, setQualityDialogOpen] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -181,6 +184,48 @@ const ManagerProjectDetail = () => {
     }
   };
 
+  const handleExport = async (format = 'json') => {
+    try {
+      const response = await axios.get(`${API_URL}/api/projects/${id}/export?format=${format}`, {
+        responseType: format === 'csv' ? 'blob' : 'json'
+      });
+      
+      if (format === 'csv') {
+        const url = window.URL.createObjectURL(new Blob([response.data]));
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `project_export_${Date.now()}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      } else {
+        const dataStr = JSON.stringify(response.data, null, 2);
+        const dataBlob = new Blob([dataStr], { type: 'application/json' });
+        const url = window.URL.createObjectURL(dataBlob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `project_export_${Date.now()}.json`);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      }
+    } catch (error) {
+      console.error('Error exporting data:', error);
+      alert('Lỗi khi xuất dữ liệu: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
+  const handleViewQuality = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/api/projects/${id}/quality`);
+      setQualityStats(response.data);
+      setQualityDialogOpen(true);
+    } catch (error) {
+      console.error('Error fetching quality stats:', error);
+      alert('Lỗi khi tải thống kê chất lượng: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
   if (loading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
@@ -200,13 +245,29 @@ const ManagerProjectDetail = () => {
             {project?.description}
           </Typography>
         </Box>
-        <Button
-          variant="outlined"
-          startIcon={<SettingsIcon />}
-          onClick={() => setEditDialogOpen(true)}
-        >
-          Cài đặt Project (Labels & Questions)
-        </Button>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button
+            variant="outlined"
+            startIcon={<AssessmentIcon />}
+            onClick={handleViewQuality}
+          >
+            Chất lượng & Thống kê
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<DownloadIcon />}
+            onClick={() => setExportDialogOpen(true)}
+          >
+            Xuất dữ liệu
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<SettingsIcon />}
+            onClick={() => setEditDialogOpen(true)}
+          >
+            Cài đặt Project
+          </Button>
+        </Box>
       </Box>
 
       <Grid container spacing={3} sx={{ mt: 2 }}>
@@ -266,10 +327,89 @@ const ManagerProjectDetail = () => {
               <Chip label={`In Progress: ${tasks.filter(t => t.status === 'in_progress').length}`} color="info" />
               <Chip label={`Submitted: ${tasks.filter(t => t.status === 'submitted').length}`} color="warning" />
               <Chip label={`Approved: ${tasks.filter(t => t.status === 'approved').length}`} color="success" />
+              <Chip label={`Rejected: ${tasks.filter(t => t.status === 'rejected').length}`} color="error" />
             </Box>
           </Paper>
         </Grid>
       </Grid>
+
+      {/* Tasks Table with Review Information */}
+      <Paper sx={{ p: 2, mt: 3 }}>
+        <Typography variant="h6" gutterBottom>
+          All Tasks
+        </Typography>
+        <TableContainer>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>Annotator</TableCell>
+                <TableCell>File</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell>Submitted At</TableCell>
+                <TableCell>Reviewer</TableCell>
+                <TableCell>Reviewed At</TableCell>
+                <TableCell>Review Comments</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {tasks.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} align="center">
+                    <Typography variant="body2" color="textSecondary">
+                      Chưa có tasks nào
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                tasks.map((task) => (
+                  <TableRow key={task._id}>
+                    <TableCell>
+                      {task.annotatorId?.fullName || task.annotatorId?.username || '-'}
+                    </TableCell>
+                    <TableCell>{task.dataItem?.filename || '-'}</TableCell>
+                    <TableCell>
+                      <Chip
+                        label={task.status}
+                        color={
+                          task.status === 'approved' ? 'success' :
+                          task.status === 'rejected' ? 'error' :
+                          task.status === 'submitted' ? 'warning' :
+                          task.status === 'in_progress' ? 'info' : 'default'
+                        }
+                        size="small"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      {task.submittedAt
+                        ? new Date(task.submittedAt).toLocaleString()
+                        : '-'}
+                    </TableCell>
+                    <TableCell>
+                      {task.reviewerId?.fullName || task.reviewerId?.username || '-'}
+                    </TableCell>
+                    <TableCell>
+                      {task.reviewedAt
+                        ? new Date(task.reviewedAt).toLocaleString()
+                        : '-'}
+                    </TableCell>
+                    <TableCell>
+                      {task.reviewComments ? (
+                        <Typography variant="body2" sx={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {task.reviewComments}
+                        </Typography>
+                      ) : (
+                        <Typography variant="body2" color="textSecondary">
+                          {task.status === 'approved' ? 'Đã phê duyệt' : '-'}
+                        </Typography>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Paper>
 
       {/* Upload Dialog */}
       <Dialog open={uploadDialogOpen} onClose={() => setUploadDialogOpen(false)} maxWidth="sm" fullWidth>
@@ -344,6 +484,147 @@ const ManagerProjectDetail = () => {
           >
             Assign
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Quality Statistics Dialog */}
+      <Dialog open={qualityDialogOpen} onClose={() => setQualityDialogOpen(false)} maxWidth="lg" fullWidth>
+        <DialogTitle>Chất lượng & Thống kê Labeling</DialogTitle>
+        <DialogContent>
+          {qualityStats && (
+            <Box>
+              <Grid container spacing={2} sx={{ mt: 1 }}>
+                <Grid item xs={12} md={3}>
+                  <Paper sx={{ p: 2, textAlign: 'center' }}>
+                    <Typography variant="h4">{qualityStats.total}</Typography>
+                    <Typography variant="body2" color="textSecondary">Tổng Tasks</Typography>
+                  </Paper>
+                </Grid>
+                <Grid item xs={12} md={3}>
+                  <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'success.light' }}>
+                    <Typography variant="h4">{qualityStats.approved}</Typography>
+                    <Typography variant="body2" color="textSecondary">Đã phê duyệt</Typography>
+                    <Typography variant="caption">({qualityStats.approvalRate}%)</Typography>
+                  </Paper>
+                </Grid>
+                <Grid item xs={12} md={3}>
+                  <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'error.light' }}>
+                    <Typography variant="h4">{qualityStats.rejected}</Typography>
+                    <Typography variant="body2" color="textSecondary">Bị từ chối</Typography>
+                    <Typography variant="caption">({qualityStats.rejectionRate}%)</Typography>
+                  </Paper>
+                </Grid>
+                <Grid item xs={12} md={3}>
+                  <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'warning.light' }}>
+                    <Typography variant="h4">{qualityStats.submitted}</Typography>
+                    <Typography variant="body2" color="textSecondary">Đang chờ review</Typography>
+                  </Paper>
+                </Grid>
+              </Grid>
+
+              {Object.keys(qualityStats.errorCategories).length > 0 && (
+                <Box sx={{ mt: 3 }}>
+                  <Typography variant="h6" gutterBottom>Phân loại lỗi</Typography>
+                  <TableContainer component={Paper}>
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Loại lỗi</TableCell>
+                          <TableCell>Số lượng</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {Object.entries(qualityStats.errorCategories).map(([category, count]) => (
+                          <TableRow key={category}>
+                            <TableCell>{category}</TableCell>
+                            <TableCell>{count}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </Box>
+              )}
+
+              {Object.keys(qualityStats.annotatorStats).length > 0 && (
+                <Box sx={{ mt: 3 }}>
+                  <Typography variant="h6" gutterBottom>Thống kê theo Annotator</Typography>
+                  <TableContainer component={Paper}>
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Annotator</TableCell>
+                          <TableCell>Tổng</TableCell>
+                          <TableCell>Đã duyệt</TableCell>
+                          <TableCell>Bị từ chối</TableCell>
+                          <TableCell>Tỷ lệ duyệt</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {Object.entries(qualityStats.annotatorStats).map(([annotator, stats]) => (
+                          <TableRow key={annotator}>
+                            <TableCell>{annotator}</TableCell>
+                            <TableCell>{stats.total}</TableCell>
+                            <TableCell>{stats.approved}</TableCell>
+                            <TableCell>{stats.rejected}</TableCell>
+                            <TableCell>{stats.approvalRate}%</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </Box>
+              )}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setQualityDialogOpen(false)}>Đóng</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Export Format Selection Dialog */}
+      <Dialog open={exportDialogOpen} onClose={() => setExportDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Chọn định dạng xuất dữ liệu</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+            Chỉ xuất các tasks đã được phê duyệt (approved)
+          </Typography>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
+            <Button
+              variant="outlined"
+              fullWidth
+              onClick={() => {
+                handleExport('json');
+                setExportDialogOpen(false);
+              }}
+            >
+              JSON Format
+            </Button>
+            <Button
+              variant="outlined"
+              fullWidth
+              onClick={() => {
+                handleExport('csv');
+                setExportDialogOpen(false);
+              }}
+            >
+              CSV Format
+            </Button>
+            <Button
+              variant="outlined"
+              fullWidth
+              onClick={() => {
+                handleExport('coco');
+                setExportDialogOpen(false);
+              }}
+            >
+              COCO Format (for object detection)
+            </Button>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setExportDialogOpen(false)}>Hủy</Button>
         </DialogActions>
       </Dialog>
 

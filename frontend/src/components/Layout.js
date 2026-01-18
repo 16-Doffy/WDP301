@@ -23,6 +23,7 @@ import {
   RateReview as ReviewIcon,
   People as PeopleIcon,
   Settings as SettingsIcon,
+  History as HistoryIcon,
   Logout as LogoutIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
@@ -71,6 +72,11 @@ const Layout = () => {
         text: 'Users',
         icon: <PeopleIcon />,
         path: '/admin/users',
+      });
+      baseItems.push({
+        text: 'Activity Logs',
+        icon: <HistoryIcon />,
+        path: '/admin/activity-logs',
       });
     }
 

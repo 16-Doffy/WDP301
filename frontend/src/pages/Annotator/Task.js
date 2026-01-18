@@ -211,7 +211,7 @@ const AnnotatorTask = () => {
           <Typography variant="subtitle2" gutterBottom>
             ⚠️ Task đã bị từ chối - Cần chỉnh sửa lại
           </Typography>
-          <Typography variant="body2">
+          <Typography variant="body2" gutterBottom>
             <strong>Nhận xét từ Reviewer:</strong> {task.reviewComments}
           </Typography>
           {task?.errorCategory && (
@@ -222,12 +222,31 @@ const AnnotatorTask = () => {
               sx={{ mt: 1 }}
             />
           )}
+          {task?.reviewerId && (
+            <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
+              Reviewer: {task.reviewerId?.fullName || task.reviewerId?.username}
+              {task?.reviewedAt && ` - ${new Date(task.reviewedAt).toLocaleString()}`}
+            </Typography>
+          )}
         </Alert>
       )}
       
       {task?.status === 'approved' && (
         <Alert severity="success" sx={{ mb: 2 }}>
-          ✅ Task đã được phê duyệt!
+          <Typography variant="subtitle2" gutterBottom>
+            ✅ Task đã được phê duyệt!
+          </Typography>
+          {task?.reviewComments && (
+            <Typography variant="body2" gutterBottom>
+              <strong>Nhận xét từ Reviewer:</strong> {task.reviewComments}
+            </Typography>
+          )}
+          {task?.reviewerId && (
+            <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
+              Reviewer: {task.reviewerId?.fullName || task.reviewerId?.username}
+              {task?.reviewedAt && ` - ${new Date(task.reviewedAt).toLocaleString()}`}
+            </Typography>
+          )}
         </Alert>
       )}
       <Paper sx={{ p: 3, mt: 2 }}>
@@ -416,12 +435,12 @@ const AnnotatorTask = () => {
             </Button>
             <Button
               variant="contained"
-              color="success"
+              color={task?.status === 'rejected' ? 'warning' : 'success'}
               startIcon={<SendIcon />}
               onClick={handleSubmit}
               disabled={saving || jsonError || task?.status === 'submitted' || task?.status === 'approved'}
             >
-              Nộp bài để Review
+              {task?.status === 'rejected' ? 'Nộp lại để Review' : 'Nộp bài để Review'}
             </Button>
           </Box>
           <Typography variant="body2" color="textSecondary" sx={{ alignSelf: 'center' }}>

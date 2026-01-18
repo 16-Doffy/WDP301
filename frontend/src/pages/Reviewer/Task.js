@@ -85,11 +85,33 @@ const ReviewerTask = () => {
     );
   }
 
+  const isReviewed = task?.status === 'approved' || task?.status === 'rejected';
+
   return (
     <Box>
       <Typography variant="h4" gutterBottom>
         Review Task
       </Typography>
+      {isReviewed && (
+        <Alert 
+          severity={task?.status === 'approved' ? 'success' : 'warning'} 
+          sx={{ mb: 2 }}
+        >
+          <Typography variant="subtitle2" gutterBottom>
+            {task?.status === 'approved' ? '✅ Task đã được phê duyệt' : '⚠️ Task đã bị từ chối'}
+          </Typography>
+          {task?.reviewComments && (
+            <Typography variant="body2" gutterBottom>
+              <strong>Nhận xét của bạn:</strong> {task.reviewComments}
+            </Typography>
+          )}
+          {task?.reviewedAt && (
+            <Typography variant="body2" color="textSecondary">
+              Đã review vào: {new Date(task.reviewedAt).toLocaleString()}
+            </Typography>
+          )}
+        </Alert>
+      )}
       <Paper sx={{ p: 3, mt: 2 }}>
         <Typography variant="h6" gutterBottom>
           Project: {task?.projectId?.name}
@@ -98,7 +120,7 @@ const ReviewerTask = () => {
           Guidelines: {task?.projectId?.guidelines}
         </Typography>
         <Typography variant="body2" gutterBottom sx={{ mt: 2 }}>
-          Annotator: {task?.annotatorId?.fullName}
+          Annotator: {task?.annotatorId?.fullName || task?.annotatorId?.username}
         </Typography>
         <Box sx={{ mt: 3, mb: 3 }}>
           <Typography variant="body2" gutterBottom>
@@ -144,26 +166,28 @@ const ReviewerTask = () => {
             <MenuItem value="other">Other</MenuItem>
           </Select>
         </FormControl>
-        <Box sx={{ mt: 3, display: 'flex', gap: 2 }}>
-          <Button
-            variant="contained"
-            color="success"
-            startIcon={<CheckIcon />}
-            onClick={handleApprove}
-            disabled={processing}
-          >
-            Approve
-          </Button>
-          <Button
-            variant="contained"
-            color="error"
-            startIcon={<CloseIcon />}
-            onClick={handleReject}
-            disabled={processing || !reviewComments.trim()}
-          >
-            Reject
-          </Button>
-        </Box>
+        {!isReviewed && (
+          <Box sx={{ mt: 3, display: 'flex', gap: 2 }}>
+            <Button
+              variant="contained"
+              color="success"
+              startIcon={<CheckIcon />}
+              onClick={handleApprove}
+              disabled={processing}
+            >
+              Approve
+            </Button>
+            <Button
+              variant="contained"
+              color="error"
+              startIcon={<CloseIcon />}
+              onClick={handleReject}
+              disabled={processing || !reviewComments.trim()}
+            >
+              Reject
+            </Button>
+          </Box>
+        )}
       </Paper>
     </Box>
   );

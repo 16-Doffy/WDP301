@@ -165,7 +165,7 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
       bbox: pendingAnnotation.bbox,
       confidence: 1.0,
       type: 'bbox',
-      answer: null,
+      answer: null, // Will be set when answer is selected
     };
     
     setPendingAnnotation({ ...newAnnotation });
@@ -175,7 +175,7 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
       setShowLabelDialog(false);
       setShowAnswerDialog(true);
     } else {
-      // No questions, just add the annotation
+      // No questions, just add the annotation with answer = null
       setAnnotations([...annotations, newAnnotation]);
       setShowLabelDialog(false);
       setPendingAnnotation(null);
@@ -187,7 +187,7 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
     
     const finalAnnotation = {
       ...pendingAnnotation,
-      answer: answer,
+      answer: answer, // Can be null if no questions, or object if has questions
     };
     
     setAnnotations([...annotations, finalAnnotation]);
@@ -755,12 +755,19 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
           </Button>
           <Button
             onClick={() => {
-              if (pendingAnnotation?.answer) {
+              // If no questions, allow saving with null answer
+              // If has questions, must have all answers
+              if (!questions || questions.length === 0) {
+                handleSelectAnswer(null);
+              } else if (pendingAnnotation?.answer && Object.keys(pendingAnnotation.answer).length >= questions.length) {
                 handleSelectAnswer(pendingAnnotation.answer);
               }
             }}
             variant="contained"
-            disabled={!pendingAnnotation?.answer || (questions && questions.length > 0 && Object.keys(pendingAnnotation.answer).length < questions.length)}
+            disabled={
+              questions && questions.length > 0 && 
+              (!pendingAnnotation?.answer || Object.keys(pendingAnnotation.answer).length < questions.length)
+            }
           >
             Xác nhận
           </Button>

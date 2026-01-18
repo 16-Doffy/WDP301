@@ -32,11 +32,22 @@ const ManagerDashboard = () => {
       const projects = projectsRes.data;
       const tasks = tasksRes.data;
 
+      const approvedTasks = tasks.filter(t => t.status === 'approved').length;
+      const rejectedTasks = tasks.filter(t => t.status === 'rejected').length;
+      const totalReviewed = approvedTasks + rejectedTasks;
+      const approvalRate = totalReviewed > 0 
+        ? ((approvedTasks / totalReviewed) * 100).toFixed(1)
+        : 0;
+
       setStats({
         totalProjects: projects.length,
         activeProjects: projects.filter(p => p.status === 'active').length,
         totalTasks: tasks.length,
         pendingTasks: tasks.filter(t => t.status === 'submitted').length,
+        approvedTasks,
+        rejectedTasks,
+        approvalRate,
+        inProgressTasks: tasks.filter(t => t.status === 'in_progress').length,
       });
     } catch (error) {
       console.error('Error fetching stats:', error);
@@ -66,16 +77,9 @@ const ManagerDashboard = () => {
                 Total Projects
               </Typography>
               <Typography variant="h4">{stats?.totalProjects || 0}</Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <Card>
-            <CardContent>
-              <Typography color="textSecondary" gutterBottom>
-                Active Projects
+              <Typography variant="caption" color="textSecondary">
+                {stats?.activeProjects || 0} active
               </Typography>
-              <Typography variant="h4">{stats?.activeProjects || 0}</Typography>
             </CardContent>
           </Card>
         </Grid>
@@ -86,16 +90,32 @@ const ManagerDashboard = () => {
                 Total Tasks
               </Typography>
               <Typography variant="h4">{stats?.totalTasks || 0}</Typography>
+              <Typography variant="caption" color="textSecondary">
+                {stats?.inProgressTasks || 0} in progress
+              </Typography>
             </CardContent>
           </Card>
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
-          <Card>
+          <Card sx={{ bgcolor: 'warning.light' }}>
             <CardContent>
               <Typography color="textSecondary" gutterBottom>
                 Pending Reviews
               </Typography>
               <Typography variant="h4">{stats?.pendingTasks || 0}</Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid item xs={12} sm={6} md={3}>
+          <Card sx={{ bgcolor: 'success.light' }}>
+            <CardContent>
+              <Typography color="textSecondary" gutterBottom>
+                Approval Rate
+              </Typography>
+              <Typography variant="h4">{stats?.approvalRate || 0}%</Typography>
+              <Typography variant="caption" color="textSecondary">
+                {stats?.approvedTasks || 0} approved / {stats?.rejectedTasks || 0} rejected
+              </Typography>
             </CardContent>
           </Card>
         </Grid>
