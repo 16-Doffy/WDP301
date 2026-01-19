@@ -1,4 +1,4 @@
-# Data Labeling Support System
+# Team8-WDP
 
 Hệ thống hỗ trợ gán nhãn dữ liệu phục vụ huấn luyện và đánh giá mô hình học máy.
 

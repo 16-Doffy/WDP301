@@ -256,7 +256,7 @@ const ReviewerTask = () => {
                                   ) : (
                                     <Typography variant="body2" color="error">
                                       ⚠️ Chưa có đáp án
-                                    </Typography>
+          </Typography>
                                   )}
                                 </Box>
                               );
@@ -269,7 +269,7 @@ const ReviewerTask = () => {
                 );
               })}
             </Grid>
-          </Paper>
+        </Paper>
         ) : (
           <Alert severity="warning" sx={{ mb: 2 }}>
             Task này chưa có labels nào được gán. Annotator cần khoanh vùng và gán nhãn trước khi submit.

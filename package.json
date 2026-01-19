@@ -1,7 +1,7 @@
 {
   "name": "data-labeling-system",
   "version": "1.0.0",
-  "description": "Data Labeling Support System - Full Stack Application",
+  "description": "Team8-WDP - Full Stack Application",
   "scripts": {
     "install-all": "cd backend && npm install && cd ../frontend && npm install",
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",

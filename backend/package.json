@@ -1,7 +1,7 @@
 {
   "name": "data-labeling-backend",
   "version": "1.0.0",
-  "description": "Backend for Data Labeling Support System",
+  "description": "Backend for Team8-WDP",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

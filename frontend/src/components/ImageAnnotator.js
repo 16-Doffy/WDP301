@@ -41,6 +41,7 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
   const [showLabelDialog, setShowLabelDialog] = useState(false);
   const [showAnswerDialog, setShowAnswerDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [editingAnnotation, setEditingAnnotation] = useState(null);
   const [pendingAnnotation, setPendingAnnotation] = useState(null);
   const [isResizing, setIsResizing] = useState(false);
@@ -49,6 +50,7 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
   const [moveStart, setMoveStart] = useState(null);
   const imageRef = useRef(null);
   const containerRef = useRef(null);
+  const animationFrameRef = useRef(null);
 
   // Sync initialAnnotations with state when imageUrl changes (new task loaded)
   const prevImageUrlRef = useRef(imageUrl);
@@ -73,14 +75,39 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
   }, [annotations]); // Remove onAnnotationsChange from dependencies to avoid infinite loop
 
   const getImageCoordinates = (e) => {
-    if (!imageRef.current) return null;
+    if (!imageRef.current || !containerRef.current) return null;
     
-    const rect = imageRef.current.getBoundingClientRect();
-    const scaleX = rect.width / imageRef.current.naturalWidth;
-    const scaleY = rect.height / imageRef.current.naturalHeight;
+    const imageRect = imageRef.current.getBoundingClientRect();
+    const containerRect = containerRef.current.getBoundingClientRect();
     
-    const x = ((e.clientX - rect.left - position.x) / zoom / scaleX) / imageRef.current.naturalWidth * 100;
-    const y = ((e.clientY - rect.top - position.y) / zoom / scaleY) / imageRef.current.naturalHeight * 100;
+    // Calculate scroll offset
+    const scrollLeft = containerRef.current.scrollLeft;
+    const scrollTop = containerRef.current.scrollTop;
+    
+    // Get mouse position relative to container
+    const mouseX = e.clientX - containerRect.left + scrollLeft;
+    const mouseY = e.clientY - containerRect.top + scrollTop;
+    
+    // Account for image transform (zoom and position)
+    // Reverse the transform to get coordinates in the original image space
+    const imageX = (mouseX - position.x) / zoom;
+    const imageY = (mouseY - position.y) / zoom;
+    
+    // Get natural image dimensions
+    const naturalWidth = imageRef.current.naturalWidth;
+    const naturalHeight = imageRef.current.naturalHeight;
+    
+    if (naturalWidth === 0 || naturalHeight === 0) return null;
+    
+    // Calculate the original displayed size (before zoom)
+    // imageRect.width/height are the displayed size after zoom
+    const originalDisplayWidth = imageRect.width / zoom;
+    const originalDisplayHeight = imageRect.height / zoom;
+    
+    // Convert to percentage based on the original displayed size
+    // This ensures coordinates are consistent regardless of zoom level
+    const x = (imageX / originalDisplayWidth) * 100;
+    const y = (imageY / originalDisplayHeight) * 100;
     
     return {
       x: Math.max(0, Math.min(100, x)),
@@ -89,12 +116,20 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
   };
 
   const handleMouseDown = (e) => {
+    // Prevent default to avoid text selection
+    e.preventDefault();
+    
     // Only draw on image, not on container
-    if (e.target !== imageRef.current) {
+    if (e.target !== imageRef.current && !imageRef.current?.contains(e.target)) {
       // Start panning if clicking on container
-      if (e.target === containerRef.current) {
+      if (e.target === containerRef.current || containerRef.current?.contains(e.target)) {
         setIsDragging(true);
-        setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
+        setDragStart({ 
+          x: e.clientX - position.x, 
+          y: e.clientY - position.y,
+          scrollLeft: containerRef.current?.scrollLeft || 0,
+          scrollTop: containerRef.current?.scrollTop || 0
+        });
       }
       return;
     }
@@ -111,29 +146,47 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
   };
 
   const handleMouseMove = (e) => {
-    if (isResizing || isMoving) {
-      handleAnnotationMouseMove(e);
-      return;
+    // Cancel previous animation frame
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
     }
     
-    if (isDrawing && drawStart) {
-      const coords = getImageCoordinates(e);
-      if (coords) {
-        const width = coords.x - drawStart.x;
-        const height = coords.y - drawStart.y;
-        setCurrentBox({
-          x: drawStart.x,
-          y: drawStart.y,
-          width: width,
-          height: height,
+    // Use requestAnimationFrame for smooth updates
+    animationFrameRef.current = requestAnimationFrame(() => {
+      if (isResizing || isMoving) {
+        handleAnnotationMouseMove(e);
+        return;
+      }
+      
+      if (isDrawing && drawStart) {
+        const coords = getImageCoordinates(e);
+        if (coords) {
+          const width = coords.x - drawStart.x;
+          const height = coords.y - drawStart.y;
+          setCurrentBox({
+            x: drawStart.x,
+            y: drawStart.y,
+            width: width,
+            height: height,
+          });
+        }
+      } else if (isDragging && dragStart && containerRef.current) {
+        const deltaX = e.clientX - (dragStart.x + position.x);
+        const deltaY = e.clientY - (dragStart.y + position.y);
+        
+        setPosition({
+          x: position.x + deltaX,
+          y: position.y + deltaY,
+        });
+        
+        // Update drag start for next frame
+        setDragStart({
+          ...dragStart,
+          x: e.clientX - position.x - deltaX,
+          y: e.clientY - position.y - deltaY,
         });
       }
-    } else if (isDragging && dragStart) {
-      setPosition({
-        x: e.clientX - dragStart.x,
-        y: e.clientY - dragStart.y,
-      });
-    }
+    });
   };
 
   const handleMouseUp = (e) => {
@@ -153,25 +206,43 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
           Math.max(drawStart.y, coords.y)
         ];
         
+        // Store pending annotation but don't add yet - show confirm dialog first
         setPendingAnnotation({
           bbox: bbox,
           label: null,
           answer: null,
         });
         
-        // Show label selection dialog first
-        setShowLabelDialog(true);
+        // Show confirm dialog first
+        setShowConfirmDialog(true);
+      } else {
+        // If box is too small, cancel drawing
+        setIsDrawing(false);
+        setDrawStart(null);
+        setCurrentBox(null);
       }
-      
-      setIsDrawing(false);
-      setDrawStart(null);
-      setCurrentBox(null);
     }
     
     if (isDragging) {
       setIsDragging(false);
       setDragStart(null);
     }
+  };
+
+  const handleConfirmAnnotation = () => {
+    setShowConfirmDialog(false);
+    // After confirmation, show label selection dialog
+    if (pendingAnnotation) {
+      setShowLabelDialog(true);
+    }
+  };
+
+  const handleCancelAnnotation = () => {
+    setShowConfirmDialog(false);
+    setPendingAnnotation(null);
+    setIsDrawing(false);
+    setDrawStart(null);
+    setCurrentBox(null);
   };
 
   const handleAddAnnotation = (label) => {
@@ -380,17 +451,29 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
 
 
   const handleZoomIn = () => {
-    setZoom(Math.min(zoom + 0.2, 3));
+    setZoom(prevZoom => Math.min(prevZoom + 0.2, 5));
   };
 
   const handleZoomOut = () => {
-    setZoom(Math.max(zoom - 0.2, 0.5));
+    setZoom(prevZoom => Math.max(prevZoom - 0.2, 0.1));
   };
 
   const handleReset = () => {
     setZoom(1);
     setPosition({ x: 0, y: 0 });
+    if (containerRef.current) {
+      containerRef.current.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+    }
   };
+
+  // Cleanup animation frame on unmount
+  useEffect(() => {
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, []);
 
   const getAnnotationStyle = (annotation) => {
     const [x1, y1, x2, y2] = annotation.bbox;
@@ -403,12 +486,16 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
     const borderColor = labelInfo?.color || '#1976d2';
     const isSelected = selectedAnnotation?.id === annotation.id;
 
+    // Bounding box coordinates are stored as percentage (0-100%) of the original image
+    // When rendering, we apply the same transform as the image so it scales correctly
     return {
       position: 'absolute',
       left: `${left}%`,
       top: `${top}%`,
       width: `${width}%`,
       height: `${height}%`,
+      transform: `scale(${zoom}) translate(${position.x / zoom}px, ${position.y / zoom}px)`,
+      transformOrigin: 'top left',
       border: isSelected ? '3px solid' : '2px solid',
       borderColor: borderColor,
       backgroundColor: `${borderColor}${isSelected ? '30' : '20'}`,
@@ -417,10 +504,13 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
       alignItems: 'center',
       justifyContent: 'center',
       borderRadius: '4px',
-      transition: isResizing || isMoving ? 'none' : 'all 0.2s',
+      transition: isResizing || isMoving ? 'none' : 'transform 0.1s ease-out',
       zIndex: isSelected ? 10 : 1,
+      pointerEvents: 'auto',
       '&:hover': {
-        transform: isResizing || isMoving ? 'none' : 'scale(1.02)',
+        transform: isResizing || isMoving 
+          ? `scale(${zoom}) translate(${position.x / zoom}px, ${position.y / zoom}px)` 
+          : `scale(${zoom}) translate(${position.x / zoom}px, ${position.y / zoom}px) scale(1.02)`,
         zIndex: 10,
       },
     };
@@ -449,7 +539,7 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
   };
 
   const getCurrentBoxStyle = () => {
-    if (!currentBox) return null;
+    if (!currentBox || !imageRef.current) return null;
     
     return {
       position: 'absolute',
@@ -457,6 +547,8 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
       top: `${currentBox.y}%`,
       width: `${Math.abs(currentBox.width)}%`,
       height: `${Math.abs(currentBox.height)}%`,
+      transform: `scale(${zoom}) translate(${position.x / zoom}px, ${position.y / zoom}px)`,
+      transformOrigin: 'top left',
       border: '2px dashed #1976d2',
       backgroundColor: 'rgba(25, 118, 210, 0.1)',
       pointerEvents: 'none',
@@ -491,12 +583,18 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
           ref={containerRef}
           sx={{
             position: 'relative',
-            overflow: 'hidden',
+            overflow: 'auto',
             border: '2px solid #ccc',
             borderRadius: 1,
             cursor: isDrawing ? 'crosshair' : (isDragging ? 'grabbing' : 'default'),
-            maxHeight: '600px',
+            maxHeight: '80vh',
+            minHeight: '400px',
             backgroundColor: '#f5f5f5',
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'flex-start',
+            width: '100%',
+            padding: 0,
           }}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
@@ -517,14 +615,33 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
                 setCurrentBox(null);
               }
             }}
+            onLoad={(e) => {
+              // Reset zoom and position when image loads
+              if (imageRef.current && containerRef.current) {
+                setZoom(1);
+                setPosition({ x: 0, y: 0 });
+                // Scroll to top-left to ensure full image is visible
+                setTimeout(() => {
+                  if (containerRef.current) {
+                    containerRef.current.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+                  }
+                }, 100);
+              }
+            }}
             sx={{
+              display: 'block',
               width: '100%',
               height: 'auto',
+              maxWidth: '100%',
+              maxHeight: 'none',
+              objectFit: 'contain',
               transform: `scale(${zoom}) translate(${position.x / zoom}px, ${position.y / zoom}px)`,
               transformOrigin: 'top left',
               cursor: isDrawing ? 'crosshair' : 'default',
               userSelect: 'none',
               pointerEvents: 'auto',
+              transition: isDrawing || isDragging || isResizing || isMoving ? 'none' : 'transform 0.1s ease-out',
+              flexShrink: 0,
             }}
             draggable={false}
           />
@@ -647,6 +764,38 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
           )}
         </Box>
       </Paper>
+
+      {/* Confirm Annotation Dialog */}
+      <Dialog open={showConfirmDialog} onClose={handleCancelAnnotation} maxWidth="sm" fullWidth>
+        <DialogTitle>Xác nhận khoanh vùng</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="textSecondary" gutterBottom>
+            Bạn đã khoanh vùng một khu vực trên ảnh.
+          </Typography>
+          {pendingAnnotation && (
+            <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
+              <Typography variant="body2" gutterBottom>
+                <strong>Vị trí:</strong> [{Math.round(pendingAnnotation.bbox[0])}%, {Math.round(pendingAnnotation.bbox[1])}%] 
+                đến [{Math.round(pendingAnnotation.bbox[2])}%, {Math.round(pendingAnnotation.bbox[3])}%]
+              </Typography>
+              <Typography variant="body2">
+                <strong>Kích thước:</strong> {Math.round(Math.abs(pendingAnnotation.bbox[2] - pendingAnnotation.bbox[0]))}% × {Math.round(Math.abs(pendingAnnotation.bbox[3] - pendingAnnotation.bbox[1]))}%
+              </Typography>
+            </Box>
+          )}
+          <Typography variant="body2" sx={{ mt: 2 }}>
+            Bạn có muốn tiếp tục chọn label cho vùng này không?
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCancelAnnotation} color="error">
+            Hủy
+          </Button>
+          <Button onClick={handleConfirmAnnotation} variant="contained" color="primary">
+            Xác nhận
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Label Selection Dialog */}
       <Dialog open={showLabelDialog} onClose={() => {

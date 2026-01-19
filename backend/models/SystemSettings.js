@@ -92,7 +92,7 @@ const systemSettingsSchema = new mongoose.Schema({
   general: {
     siteName: {
       type: String,
-      default: 'Data Labeling Support System'
+      default: 'Team8-WDP'
     },
     maintenanceMode: {
       type: Boolean,

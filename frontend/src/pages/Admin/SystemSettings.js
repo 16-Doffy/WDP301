@@ -55,7 +55,7 @@ const SystemSettings = () => {
       maxRejectionsBeforeEscalation: 3
     },
     general: {
-      siteName: 'Data Labeling Support System',
+      siteName: 'Team8-WDP',
       maintenanceMode: false,
       maintenanceMessage: 'System is under maintenance. Please check back later.',
       allowRegistration: true,
