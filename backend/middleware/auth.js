@@ -16,6 +16,10 @@ const auth = async (req, res, next) => {
       return res.status(401).json({ message: 'User not found or inactive' });
     }
 
+    // Normalize role to be case-insensitive across the app
+    if (user.role && typeof user.role === 'string') {
+      user.role = user.role.toLowerCase();
+    }
     req.user = user;
     next();
   } catch (error) {
@@ -28,7 +32,9 @@ const authorize = (...roles) => {
     if (!req.user) {
       return res.status(401).json({ message: 'Unauthorized' });
     }
-    if (!roles.includes(req.user.role)) {
+    const userRole = (req.user.role || '').toString().toLowerCase();
+    const allowed = roles.map(r => (r || '').toString().toLowerCase());
+    if (!allowed.includes(userRole)) {
       return res.status(403).json({ message: 'Forbidden - Insufficient permissions' });
     }
     next();

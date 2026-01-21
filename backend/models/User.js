@@ -22,12 +22,18 @@ const userSchema = new mongoose.Schema({
   },
   role: {
     type: String,
+    lowercase: true,
     enum: ['admin', 'manager', 'annotator', 'reviewer'],
     required: true
   },
   fullName: {
     type: String,
     required: true
+  },
+  specialty: {
+    type: String,
+    default: 'general',
+    trim: true
   },
   isActive: {
     type: Boolean,

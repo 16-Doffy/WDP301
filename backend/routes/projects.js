@@ -59,7 +59,8 @@ router.post('/', auth, authorize('manager'), [
   body('name').trim().notEmpty().withMessage('Project name is required'),
   body('guidelines').trim().notEmpty().withMessage('Guidelines are required'),
   body('labelSet').optional().isArray().withMessage('labelSet must be an array'),
-  body('questions').optional().isArray().withMessage('questions must be an array')
+  body('questions').optional().isArray().withMessage('questions must be an array'),
+  body('reviewPolicy').optional().isObject().withMessage('reviewPolicy must be object')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -95,7 +96,13 @@ router.post('/', auth, authorize('manager'), [
       labelSet: req.body.labelSet || [],
       questions: req.body.questions || [],
       managerId: req.user._id,
-      status: req.body.status || 'draft'
+      status: req.body.status || 'draft',
+      reviewPolicy: {
+        mode: req.body.reviewPolicy?.mode || 'full',
+        sampleRate: typeof req.body.reviewPolicy?.sampleRate === 'number'
+          ? Math.min(1, Math.max(0, req.body.reviewPolicy.sampleRate))
+          : 0.1
+      }
     });
 
     await project.save();
@@ -132,6 +139,16 @@ router.put('/:id', auth, authorize('manager', 'admin'), async (req, res) => {
 
     const oldName = project.name;
     Object.assign(project, req.body);
+
+    if (req.body.reviewPolicy) {
+      project.reviewPolicy = {
+        mode: req.body.reviewPolicy.mode || project.reviewPolicy?.mode || 'full',
+        sampleRate: typeof req.body.reviewPolicy.sampleRate === 'number'
+          ? Math.min(1, Math.max(0, req.body.reviewPolicy.sampleRate))
+          : (project.reviewPolicy?.sampleRate ?? 0.1)
+      };
+    }
+
     project.updatedAt = new Date();
     await project.save();
     await project.populate('managerId', 'username fullName email');

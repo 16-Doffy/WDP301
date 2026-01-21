@@ -6,18 +6,24 @@ const { createActivityLog } = require('./activityLogs');
 
 const router = express.Router();
 
-// Get all users (Admin only) or get annotators (Manager can also access)
+// Get all users (Admin only) or get annotators/reviewers (Manager can also access)
 router.get('/', auth, async (req, res) => {
   try {
     console.log('GET /api/users - User role:', req.user.role);
     
-    // If manager, only return annotators
+    // If manager, return both annotators and reviewers
     if (req.user.role === 'manager') {
-      const annotators = await User.find({ role: 'annotator', isActive: true })
-        .select('-password')
-        .sort({ createdAt: -1 });
-      console.log('Found annotators:', annotators.length);
-      return res.json(annotators);
+      const [annotators, reviewers] = await Promise.all([
+        User.find({ role: 'annotator', isActive: true })
+          .select('-password')
+          .sort({ createdAt: -1 }),
+        User.find({ role: 'reviewer', isActive: true })
+          .select('-password')
+          .sort({ createdAt: -1 })
+      ]);
+      console.log('Found annotators:', annotators.length, 'reviewers:', reviewers.length);
+      // Return both as a single array
+      return res.json([...annotators, ...reviewers]);
     }
     
     // Admin can see all users

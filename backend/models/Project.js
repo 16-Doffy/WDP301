@@ -44,6 +44,19 @@ const projectSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  reviewPolicy: {
+    mode: {
+      type: String,
+      enum: ['full', 'sample'],
+      default: 'full'
+    },
+    sampleRate: {
+      type: Number,
+      min: 0,
+      max: 1,
+      default: 0.1
+    }
+  },
   status: {
     type: String,
     enum: ['draft', 'active', 'completed', 'archived'],

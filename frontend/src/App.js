@@ -9,6 +9,9 @@ import Register from './pages/Register';
 import ManagerDashboard from './pages/Manager/Dashboard';
 import ManagerProjects from './pages/Manager/Projects';
 import ManagerProjectDetail from './pages/Manager/ProjectDetail';
+import CreateProject from './pages/Manager/CreateProject';
+import TeamManagement from './pages/Manager/TeamManagement';
+import Datasets from './pages/Manager/Datasets';
 import AnnotatorDashboard from './pages/Annotator/Dashboard';
 import AnnotatorTask from './pages/Annotator/Task';
 import ReviewerDashboard from './pages/Reviewer/Dashboard';
@@ -17,7 +20,7 @@ import AdminDashboard from './pages/Admin/Dashboard';
 import AdminUsers from './pages/Admin/Users';
 import AdminActivityLogs from './pages/Admin/ActivityLogs';
 import AdminSystemSettings from './pages/Admin/SystemSettings';
-import Layout from './components/Layout';
+import Layout from './components/LayoutTailwind';
 
 const theme = createTheme({
   palette: {
@@ -50,7 +53,10 @@ function App() {
               <Route index element={<Navigate to="/dashboard" replace />} />
               <Route path="dashboard" element={<ManagerDashboard />} />
               <Route path="manager/projects" element={<ManagerProjects />} />
+              <Route path="manager/projects/create" element={<CreateProject />} />
               <Route path="manager/projects/:id" element={<ManagerProjectDetail />} />
+              <Route path="manager/team" element={<TeamManagement />} />
+              <Route path="manager/datasets" element={<Datasets />} />
               <Route path="annotator/tasks" element={<AnnotatorDashboard />} />
               <Route path="annotator/tasks/:id" element={<AnnotatorTask />} />
               <Route path="reviewer/tasks" element={<ReviewerDashboard />} />

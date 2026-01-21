@@ -9,7 +9,15 @@ const router = express.Router();
 // Get tasks pending review
 router.get('/pending', auth, authorize('reviewer', 'admin'), async (req, res) => {
   try {
-    const tasks = await Task.find({ status: 'submitted' })
+    const reviewerId = req.user._id.toString();
+    const tasks = await Task.find({
+      status: 'submitted',
+      $or: [
+        { reviewers: { $exists: true, $size: 0 } },
+        { reviewers: { $exists: false } },
+        { reviewers: { $elemMatch: { reviewerId, status: 'pending' } } }
+      ]
+    })
       .populate('projectId', 'name labelSet guidelines questions')
       .populate('datasetId', 'name')
       .populate('annotatorId', 'username fullName')
@@ -43,7 +51,15 @@ router.get('/reviewed', auth, authorize('reviewer', 'admin'), async (req, res) =
 // Get all tasks for reviewer (pending + reviewed)
 router.get('/all', auth, authorize('reviewer', 'admin'), async (req, res) => {
   try {
-    const pendingTasks = await Task.find({ status: 'submitted' })
+    const reviewerId = req.user._id.toString();
+    const pendingTasks = await Task.find({
+      status: 'submitted',
+      $or: [
+        { reviewers: { $exists: true, $size: 0 } },
+        { reviewers: { $exists: false } },
+        { reviewers: { $elemMatch: { reviewerId, status: 'pending' } } }
+      ]
+    })
       .populate('projectId', 'name labelSet guidelines questions')
       .populate('datasetId', 'name')
       .populate('annotatorId', 'username fullName')
@@ -51,7 +67,10 @@ router.get('/all', auth, authorize('reviewer', 'admin'), async (req, res) => {
 
     const reviewedTasks = await Task.find({ 
       status: { $in: ['approved', 'rejected'] },
-      reviewerId: req.user._id 
+      $or: [
+        { reviewerId: req.user._id },
+        { reviewers: { $elemMatch: { reviewerId, status: { $in: ['approved', 'rejected'] } } } }
+      ]
     })
       .populate('projectId', 'name labelSet guidelines questions')
       .populate('datasetId', 'name')
@@ -90,9 +109,27 @@ router.post('/:id/approve', auth, authorize('reviewer', 'admin'), async (req, re
       return res.status(400).json({ message: 'Cannot approve task without labels' });
     }
 
+    // Check reviewer assignment if present
+    if (task.reviewers && task.reviewers.length > 0) {
+      const assigned = task.reviewers.find(r => r.reviewerId?.toString() === req.user._id.toString());
+      if (!assigned) {
+        return res.status(403).json({ message: 'You are not assigned to review this task' });
+      }
+      assigned.status = 'approved';
+      assigned.reviewedAt = new Date();
+      assigned.comment = req.body.reviewComments || assigned.comment;
+    }
+
     // Optional: Add review comments even for approval
     if (req.body.reviewComments) {
       task.reviewComments = req.body.reviewComments;
+    }
+    if (Array.isArray(req.body.reviewNotes)) {
+      task.reviewNotes = req.body.reviewNotes.map(n => ({
+        ...n,
+        createdBy: req.user._id,
+        createdAt: new Date()
+      }));
     }
 
     task.status = 'approved';
@@ -155,6 +192,11 @@ router.post('/:id/reject', auth, authorize('reviewer', 'admin'), [
       return res.status(400).json({ message: 'Review comments are required when rejecting a task' });
     }
 
+    // Require review notes for rejection (feedback on image)
+    if (!Array.isArray(req.body.reviewNotes) || req.body.reviewNotes.length === 0) {
+      return res.status(400).json({ message: 'Please add at least one feedback note on the image before rejecting' });
+    }
+
     // Validate error category if provided
     const validErrorCategories = ['incorrect_label', 'missing_label', 'poor_quality', 'does_not_follow_guidelines', 'other'];
     if (req.body.errorCategory && !validErrorCategories.includes(req.body.errorCategory)) {
@@ -162,6 +204,22 @@ router.post('/:id/reject', auth, authorize('reviewer', 'admin'), [
         message: `Invalid error category. Valid categories are: ${validErrorCategories.join(', ')}` 
       });
     }
+
+    if (task.reviewers && task.reviewers.length > 0) {
+      const assigned = task.reviewers.find(r => r.reviewerId?.toString() === req.user._id.toString());
+      if (!assigned) {
+        return res.status(403).json({ message: 'You are not assigned to review this task' });
+      }
+      assigned.status = 'rejected';
+      assigned.reviewedAt = new Date();
+      assigned.comment = req.body.reviewComments.trim();
+    }
+
+    task.reviewNotes = req.body.reviewNotes.map(n => ({
+      ...n,
+      createdBy: req.user._id,
+      createdAt: new Date()
+    }));
 
     task.status = 'rejected';
     task.reviewedAt = new Date();

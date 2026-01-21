@@ -32,6 +32,7 @@ const sampleUsers = [
     password: 'annotator123',
     fullName: 'Annotator One',
     role: 'annotator',
+    specialty: 'mammals',
     isActive: true
   },
   {
@@ -40,14 +41,34 @@ const sampleUsers = [
     password: 'annotator123',
     fullName: 'Annotator Two',
     role: 'annotator',
+    specialty: 'birds',
     isActive: true
   },
   {
     username: 'reviewer1',
-    email: 'reviewer@example.com',
+    email: 'reviewer1@example.com',
     password: 'reviewer123',
-    fullName: 'Reviewer User',
+    fullName: 'Reviewer One',
     role: 'reviewer',
+    specialty: 'mammals',
+    isActive: true
+  },
+  {
+    username: 'reviewer2',
+    email: 'reviewer2@example.com',
+    password: 'reviewer123',
+    fullName: 'Reviewer Two',
+    role: 'reviewer',
+    specialty: 'birds',
+    isActive: true
+  },
+  {
+    username: 'reviewer3',
+    email: 'reviewer3@example.com',
+    password: 'reviewer123',
+    fullName: 'Reviewer Three',
+    role: 'reviewer',
+    specialty: 'reptiles',
     isActive: true
   }
 ];

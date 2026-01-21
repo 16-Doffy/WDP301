@@ -7,6 +7,8 @@ import {
   Paper,
   Grid,
   TextField,
+  Card,
+  CardContent,
   Table,
   TableBody,
   TableCell,
@@ -23,6 +25,10 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  RadioGroup,
+  FormControlLabel,
+  Radio,
+  Slider,
   Accordion,
   AccordionSummary,
   AccordionDetails,
@@ -47,8 +53,15 @@ const ManagerProjectDetail = () => {
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [annotators, setAnnotators] = useState([]);
   const [selectedAnnotators, setSelectedAnnotators] = useState([]);
+  const [reviewers, setReviewers] = useState([]);
+  const [selectedReviewers, setSelectedReviewers] = useState([]);
+  const [annotatorSpecialtyFilter, setAnnotatorSpecialtyFilter] = useState('all');
+  const [reviewerSpecialtyFilter, setReviewerSpecialtyFilter] = useState('all');
+  const [reviewPolicy, setReviewPolicy] = useState({ mode: 'full', sampleRate: 0.1 });
   const [selectedDataset, setSelectedDataset] = useState('');
   const [datasetName, setDatasetName] = useState('');
+  const [assignMode, setAssignMode] = useState('existing'); // 'existing' or 'upload'
+  const [assignFiles, setAssignFiles] = useState([]);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editFormData, setEditFormData] = useState({
     name: '',
@@ -61,10 +74,14 @@ const ManagerProjectDetail = () => {
   const [qualityStats, setQualityStats] = useState(null);
   const [qualityDialogOpen, setQualityDialogOpen] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [auditDialogOpen, setAuditDialogOpen] = useState(false);
+  const [auditTask, setAuditTask] = useState(null);
+  const [previewLabelsOpen, setPreviewLabelsOpen] = useState(false);
 
   useEffect(() => {
     fetchData();
     fetchAnnotators();
+    fetchReviewers();
   }, [id]);
 
   useEffect(() => {
@@ -76,6 +93,10 @@ const ManagerProjectDetail = () => {
         labelSet: project.labelSet || [],
         questions: project.questions || [],
         status: project.status || 'draft',
+      });
+      setReviewPolicy({
+        mode: project.reviewPolicy?.mode || 'full',
+        sampleRate: typeof project.reviewPolicy?.sampleRate === 'number' ? project.reviewPolicy.sampleRate : 0.1,
       });
     }
   }, [project]);
@@ -106,9 +127,11 @@ const ManagerProjectDetail = () => {
       // Backend already filters annotators for managers, but we keep filter for safety
       let annotatorsList = [];
       if (Array.isArray(response.data)) {
-        annotatorsList = response.data.filter(u => u.role === 'annotator' && u.isActive);
+        annotatorsList = response.data
+          .filter(u => u.role === 'annotator' && u.isActive)
+          .map(u => ({ ...u, specialty: u.specialty || 'general' }));
       } else {
-        annotatorsList = response.data || [];
+        annotatorsList = (response.data || []).map(u => ({ ...u, specialty: u.specialty || 'general' }));
       }
       
       setAnnotators(annotatorsList);
@@ -122,6 +145,23 @@ const ManagerProjectDetail = () => {
       // Show error message to user
       const errorMsg = error.response?.data?.message || error.message || 'Không thể tải danh sách annotators';
       alert(`Lỗi: ${errorMsg}\n\nVui lòng kiểm tra:\n1. Backend server đã chạy chưa?\n2. Đã đăng nhập với quyền Manager chưa?`);
+    }
+  };
+
+  const fetchReviewers = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/api/users`);
+      let reviewerList = [];
+      if (Array.isArray(response.data)) {
+        reviewerList = response.data
+          .filter(u => u.role === 'reviewer' && u.isActive)
+          .map(u => ({ ...u, specialty: u.specialty || 'general' }));
+      } else {
+        reviewerList = (response.data || []).map(u => ({ ...u, specialty: u.specialty || 'general' }));
+      }
+      setReviewers(reviewerList);
+    } catch (error) {
+      console.error('Error fetching reviewers:', error);
     }
   };
 
@@ -148,31 +188,98 @@ const ManagerProjectDetail = () => {
   };
 
   const handleAssign = async () => {
-    if (!selectedDataset) {
-      alert('Vui lòng chọn dataset');
-      return;
-    }
     if (!selectedAnnotators || selectedAnnotators.length === 0) {
       alert('Vui lòng chọn ít nhất một annotator');
       return;
     }
+    if (!selectedReviewers || selectedReviewers.length === 0) {
+      alert('Vui lòng chọn ít nhất một reviewer');
+      return;
+    }
 
     try {
+      let datasetId = selectedDataset;
+
+      // Nếu chọn upload mới, tạo dataset trước
+      if (assignMode === 'upload') {
+        if (!assignFiles || assignFiles.length === 0) {
+          alert('Vui lòng chọn ít nhất một file ảnh');
+          return;
+        }
+
+        const formData = new FormData();
+        formData.append('projectId', id);
+        formData.append('name', datasetName || `Dataset ${new Date().toLocaleString()}`);
+        assignFiles.forEach(file => {
+          formData.append('files', file);
+        });
+
+        const datasetRes = await axios.post(`${API_URL}/api/datasets`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        datasetId = datasetRes.data._id;
+      } else {
+        // Chế độ chọn dataset có sẵn
+        if (!selectedDataset) {
+          alert('Vui lòng chọn dataset hoặc upload files mới');
+          return;
+        }
+      }
+
+      // Validate data before sending
+      if (!Array.isArray(selectedReviewers) || selectedReviewers.length === 0) {
+        alert('Vui lòng chọn ít nhất một reviewer');
+        return;
+      }
+      if (!Array.isArray(selectedAnnotators) || selectedAnnotators.length === 0) {
+        alert('Vui lòng chọn ít nhất một annotator');
+        return;
+      }
+
+      console.log('Assigning tasks with:', {
+        projectId: id,
+        datasetId,
+        annotatorIds: selectedAnnotators,
+        reviewerIds: selectedReviewers,
+      });
+
+      // Assign tasks với dataset (mới hoặc có sẵn)
       const response = await axios.post(`${API_URL}/api/tasks/assign`, {
         projectId: id,
-        datasetId: selectedDataset,
+        datasetId: datasetId,
         annotatorIds: selectedAnnotators,
+        reviewerIds: selectedReviewers,
+      }, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
       });
 
       alert(response.data.message || 'Phân công thành công!');
       setAssignDialogOpen(false);
       setSelectedDataset('');
       setSelectedAnnotators([]);
+      setSelectedReviewers([]);
+      setAssignFiles([]);
+      setDatasetName('');
+      setAssignMode('existing');
+      setReviewerSpecialtyFilter('all');
+      setAnnotatorSpecialtyFilter('all');
       fetchData();
     } catch (error) {
       console.error('Error assigning tasks:', error);
-      const errorMessage = error.response?.data?.message || 'Có lỗi xảy ra khi phân công tasks';
-      alert(errorMessage);
+      console.error('Error response:', error.response?.data);
+      
+      let errorMessage = 'Có lỗi xảy ra khi phân công tasks';
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.response?.data?.errors && Array.isArray(error.response.data.errors)) {
+        errorMessage = error.response.data.errors.map(e => e.msg || e.message).join(', ');
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      alert(`Lỗi: ${errorMessage}`);
     }
   };
 
@@ -232,215 +339,374 @@ const ManagerProjectDetail = () => {
 
   if (loading) {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
-        <CircularProgress />
-      </Box>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
     );
   }
 
+  const filteredAnnotators = annotatorSpecialtyFilter === 'all'
+    ? annotators
+    : annotators.filter(a => (a.specialty || 'general') === annotatorSpecialtyFilter);
+
+  const filteredReviewers = reviewerSpecialtyFilter === 'all'
+    ? reviewers
+    : reviewers.filter(r => (r.specialty || 'general') === reviewerSpecialtyFilter);
+
+  const annotatorSpecialties = Array.from(new Set(annotators.map(a => a.specialty || 'general')));
+  const reviewerSpecialties = Array.from(new Set(reviewers.map(r => r.specialty || 'general')));
+
+  const annotatorWorkload = (uid) =>
+    tasks.filter(t => t.annotatorId?._id === uid && ['assigned', 'in_progress', 'submitted'].includes(t.status)).length;
+  const reviewerWorkload = (uid) =>
+    tasks.filter(t =>
+      (t.reviewers || []).some(rv => rv.reviewerId?._id === uid && ['pending', 'rejected', 'approved'].includes(rv.status)) ||
+      t.reviewerId?._id === uid
+    ).length;
+
   return (
-    <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-        <Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
-            <Typography variant="h4">
-              {project?.name}
-            </Typography>
-            {user?.role === 'manager' && (
-              <FormControl size="small" sx={{ minWidth: 120 }}>
-                <InputLabel>Status</InputLabel>
-                <Select
-                  value={project?.status || 'draft'}
-                  label="Status"
-                  onChange={async (e) => {
-                    try {
-                      await axios.put(`${API_URL}/api/projects/${id}`, { status: e.target.value });
-                      fetchData();
-                    } catch (error) {
-                      console.error('Error updating status:', error);
-                      alert('Lỗi khi cập nhật status: ' + (error.response?.data?.message || error.message));
-                    }
-                  }}
-                >
-                  <MenuItem value="draft">Draft</MenuItem>
-                  <MenuItem value="active">Active</MenuItem>
-                  <MenuItem value="completed">Completed</MenuItem>
-                  <MenuItem value="archived">Archived</MenuItem>
-                </Select>
-              </FormControl>
+    <div className="flex-1 overflow-y-auto bg-gray-50">
+      {/* Header with Breadcrumbs */}
+      <div className="bg-white border-b border-gray-200 px-6 py-4">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2 text-sm text-gray-600">
+            <button onClick={() => navigate('/manager/projects')} className="hover:text-blue-600">
+              Projects
+            </button>
+            <span>/</span>
+            <span className="text-gray-900 font-medium">{project?.name}</span>
+            {project?.status === 'active' && (
+              <span className="px-2 py-0.5 bg-green-100 text-green-800 text-xs font-medium rounded-full">
+                ACTIVE
+              </span>
             )}
-          </Box>
-          <Typography variant="body1" color="textSecondary" gutterBottom>
-            {project?.description}
-          </Typography>
-        </Box>
-        <Box sx={{ display: 'flex', gap: 1 }}>
-          {user?.role === 'manager' && (
-            <Button
-              variant="outlined"
-              startIcon={<AssessmentIcon />}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
               onClick={handleViewQuality}
+              className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
             >
-              Chất lượng & Thống kê
-            </Button>
-          )}
-          <Button
-            variant="outlined"
-            startIcon={<DownloadIcon />}
-            onClick={() => setExportDialogOpen(true)}
-          >
-            Xuất dữ liệu
-          </Button>
-        <Button
-          variant="outlined"
-          startIcon={<SettingsIcon />}
-          onClick={() => setEditDialogOpen(true)}
-        >
-            Cài đặt Project
-        </Button>
-        </Box>
-      </Box>
+              <span>📊</span>
+              <span>Quality & Stats</span>
+            </button>
+            <button
+              onClick={() => setExportDialogOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <span>⬇️</span>
+              <span>Export Data</span>
+            </button>
+            <button
+              onClick={() => setEditDialogOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <span>⚙️</span>
+              <span>Project Settings</span>
+            </button>
+          </div>
+        </div>
+        
+        {/* Project Name and Description */}
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">{project?.name || 'Project'}</h1>
+          <p className="text-gray-600 italic">{project?.description || 'No description'}</p>
+        </div>
+      </div>
 
-      <Grid container spacing={3} sx={{ mt: 2 }}>
-        <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 2 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-              <Typography variant="h6">Datasets</Typography>
-              <Button
-                size="small"
-                startIcon={<UploadIcon />}
-                onClick={() => setUploadDialogOpen(true)}
-              >
-                Upload
-              </Button>
-            </Box>
-            <TableContainer>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Name</TableCell>
-                    <TableCell>Files</TableCell>
-                    <TableCell>Actions</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {datasets.map((dataset) => (
-                    <TableRow key={dataset._id}>
-                      <TableCell>{dataset.name}</TableCell>
-                      <TableCell>{dataset.totalItems}</TableCell>
-                      <TableCell>
-                        <Button
-                          size="small"
-                          onClick={() => {
-                            setSelectedDataset(dataset._id);
-                            setAssignDialogOpen(true);
-                          }}
-                        >
-                          Assign
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </Paper>
-        </Grid>
+      {/* Main Content */}
+      <div className="p-6 space-y-6">
+        {/* Cards Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Datasets Card */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">Datasets</h2>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setAssignMode('upload');
+                    setAssignDialogOpen(true);
+                  }}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <span>📋</span>
+                  <span>Assign Tasks</span>
+                </button>
+                <button
+                  onClick={() => setUploadDialogOpen(true)}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  <span>⬆️</span>
+                  <span>Upload Dataset</span>
+                </button>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">DATASET NAME</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">FILES</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">ACTIONS</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {datasets.length === 0 ? (
+                    <tr>
+                      <td colSpan={3} className="px-4 py-8 text-center text-gray-500">
+                        No datasets found
+                      </td>
+                    </tr>
+                  ) : (
+                    datasets.map((dataset) => (
+                      <tr key={dataset._id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 text-gray-900">{dataset.name}</td>
+                        <td className="px-4 py-3 text-gray-600">{dataset.totalItems || 0}</td>
+                        <td className="px-4 py-3">
+                          <button
+                            onClick={() => {
+                              setAssignMode('existing');
+                              setSelectedDataset(dataset._id);
+                              setAssignDialogOpen(true);
+                            }}
+                            className="text-blue-600 hover:text-blue-800 font-medium text-sm"
+                          >
+                            ASSIGN
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
 
-        <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 2 }}>
-            <Typography variant="h6" gutterBottom>
-              Tasks Overview
-            </Typography>
-            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-              <Chip label={`Total: ${tasks.length}`} />
-              <Chip label={`Assigned: ${tasks.filter(t => t.status === 'assigned').length}`} color="default" />
-              <Chip label={`In Progress: ${tasks.filter(t => t.status === 'in_progress').length}`} color="info" />
-              <Chip label={`Submitted: ${tasks.filter(t => t.status === 'submitted').length}`} color="warning" />
-              <Chip label={`Approved: ${tasks.filter(t => t.status === 'approved').length}`} color="success" />
-              <Chip label={`Rejected: ${tasks.filter(t => t.status === 'rejected').length}`} color="error" />
-            </Box>
-          </Paper>
-        </Grid>
-      </Grid>
+          {/* Tasks Overview Card */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">Tasks Overview</h2>
+            <div className="flex flex-wrap gap-2">
+              <span className="px-3 py-1 bg-gray-100 text-gray-800 text-sm rounded-full font-medium">
+                Total {tasks.length}
+              </span>
+              <span className="px-3 py-1 bg-gray-100 text-gray-800 text-sm rounded-full font-medium">
+                Assigned {tasks.filter(t => t.status === 'assigned').length}
+              </span>
+              <span className="px-3 py-1 bg-blue-100 text-blue-800 text-sm rounded-full font-medium">
+                In Progress {tasks.filter(t => t.status === 'in_progress').length}
+              </span>
+              <span className="px-3 py-1 bg-yellow-100 text-yellow-800 text-sm rounded-full font-medium">
+                Submitted {tasks.filter(t => t.status === 'submitted').length}
+              </span>
+              <span className="px-3 py-1 bg-green-100 text-green-800 text-sm rounded-full font-medium">
+                Approved {tasks.filter(t => t.status === 'approved').length}
+              </span>
+              <span className="px-3 py-1 bg-red-100 text-red-800 text-sm rounded-full font-medium">
+                Rejected {tasks.filter(t => t.status === 'rejected').length}
+              </span>
+            </div>
+          </div>
 
-      {/* Tasks Table with Review Information */}
-      <Paper sx={{ p: 2, mt: 3 }}>
-        <Typography variant="h6" gutterBottom>
-          All Tasks
-        </Typography>
-        <TableContainer>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>Annotator</TableCell>
-                <TableCell>File</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell>Submitted At</TableCell>
-                <TableCell>Reviewer</TableCell>
-                <TableCell>Reviewed At</TableCell>
-                <TableCell>Review Comments</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {tasks.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={7} align="center">
-                    <Typography variant="body2" color="textSecondary">
-                      Chưa có tasks nào
-                    </Typography>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                tasks.map((task) => (
-                  <TableRow key={task._id}>
-                    <TableCell>
-                      {task.annotatorId?.fullName || task.annotatorId?.username || '-'}
-                    </TableCell>
-                    <TableCell>{task.dataItem?.filename || '-'}</TableCell>
-                    <TableCell>
-                      <Chip
-                        label={task.status}
-                        color={
-                          task.status === 'approved' ? 'success' :
-                          task.status === 'rejected' ? 'error' :
-                          task.status === 'submitted' ? 'warning' :
-                          task.status === 'in_progress' ? 'info' : 'default'
-                        }
-                        size="small"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      {task.submittedAt
-                        ? new Date(task.submittedAt).toLocaleString()
-                        : '-'}
-                    </TableCell>
-                    <TableCell>
-                      {task.reviewerId?.fullName || task.reviewerId?.username || '-'}
-                    </TableCell>
-                    <TableCell>
-                      {task.reviewedAt
-                        ? new Date(task.reviewedAt).toLocaleString()
-                        : '-'}
-                    </TableCell>
-                    <TableCell>
-                      {task.reviewComments ? (
-                        <Typography variant="body2" sx={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {task.reviewComments}
-                        </Typography>
-                      ) : (
-                        <Typography variant="body2" color="textSecondary">
-                          {task.status === 'approved' ? 'Đã phê duyệt' : '-'}
-                        </Typography>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))
+          {/* Workflow Policy Card */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <span className="text-xl">🔄</span>
+              <h2 className="text-lg font-semibold text-gray-900">Workflow Policy</h2>
+            </div>
+            <div className="space-y-3">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="radio"
+                  name="reviewPolicy"
+                  value="full"
+                  checked={reviewPolicy.mode === 'full'}
+                  onChange={async (e) => {
+                    const newPolicy = { ...reviewPolicy, mode: e.target.value };
+                    setReviewPolicy(newPolicy);
+                    await axios.put(`${API_URL}/api/projects/${id}`, { reviewPolicy: newPolicy });
+                    fetchData();
+                  }}
+                  className="w-4 h-4 text-blue-600"
+                />
+                <span className="text-gray-700">100% Review Required</span>
+              </label>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="radio"
+                  name="reviewPolicy"
+                  value="sample"
+                  checked={reviewPolicy.mode === 'sample'}
+                  onChange={async (e) => {
+                    const newPolicy = { ...reviewPolicy, mode: e.target.value };
+                    setReviewPolicy(newPolicy);
+                    await axios.put(`${API_URL}/api/projects/${id}`, { reviewPolicy: newPolicy });
+                    fetchData();
+                  }}
+                  className="w-4 h-4 text-blue-600"
+                />
+                <span className="text-gray-700">Sampled Review</span>
+              </label>
+              {reviewPolicy.mode === 'sample' && (
+                <div className="mt-4 pl-7">
+                  <label className="block text-sm text-gray-600 mb-2">
+                    Sample Rate: {(reviewPolicy.sampleRate * 100).toFixed(0)}%
+                  </label>
+                  <input
+                    type="range"
+                    min="1"
+                    max="100"
+                    value={(reviewPolicy.sampleRate || 0) * 100}
+                    onChange={async (e) => {
+                      const rate = parseInt(e.target.value) / 100;
+                      const newPolicy = { ...reviewPolicy, sampleRate: rate };
+                      setReviewPolicy(newPolicy);
+                      await axios.put(`${API_URL}/api/projects/${id}`, { reviewPolicy: newPolicy });
+                      fetchData();
+                    }}
+                    className="w-full"
+                  />
+                </div>
               )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      </Paper>
+            </div>
+          </div>
+        </div>
+
+        {/* All Tasks Card */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">All Tasks</h2>
+          
+          {/* Search Bar */}
+          <div className="mb-4">
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Filter tasks..."
+                className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <span className="absolute left-3 top-2.5 text-gray-400">🔍</span>
+            </div>
+          </div>
+
+          {/* Tasks Table */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">ANNOTATOR</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">FILE ID</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">STATUS</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">REVIEWERS</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">SUBMITTED AT</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">ACTION</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {tasks.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                      No tasks found
+                    </td>
+                  </tr>
+                ) : (
+                  tasks.map((task) => (
+                    <tr key={task._id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                            <span className="text-xs font-medium text-blue-700">
+                              {(task.annotatorId?.fullName || task.annotatorId?.username || 'A')[0].toUpperCase()}
+                            </span>
+                          </div>
+                          <span className="text-gray-900">{task.annotatorId?.fullName || task.annotatorId?.username || '-'}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-gray-600">
+                        {task.dataItem?.filename ? (
+                          task.dataItem.filename.length > 20 
+                            ? `${task.dataItem.filename.substring(0, 20)}...` 
+                            : task.dataItem.filename
+                        ) : '-'}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                          task.status === 'approved' ? 'bg-green-100 text-green-800' :
+                          task.status === 'rejected' ? 'bg-red-100 text-red-800' :
+                          task.status === 'submitted' ? 'bg-yellow-100 text-yellow-800' :
+                          task.status === 'in_progress' ? 'bg-blue-100 text-blue-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {task.status?.toUpperCase() || 'ASSIGNED'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        {task.reviewers && task.reviewers.length > 0 ? (
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 bg-purple-100 rounded-full flex items-center justify-center">
+                              <span className="text-xs text-purple-700">
+                                {(task.reviewers[0]?.reviewerId?.fullName || task.reviewers[0]?.reviewerId?.username || 'R')[0].toUpperCase()}
+                              </span>
+                            </div>
+                            <span className="text-gray-700 text-sm">
+                              {task.reviewers[0]?.reviewerId?.fullName || task.reviewers[0]?.reviewerId?.username || 'Reviewer'}
+                              {task.reviewers[0]?.status === 'pending' && ' (Pending)'}
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 bg-gray-200 rounded-full flex items-center justify-center">
+                              <span className="text-xs text-gray-500">👤</span>
+                            </div>
+                            <span className="text-gray-500 text-sm">Unassigned</span>
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-gray-600">
+                        {task.submittedAt
+                          ? new Date(task.submittedAt).toLocaleString('en-GB', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              day: '2-digit',
+                              month: '2-digit',
+                              year: 'numeric'
+                            }).replace(',', '')
+                          : '-'}
+                      </td>
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => {
+                            setAuditTask(task);
+                            setAuditDialogOpen(true);
+                          }}
+                          className="px-3 py-1 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700 transition-colors"
+                        >
+                          AUDIT
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pagination */}
+          {tasks.length > 0 && (
+            <div className="mt-4 flex items-center justify-between">
+              <p className="text-sm text-gray-600">
+                Showing 1 to {tasks.length} of {tasks.length} tasks
+              </p>
+              <div className="flex gap-2">
+                <button className="px-3 py-1 text-sm text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
+                  Previous
+                </button>
+                <button className="px-3 py-1 text-sm text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Upload Dialog */}
       <Dialog open={uploadDialogOpen} onClose={() => setUploadDialogOpen(false)} maxWidth="sm" fullWidth>
@@ -469,22 +735,78 @@ const ManagerProjectDetail = () => {
       </Dialog>
 
       {/* Assign Dialog */}
-      <Dialog open={assignDialogOpen} onClose={() => setAssignDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Assign Tasks</DialogTitle>
+      <Dialog open={assignDialogOpen} onClose={() => {
+        setAssignDialogOpen(false);
+        setAssignMode('existing');
+        setAssignFiles([]);
+        setDatasetName('');
+      }} maxWidth="md" fullWidth>
+        <DialogTitle>Phân công Tasks - Upload ảnh & Gán Team</DialogTitle>
         <DialogContent>
+          {/* Chọn chế độ: Dataset có sẵn hoặc Upload mới */}
           <FormControl fullWidth margin="normal">
-            <InputLabel>Dataset</InputLabel>
+            <InputLabel>Chế độ</InputLabel>
             <Select
-              value={selectedDataset}
-              onChange={(e) => setSelectedDataset(e.target.value)}
+              value={assignMode}
+              onChange={(e) => {
+                setAssignMode(e.target.value);
+                if (e.target.value === 'existing') {
+                  setAssignFiles([]);
+                  setDatasetName('');
+                } else {
+                  setSelectedDataset('');
+                }
+              }}
             >
-              {datasets.map((dataset) => (
-                <MenuItem key={dataset._id} value={dataset._id}>
-                  {dataset.name} ({dataset.totalItems} files)
-                </MenuItem>
-              ))}
+              <MenuItem value="existing">Chọn Dataset có sẵn</MenuItem>
+              <MenuItem value="upload">Upload ảnh mới</MenuItem>
             </Select>
           </FormControl>
+
+          {assignMode === 'existing' ? (
+            <FormControl fullWidth margin="normal">
+              <InputLabel>Dataset</InputLabel>
+              <Select
+                value={selectedDataset}
+                onChange={(e) => setSelectedDataset(e.target.value)}
+              >
+                {datasets.length === 0 ? (
+                  <MenuItem disabled>Chưa có dataset nào. Vui lòng chọn "Upload ảnh mới"</MenuItem>
+                ) : (
+                  datasets.map((dataset) => (
+                    <MenuItem key={dataset._id} value={dataset._id}>
+                      {dataset.name} ({dataset.totalItems} files)
+                    </MenuItem>
+                  ))
+                )}
+              </Select>
+            </FormControl>
+          ) : (
+            <>
+              <TextField
+                fullWidth
+                label="Tên Dataset"
+                value={datasetName}
+                onChange={(e) => setDatasetName(e.target.value)}
+                margin="normal"
+                placeholder="Ví dụ: Dataset động vật tháng 1"
+              />
+              <Box sx={{ mt: 2 }}>
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*"
+                  onChange={(e) => setAssignFiles(Array.from(e.target.files))}
+                  style={{ width: '100%', padding: '8px' }}
+                />
+                {assignFiles.length > 0 && (
+                  <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
+                    Đã chọn {assignFiles.length} file(s)
+                  </Typography>
+                )}
+              </Box>
+            </>
+          )}
           <FormControl fullWidth margin="normal">
             <InputLabel>Annotators</InputLabel>
             <Select
@@ -492,28 +814,97 @@ const ManagerProjectDetail = () => {
               value={selectedAnnotators}
               onChange={(e) => setSelectedAnnotators(e.target.value)}
             >
-              {annotators.map((annotator) => (
+              {filteredAnnotators.map((annotator) => (
                 <MenuItem key={annotator._id} value={annotator._id}>
-                  {annotator.fullName}
+                  {annotator.fullName} {annotator.specialty ? `(${annotator.specialty})` : ''} · WL: {annotatorWorkload(annotator._id)}
                 </MenuItem>
               ))}
             </Select>
           </FormControl>
+          <FormControl fullWidth margin="normal">
+            <InputLabel>Annotator Specialty</InputLabel>
+            <Select
+              value={annotatorSpecialtyFilter}
+              onChange={(e) => setAnnotatorSpecialtyFilter(e.target.value)}
+            >
+              <MenuItem value="all">Tất cả</MenuItem>
+              {annotatorSpecialties.map(spec => (
+                <MenuItem key={spec} value={spec}>{spec}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <Box sx={{ mb: 2 }}>
+            <Typography variant="subtitle2" gutterBottom>Reviewers</Typography>
+            <Grid container spacing={2}>
+              <Grid item xs={6}>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Reviewer Specialty</InputLabel>
+                  <Select
+                    value={reviewerSpecialtyFilter}
+                    onChange={(e) => {
+                      setReviewerSpecialtyFilter(e.target.value);
+                      // Reset reviewers khi đổi specialty
+                      if (e.target.value !== reviewerSpecialtyFilter) {
+                        setSelectedReviewers([]);
+                      }
+                    }}
+                  >
+                    <MenuItem value="all">Tất cả</MenuItem>
+                    {reviewerSpecialties.map(spec => (
+                      <MenuItem key={spec} value={spec}>{spec}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={6}>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Select Reviewers</InputLabel>
+                  <Select
+                    multiple
+                    value={selectedReviewers}
+                    onChange={(e) => setSelectedReviewers(e.target.value)}
+                  >
+                    {filteredReviewers.map((rv) => (
+                      <MenuItem key={rv._id} value={rv._id}>
+                        {(rv.fullName || rv.username) + (rv.specialty ? ` (${rv.specialty})` : '')} · WL: {reviewerWorkload(rv._id)}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+            </Grid>
+            {selectedReviewers.length > 0 && (
+              <Typography variant="caption" color="textSecondary" sx={{ mt: 1, display: 'block' }}>
+                Đã chọn {selectedReviewers.length} reviewer(s)
+              </Typography>
+            )}
+          </Box>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => {
             setAssignDialogOpen(false);
             setSelectedDataset('');
             setSelectedAnnotators([]);
+            setSelectedReviewers([]);
+            setReviewerSpecialtyFilter('all');
+            setAnnotatorSpecialtyFilter('all');
+            setAssignMode('existing');
+            setAssignFiles([]);
+            setDatasetName('');
           }}>
             Cancel
           </Button>
           <Button 
             onClick={handleAssign} 
             variant="contained"
-            disabled={!selectedDataset || selectedAnnotators.length === 0}
+            disabled={
+              (assignMode === 'existing' && !selectedDataset) ||
+              (assignMode === 'upload' && assignFiles.length === 0) ||
+              selectedAnnotators.length === 0 ||
+              selectedReviewers.length === 0
+            }
           >
-            Assign
+            Phân công & Tạo Tasks
           </Button>
         </DialogActions>
       </Dialog>
@@ -849,7 +1240,95 @@ const ManagerProjectDetail = () => {
           </Button>
         </DialogActions>
       </Dialog>
-    </Box>
+
+      {/* Audit Trail Dialog */}
+      <Dialog open={auditDialogOpen} onClose={() => setAuditDialogOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle>Audit Trail</DialogTitle>
+        <DialogContent dividers>
+          {auditTask ? (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Typography variant="subtitle1">File: {auditTask.dataItem?.filename}</Typography>
+              <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                <Chip label={`Status: ${auditTask.status}`} />
+                {auditTask.submittedAt && <Chip label={`Submitted: ${new Date(auditTask.submittedAt).toLocaleString()}`} />}
+                {auditTask.reviewedAt && <Chip label={`Reviewed: ${new Date(auditTask.reviewedAt).toLocaleString()}`} />}
+              </Box>
+              <Typography variant="subtitle2">Reviewers</Typography>
+              {auditTask.reviewers && auditTask.reviewers.length > 0 ? (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  {auditTask.reviewers.map((rv, idx) => (
+                    <Chip
+                      key={rv.reviewerId?._id || idx}
+                      label={`${rv.reviewerId?.fullName || rv.reviewerId?.username || 'Reviewer'} - ${rv.status || 'pending'}`}
+                      variant="outlined"
+                    />
+                  ))}
+                </Box>
+              ) : (
+                <Typography variant="body2" color="textSecondary">Chưa gán reviewer</Typography>
+              )}
+
+              <Typography variant="subtitle2" sx={{ mt: 1 }}>Review Comments</Typography>
+              <Typography variant="body2">{auditTask.reviewComments || 'Không có'}</Typography>
+
+              <Typography variant="subtitle2" sx={{ mt: 1 }}>Review Notes (feedback trên ảnh)</Typography>
+              {auditTask.reviewNotes && auditTask.reviewNotes.length > 0 ? (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  {auditTask.reviewNotes.map((n, idx) => (
+                    <Card key={idx} variant="outlined">
+                      <CardContent>
+                        <Typography variant="body2" gutterBottom>
+                          BBox: [{Math.round(n.bbox?.[0] || 0)}%, {Math.round(n.bbox?.[1] || 0)}%] → [{Math.round(n.bbox?.[2] || 0)}%, {Math.round(n.bbox?.[3] || 0)}%]
+                        </Typography>
+                        <Typography variant="body2" gutterBottom>
+                          Label: {n.label || 'N/A'}
+                        </Typography>
+                        <Typography variant="body2">
+                          Comment: {n.comment}
+                        </Typography>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </Box>
+              ) : (
+                <Typography variant="body2" color="textSecondary">Không có ghi chú</Typography>
+              )}
+            </Box>
+          ) : (
+            <Typography>Không có dữ liệu audit.</Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAuditDialogOpen(false)}>Đóng</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Preview Labels */}
+      <Dialog open={previewLabelsOpen} onClose={() => setPreviewLabelsOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Label Preview</DialogTitle>
+        <DialogContent dividers>
+          {project?.labelSet && project.labelSet.length > 0 ? (
+            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+              {project.labelSet.map((label, idx) => (
+                <Chip
+                  key={idx}
+                  label={label.name}
+                  sx={{
+                    bgcolor: label.color || '#1976d2',
+                    color: 'white'
+                  }}
+                />
+              ))}
+            </Box>
+          ) : (
+            <Typography variant="body2" color="textSecondary">Chưa có label nào</Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPreviewLabelsOpen(false)}>Đóng</Button>
+        </DialogActions>
+      </Dialog>
+    </div>
   );
 };
 

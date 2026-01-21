@@ -40,6 +40,36 @@ const taskSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
+  reviewers: [
+    {
+      reviewerId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      },
+      status: {
+        type: String,
+        enum: ['pending', 'approved', 'rejected'],
+        default: 'pending'
+      },
+      comment: String,
+      reviewedAt: Date
+    }
+  ],
+  reviewNotes: [
+    {
+      bbox: [Number],
+      label: String,
+      comment: String,
+      createdBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      },
+      createdAt: {
+        type: Date,
+        default: Date.now
+      }
+    }
+  ],
   reviewComments: {
     type: String
   },

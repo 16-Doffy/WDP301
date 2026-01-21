@@ -25,6 +25,11 @@ router.get('/my-tasks', auth, async (req, res) => {
       query.annotatorId = req.user._id;
     } else if (req.user.role === 'reviewer') {
       query.status = 'submitted';
+      query.$or = [
+        { reviewers: { $exists: true, $size: 0 } },
+        { reviewers: { $exists: false } },
+        { reviewers: { $elemMatch: { reviewerId: req.user._id, status: 'pending' } } }
+      ];
     } else if (req.user.role === 'manager') {
       // Managers can see all tasks in their projects
       const projects = await Project.find({ managerId: req.user._id }).select('_id');
@@ -36,6 +41,7 @@ router.get('/my-tasks', auth, async (req, res) => {
       .populate('datasetId', 'name')
       .populate('annotatorId', 'username fullName')
       .populate('reviewerId', 'username fullName')
+      .populate('reviewers.reviewerId', 'username fullName')
       .sort({ createdAt: -1 });
 
     if (req.user.role === 'annotator') {
@@ -67,7 +73,8 @@ router.get('/:id', auth, async (req, res) => {
       .populate('projectId', 'name labelSet guidelines questions managerId')
       .populate('datasetId', 'name')
       .populate('annotatorId', 'username fullName')
-      .populate('reviewerId', 'username fullName');
+      .populate('reviewerId', 'username fullName')
+      .populate('reviewers.reviewerId', 'username fullName');
 
     if (!task) {
       return res.status(404).json({ message: 'Task not found' });
@@ -105,12 +112,12 @@ router.get('/:id', auth, async (req, res) => {
         return res.status(403).json({ message: 'Not authorized to view this task' });
       }
     } else if (req.user.role === 'reviewer') {
-      // Reviewer can view submitted tasks or tasks they reviewed
-      if (task.status !== 'submitted') {
-        const reviewerId = task.reviewerId?._id?.toString() || task.reviewerId?.toString();
-        if (!reviewerId || reviewerId !== req.user._id.toString()) {
-          return res.status(403).json({ message: 'Not authorized to view this task' });
-        }
+      // Reviewer can view submitted tasks or tasks they reviewed/are assigned to
+      const primaryReviewerId = task.reviewerId?._id?.toString() || task.reviewerId?.toString();
+      const inReviewerList = Array.isArray(task.reviewers)
+        && task.reviewers.some(r => (r.reviewerId?._id?.toString() || r.reviewerId?.toString?.() || r.reviewerId?.toString()) === req.user._id.toString());
+      if (task.status !== 'submitted' && !inReviewerList && primaryReviewerId !== req.user._id.toString()) {
+        return res.status(403).json({ message: 'Not authorized to view this task' });
       }
     }
 
@@ -124,11 +131,14 @@ router.get('/:id', auth, async (req, res) => {
 // Assign tasks to annotators (Manager only)
 router.post('/assign', auth, authorize('manager', 'admin'), async (req, res) => {
   try {
-    const { projectId, datasetId, annotatorIds } = req.body;
+    const { projectId, datasetId, annotatorIds, reviewerIds } = req.body;
 
     // Validation
     if (!projectId || !datasetId || !annotatorIds) {
       return res.status(400).json({ message: 'Missing required fields: projectId, datasetId, annotatorIds' });
+    }
+    if (!Array.isArray(reviewerIds) || reviewerIds.length === 0) {
+      return res.status(400).json({ message: 'Missing required reviewers: reviewerIds must be a non-empty array' });
     }
 
     if (!Array.isArray(annotatorIds) || annotatorIds.length === 0) {
@@ -153,6 +163,12 @@ router.post('/assign', auth, authorize('manager', 'admin'), async (req, res) => 
       return res.status(400).json({ message: 'Dataset has no files' });
     }
 
+    // Normalize reviewer ids (mandatory) - MUST be done first
+    const normalizedReviewerIds = Array.isArray(reviewerIds) ? reviewerIds.filter(Boolean) : [];
+    if (normalizedReviewerIds.length === 0) {
+      return res.status(400).json({ message: 'At least one reviewer is required' });
+    }
+
     // Check if annotators exist and are active
     const User = require('../models/User');
     const annotators = await User.find({ 
@@ -163,6 +179,16 @@ router.post('/assign', auth, authorize('manager', 'admin'), async (req, res) => 
     
     if (annotators.length !== annotatorIds.length) {
       return res.status(400).json({ message: 'Some annotators are invalid or inactive' });
+    }
+
+    // Check reviewers exist and active
+    const reviewers = await User.find({
+      _id: { $in: normalizedReviewerIds },
+      role: 'reviewer',
+      isActive: true
+    });
+    if (reviewers.length !== normalizedReviewerIds.length) {
+      return res.status(400).json({ message: 'Some reviewers are invalid or inactive' });
     }
 
     // Check for existing tasks to avoid duplicates
@@ -191,7 +217,11 @@ router.post('/assign', auth, authorize('manager', 'admin'), async (req, res) => 
             path: file.path,
             mimeType: file.mimeType || 'application/octet-stream'
           },
-          status: 'assigned'
+          status: 'assigned',
+          reviewers: normalizedReviewerIds.map(rid => ({
+            reviewerId: rid,
+            status: 'pending'
+          }))
         });
         tasks.push(task);
         console.log(`Creating task for annotator: ${annotatorId}, file: ${file.filename}`);
@@ -226,11 +256,23 @@ router.post('/assign', auth, authorize('manager', 'admin'), async (req, res) => 
       message: `Assigned ${tasks.length} tasks successfully`,
       tasksCreated: tasks.length,
       filesCount: dataset.files.length,
-      annotatorsCount: annotatorIds.length
+      annotatorsCount: annotatorIds.length,
+      reviewersCount: normalizedReviewerIds.length
     });
   } catch (error) {
     console.error('Error assigning tasks:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    console.error('Error stack:', error.stack);
+    console.error('Request body:', {
+      projectId,
+      datasetId,
+      annotatorIds,
+      reviewerIds
+    });
+    res.status(500).json({ 
+      message: 'Server error', 
+      error: error.message,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 });
 
@@ -359,6 +401,23 @@ router.post('/:id/submit', auth, authorize('annotator'), async (req, res) => {
     } else if (task.status !== 'in_progress' && task.status !== 'assigned') {
       return res.status(400).json({ message: 'Task can only be submitted from "in_progress" or "assigned" status' });
     }
+
+    // Ensure reviewer assignment exists
+    if (!task.reviewers || task.reviewers.length === 0) {
+      return res.status(400).json({ message: 'Task must have at least one reviewer assigned before submission' });
+    }
+
+    // Reset reviewer states to pending on (re)submit
+    if (task.reviewers && task.reviewers.length > 0) {
+      task.reviewers = task.reviewers.map(r => ({
+        ...r.toObject?.() ? r.toObject() : r,
+        status: 'pending',
+        comment: undefined,
+        reviewedAt: undefined
+      }));
+    }
+    // Clear review notes on resubmit
+    task.reviewNotes = [];
 
     // Validate that labels exist
     if (!task.labels || Object.keys(task.labels).length === 0) {

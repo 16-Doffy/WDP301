@@ -111,7 +111,7 @@ const ManagerProjects = () => {
           <Button
             variant="contained"
             startIcon={<AddIcon />}
-            onClick={() => setOpenDialog(true)}
+            onClick={() => navigate('/manager/projects/create')}
           >
             New Project
           </Button>
