@@ -20,6 +20,9 @@ const AnnotatorTask = () => {
   const [brightness, setBrightness] = useState(100);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [selectedAnnotation, setSelectedAnnotation] = useState(null);
+  const [zoom, setZoom] = useState(100);
+  const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
+  const [leftToolbarCollapsed, setLeftToolbarCollapsed] = useState(false);
 
   useEffect(() => {
     fetchTask();
@@ -57,7 +60,6 @@ const AnnotatorTask = () => {
           const completed = loadedAnnotations.filter(a => a.answer).length;
           setProgress(totalRequired > 0 ? (completed / totalRequired) * 100 : 0);
         } else {
-          // If no questions, progress based on annotations count
           setProgress(loadedAnnotations.length > 0 ? 50 : 0);
         }
       }
@@ -87,7 +89,6 @@ const AnnotatorTask = () => {
       const completed = newAnnotations.filter(a => a.answer).length;
       setProgress(totalRequired > 0 ? (completed / totalRequired) * 100 : 0);
     } else {
-      // If no questions, progress based on annotations count
       setProgress(newAnnotations.length > 0 ? 50 : 0);
     }
   }, [task]);
@@ -119,7 +120,6 @@ const AnnotatorTask = () => {
       return;
     }
 
-    // Check if project has questions and validate answers
     if (task?.projectId?.questions && Array.isArray(task.projectId.questions) && task.projectId.questions.length > 0) {
       if (labels.objects && Array.isArray(labels.objects)) {
         const missingAnswers = [];
@@ -158,404 +158,457 @@ const AnnotatorTask = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+        <div className="animate-spin rounded-full h-10 w-10 border-2 border-blue-600 border-t-transparent"></div>
       </div>
     );
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-lg font-bold text-purple-700">Annotator Task Studio</span>
-            </div>
-            <div className="flex items-center gap-2 text-sm">
-              <span className="text-gray-600">PROJECT</span>
-              <span className="text-gray-900 font-semibold">{task?.projectId?.name || 'Project'}</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-4">
+    <div className="flex flex-col h-screen bg-gray-50 overflow-hidden">
+      {/* Top Header Bar - Breadcrumbs & Actions */}
+      <div className="bg-white border-b border-gray-200 px-6 py-2.5 flex items-center justify-between">
+        <div className="flex items-center gap-3 text-sm">
+          <span className="text-gray-500">Projects</span>
+          <span className="text-gray-400">/</span>
+          <span className="text-gray-700 font-medium">{task?.projectId?.name || 'Project'}</span>
+          <span className="text-gray-400">/</span>
+          <span className="text-gray-900 font-semibold">Task #{id?.substring(0, 8) || 'XXXXX'}</span>
+          <span className="ml-3 px-2 py-0.5 bg-green-100 text-green-700 text-xs font-medium rounded">• LIVE SESSION</span>
+        </div>
+        
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <div className="text-right">
-              <div className="text-xs text-gray-500">TASK PROGRESS</div>
-              <div className="text-sm font-bold text-gray-900">
-                {Math.round(progress)} / 100
+              <div className="text-xs text-gray-500 leading-tight">BATCH PROGRESS</div>
+              <div className="flex items-center gap-2">
+                <div className="w-32 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-blue-600 transition-all duration-300"
+                    style={{ width: `${progress}%` }}
+                  ></div>
+                </div>
+                <span className="text-xs font-medium text-gray-700">{Math.round(progress)}%</span>
               </div>
             </div>
-            <button className="text-gray-600 hover:text-gray-900 text-xl">🌙</button>
-            <div className="w-8 h-8 bg-purple-100 rounded-full flex items-center justify-center">
-              <span className="text-xs font-medium text-purple-700">U</span>
-            </div>
+            <button className="text-xs text-gray-600 hover:text-gray-900 px-2 py-1">History</button>
+            <button className="text-gray-400 hover:text-gray-600 text-lg">🌙</button>
           </div>
         </div>
       </div>
 
-      {/* Main Content */}
+      {/* Main Content Area */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Sidebar - Tools */}
-        <div className="w-16 bg-gray-800 flex flex-col items-center py-4 gap-3">
-          <button
-            onClick={() => setSelectedTool('send')}
-            className={`w-12 h-12 flex items-center justify-center rounded-lg transition-colors ${
-              selectedTool === 'send' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-            }`}
-            title="Send/Submit"
-          >
-            ✈️
-          </button>
-          <button
-            onClick={() => setSelectedTool('bbox')}
-            className={`w-12 h-12 flex items-center justify-center rounded-lg transition-colors ${
-              selectedTool === 'bbox' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-            }`}
-            title="Bounding Box"
-          >
-            ▢
-          </button>
-          <button
-            onClick={() => setSelectedTool('polygon')}
-            className={`w-12 h-12 flex items-center justify-center rounded-lg transition-colors ${
-              selectedTool === 'polygon' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-            }`}
-            title="Polygon"
-          >
-            ⬟
-          </button>
-          <button
-            onClick={() => setSelectedTool('point')}
-            className={`w-12 h-12 flex items-center justify-center rounded-lg transition-colors ${
-              selectedTool === 'point' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-            }`}
-            title="Point"
-          >
-            🎯
-          </button>
-          <button
-            onClick={() => setSelectedTool('edit')}
-            className={`w-12 h-12 flex items-center justify-center rounded-lg transition-colors ${
-              selectedTool === 'edit' ? 'bg-purple-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-            }`}
-            title="Edit"
-          >
-            ✏️
-          </button>
-          <div className="border-t border-gray-600 my-2 w-8"></div>
-          <button
-            onClick={() => {/* Zoom in */}}
-            className="w-12 h-12 flex items-center justify-center rounded-lg bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors"
-            title="Zoom In"
-          >
-            🔍+
-          </button>
-          <button
-            onClick={() => {/* Zoom out */}}
-            className="w-12 h-12 flex items-center justify-center rounded-lg bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors"
-            title="Zoom Out"
-          >
-            🔍-
-          </button>
-          <button
-            onClick={() => {/* Pan */}}
-            className="w-12 h-12 flex items-center justify-center rounded-lg bg-gray-700 text-gray-300 hover:bg-gray-600 transition-colors"
-            title="Pan"
-          >
-            ✋
-          </button>
-        </div>
-
-        {/* Main Annotation Area */}
-        <div className="flex-1 flex flex-col overflow-hidden bg-white">
-          {/* Task Info Bar */}
-          <div className="bg-gray-50 border-b border-gray-200 px-6 py-2 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span className="text-sm font-medium text-gray-700">
-                Task ID: {id?.substring(0, 8) || 'TSK-XXXXX'}
-              </span>
-              <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-              <button className="text-xs text-blue-600 hover:text-blue-800">View History</button>
+        {/* Floating Left Toolbar */}
+        {!leftToolbarCollapsed && (
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 z-30 bg-white rounded-lg shadow-lg border border-gray-200 py-2">
+            <div className="flex flex-col gap-1">
+              <button
+                onClick={() => setSelectedTool('bbox')}
+                className={`w-10 h-10 flex items-center justify-center rounded transition-colors ${
+                  selectedTool === 'bbox' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'
+                }`}
+                title="Bounding Box (B)"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <rect x="3" y="3" width="18" height="18" rx="2" strokeWidth="2"/>
+                </svg>
+              </button>
+              <button
+                onClick={() => setSelectedTool('polygon')}
+                className={`w-10 h-10 flex items-center justify-center rounded transition-colors ${
+                  selectedTool === 'polygon' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'
+                }`}
+                title="Polygon (P)"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                </svg>
+              </button>
+              <button
+                onClick={() => setSelectedTool('point')}
+                className={`w-10 h-10 flex items-center justify-center rounded transition-colors ${
+                  selectedTool === 'point' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100'
+                }`}
+                title="Point (O)"
+              >
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <circle cx="12" cy="12" r="4"/>
+                </svg>
+              </button>
+              <div className="border-t border-gray-200 my-1"></div>
+              <button
+                onClick={() => setZoom(Math.min(200, zoom + 10))}
+                className="w-10 h-10 flex items-center justify-center rounded text-gray-600 hover:bg-gray-100"
+                title="Zoom In (+)"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v6m3-3H7"/>
+                </svg>
+              </button>
+              <button
+                onClick={() => setZoom(Math.max(25, zoom - 10))}
+                className="w-10 h-10 flex items-center justify-center rounded text-gray-600 hover:bg-gray-100"
+                title="Zoom Out (-)"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7"/>
+                </svg>
+              </button>
+              <button
+                onClick={() => setZoom(100)}
+                className="w-10 h-10 flex items-center justify-center rounded text-gray-600 hover:bg-gray-100 text-xs font-medium"
+                title="Reset Zoom (0)"
+              >
+                1:1
+              </button>
             </div>
           </div>
+        )}
+        
+        <button
+          onClick={() => setLeftToolbarCollapsed(!leftToolbarCollapsed)}
+          className="absolute left-2 top-1/2 -translate-y-1/2 z-40 w-6 h-12 bg-white border border-gray-200 rounded-r-lg shadow-sm flex items-center justify-center hover:bg-gray-50"
+        >
+          <svg className={`w-4 h-4 text-gray-600 transition-transform ${leftToolbarCollapsed ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"/>
+          </svg>
+        </button>
 
-          {/* Image Annotation Area */}
-          <div className="flex-1 overflow-y-auto bg-gray-100 p-6">
-          {task?.dataItem?.mimeType?.startsWith('image/') ? (
-              <div className="bg-white rounded-lg shadow-lg p-4">
-                <ImageAnnotator
-                  imageUrl={`${API_URL}/${task.dataItem.path}`}
-                  labelSet={task?.projectId?.labelSet || []}
-                  questions={task?.projectId?.questions || []}
-                  onAnnotationsChange={handleAnnotationsChange}
-                  initialAnnotations={annotations}
-                />
+        {/* Canvas Area - 70-80% width */}
+        <div className={`flex-1 flex flex-col overflow-hidden bg-gray-100 transition-all duration-300 ${rightPanelCollapsed ? '' : 'mr-80'}`}>
+          {/* Image Canvas */}
+          <div className="flex-1 overflow-auto relative" id="canvas-container">
+            {task?.dataItem?.mimeType?.startsWith('image/') ? (
+              <div className="flex items-center justify-center min-h-full p-8">
+                <div className="bg-white rounded-lg shadow-xl border border-gray-200 relative" style={{ transform: `scale(${zoom / 100})`, transformOrigin: 'center' }}>
+                  <ImageAnnotator
+                    imageUrl={`${API_URL}/${task.dataItem.path}`}
+                    labelSet={task?.projectId?.labelSet || []}
+                    questions={task?.projectId?.questions || []}
+                    onAnnotationsChange={handleAnnotationsChange}
+                    initialAnnotations={annotations}
+                    selectedTool={selectedTool}
+                    onMouseMove={(pos) => setMousePosition(pos)}
+                  />
+                </div>
               </div>
             ) : (
-              <div className="text-center py-12 text-gray-500">
-                File không phải hình ảnh. Vui lòng sử dụng JSON Editor.
-              </div>
-            )}
-          </div>
-
-          {/* Bottom Action Bar */}
-          <div className="border-t border-gray-200 bg-white px-6 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <button className="text-sm text-gray-600 hover:text-gray-900">← PREVIOUS TASK</button>
-              <button className="text-sm text-gray-600 hover:text-gray-900">SKIP →</button>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-gray-600">Brightness</span>
-              <input
-                type="range"
-                min="0"
-                max="200"
-                value={brightness}
-                onChange={(e) => setBrightness(e.target.value)}
-                className="w-32"
-              />
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={handleSave}
-                disabled={saving || task?.status === 'submitted' || task?.status === 'approved'}
-                className="px-4 py-2 bg-white text-gray-700 border border-gray-300 rounded-lg font-medium hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                SAVE DRAFT
-              </button>
-              <button
-                onClick={handleSubmit}
-                disabled={saving || task?.status === 'submitted' || task?.status === 'approved'}
-                className={`px-4 py-2 rounded-lg font-medium text-white transition-colors ${
-                  task?.status === 'rejected' 
-                    ? 'bg-yellow-600 hover:bg-yellow-700' 
-                    : 'bg-purple-600 hover:bg-purple-700'
-                } disabled:opacity-50 disabled:cursor-not-allowed`}
-              >
-                COMPLETE & SUBMIT
-              </button>
-            </div>
-          </div>
-
-          {/* Status Bar */}
-          <div className="border-t border-gray-200 bg-gray-50 px-6 py-1.5 flex items-center justify-between text-xs text-gray-600">
-            <div className="flex items-center gap-4">
-              <span className="flex items-center gap-1">
-                <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                STATUS: CONNECTED
-              </span>
-              <span>MOUSE POSITION: {mousePosition.x}, {mousePosition.y}</span>
-            </div>
-            <div className="flex items-center gap-4">
-              <span>LABELS: {annotations.length}</span>
-              <span>OBJECTS: {annotations.length}</span>
-              <span className="text-green-600">AUTO-SAVE ACTIVE</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Right Panel - Tabs */}
-        <div className="w-96 border-l border-gray-200 bg-white flex flex-col">
-          {/* Tabs */}
-          <div className="border-b border-gray-200 flex">
-            <button
-              onClick={() => setRightTab('labels')}
-              className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                rightTab === 'labels'
-                  ? 'border-purple-600 text-purple-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              LABELS
-            </button>
-            <button
-              onClick={() => setRightTab('instructions')}
-              className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                rightTab === 'instructions'
-                  ? 'border-purple-600 text-purple-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              INSTRUCTIONS
-            </button>
-            <button
-              onClick={() => setRightTab('issues')}
-              className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors relative ${
-                rightTab === 'issues'
-                  ? 'border-purple-600 text-purple-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              ISSUES
-              {task?.reviewNotes && task.reviewNotes.length > 0 && (
-                <span className="absolute top-1 right-2 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                  {task.reviewNotes.length}
-                </span>
-              )}
-            </button>
-          </div>
-
-          {/* Tab Content */}
-          <div className="flex-1 overflow-y-auto p-6">
-            {rightTab === 'labels' && (
-              <div className="space-y-4">
-                <h3 className="font-semibold text-gray-900 mb-4">LABEL CLASSES</h3>
-                {task?.projectId?.labelSet && task.projectId.labelSet.length > 0 ? (
-                  <div className="space-y-2">
-                    {task.projectId.labelSet.map((label, idx) => {
-                      const count = annotations.filter(a => a.label === label.name).length;
-                      return (
-                        <div
-                          key={idx}
-                          onClick={() => {
-                            // Find first annotation with this label, or create a new one
-                            const existingAnn = annotations.find(a => a.label === label.name);
-                            if (existingAnn) {
-                              setSelectedAnnotation(existingAnn);
-                            }
-                          }}
-                          className={`flex items-center justify-between p-3 rounded-lg border-2 cursor-pointer transition-colors ${
-                            selectedTool === 'bbox' ? 'border-purple-300 bg-purple-50' : 'border-gray-200 hover:border-gray-300'
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <div
-                              className="w-3 h-3 rounded-full"
-                              style={{ backgroundColor: label.color || '#9333ea' }}
-                            ></div>
-                            <span className="font-medium text-gray-900">{label.name}</span>
-                          </div>
-                          <span className="text-sm text-gray-600">{count}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="text-sm text-gray-500">No labels defined</p>
-                )}
-
-                {/* Attributes for selected annotation */}
-                {selectedAnnotation && task?.projectId?.questions && (
-                  <div className="mt-6">
-                    <h4 className="font-semibold text-gray-900 mb-3">
-                      ATTRIBUTES: {selectedAnnotation.label?.toUpperCase()} #{selectedAnnotation.id}
-                    </h4>
-                    {task.projectId.questions.map((question, qIdx) => (
-                      <div key={qIdx} className="mb-4">
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          {question.question}
-                        </label>
-                        {question.options ? (
-                          <div className="space-y-2">
-                            {question.options.map((opt) => (
-                              <label key={opt.key} className="flex items-center gap-2">
-                                <input
-                                  type="radio"
-                                  name={`question-${qIdx}`}
-                                  value={opt.key}
-                                  checked={selectedAnnotation.answer?.[qIdx] === opt.key}
-                                  onChange={() => {
-                                    const updated = annotations.map(a =>
-                                      a.id === selectedAnnotation.id
-                                        ? { ...a, answer: { ...a.answer, [qIdx]: opt.key } }
-                                        : a
-                                    );
-                                    setAnnotations(updated);
-                                  }}
-                                  className="text-purple-600"
-                                />
-                                <span className="text-sm text-gray-700">{opt.value}</span>
-                              </label>
-                            ))}
-                          </div>
-                        ) : (
-                          <input
-                            type="text"
-                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-purple-500"
-                            value={selectedAnnotation.answer?.[qIdx] || ''}
-                            onChange={(e) => {
-                              const updated = annotations.map(a =>
-                                a.id === selectedAnnotation.id
-                                  ? { ...a, answer: { ...a.answer, [qIdx]: e.target.value } }
-                                  : a
-                              );
-                              setAnnotations(updated);
-                            }}
-                          />
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Review Feedback */}
-                {task?.status === 'rejected' && task?.reviewComments && (
-                  <div className="mt-6 p-4 bg-red-50 border-2 border-red-200 rounded-lg">
-                    <p className="text-sm font-semibold text-red-800 mb-2">
-                      Reviewer: {task?.reviewers?.[0]?.reviewerId?.fullName || 'Reviewer'} {task?.reviewedAt ? `${Math.floor((Date.now() - new Date(task.reviewedAt).getTime()) / (1000 * 60 * 60))}h ago` : ''}
-                    </p>
-                    <p className="text-sm text-red-700 italic">"{task.reviewComments}"</p>
-                  </div>
-                )}
-
-                {/* Next in Queue */}
-                <div className="mt-6">
-                  <h4 className="text-sm font-semibold text-gray-700 mb-2">NEXT IN QUEUE</h4>
-                  <div className="flex gap-2">
-                    <div className="w-8 h-8 bg-gray-200 rounded flex items-center justify-center">👍</div>
-                    <div className="w-8 h-8 bg-gray-200 rounded flex items-center justify-center">👎</div>
-                    <div className="w-8 h-8 bg-gray-200 rounded flex items-center justify-center">⋯</div>
-                    <div className="w-8 h-8 bg-gray-200 rounded flex items-center justify-center">?</div>
-                  </div>
+              <div className="flex items-center justify-center h-full">
+                <div className="text-center text-gray-500">
+                  <p className="text-sm">File không phải hình ảnh. Vui lòng sử dụng JSON Editor.</p>
                 </div>
               </div>
             )}
+          </div>
 
-            {rightTab === 'instructions' && (
-              <div>
-                <h3 className="font-semibold text-gray-900 mb-4">INSTRUCTIONS</h3>
-                <div className="prose prose-sm max-w-none">
-                  <p className="text-gray-600 whitespace-pre-wrap mb-4">
-                    {task?.projectId?.guidelines || 'No instructions provided.'}
-                  </p>
-                  {task?.projectId?.labelSet && task.projectId.labelSet.length > 0 && (
+          {/* Image Info Footer */}
+          <div className="bg-white border-t border-gray-200 px-6 py-2 flex items-center justify-between text-xs text-gray-600">
+            <div className="flex items-center gap-6">
+              <span>Resolution: {task?.dataItem?.width || '1920'}x{task?.dataItem?.height || '1080'}</span>
+              <span>Format: {task?.dataItem?.mimeType?.split('/')[1]?.toUpperCase() || 'PNG'}</span>
+              <span>Camera: {task?.dataItem?.camera || 'Front_Main'}</span>
+            </div>
+            <div className="flex items-center gap-4">
+              <span>Image 1 of {task?.batchSize || 1}</span>
+              <div className="flex items-center gap-2">
+                <button className="w-7 h-7 flex items-center justify-center border border-gray-300 rounded hover:bg-gray-50">←</button>
+                <button className="w-7 h-7 flex items-center justify-center border border-gray-300 rounded hover:bg-gray-50">→</button>
+                <button className="w-7 h-7 flex items-center justify-center border border-gray-300 rounded hover:bg-gray-50">☰</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Side Panel - Collapsible */}
+        {!rightPanelCollapsed && (
+          <div className="w-80 bg-white border-l border-gray-200 flex flex-col shadow-lg">
+            {/* Panel Header */}
+            <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-gray-900">FOUND OBJECTS ({annotations.length})</h3>
+              <button
+                onClick={() => setRightPanelCollapsed(true)}
+                className="w-6 h-6 flex items-center justify-center text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+              </button>
+            </div>
+
+            {/* Tabs */}
+            <div className="border-b border-gray-200 flex">
+              <button
+                onClick={() => setRightTab('labels')}
+                className={`flex-1 px-4 py-2.5 text-xs font-medium border-b-2 transition-colors ${
+                  rightTab === 'labels'
+                    ? 'border-blue-600 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                OBJECTS
+              </button>
+              <button
+                onClick={() => setRightTab('instructions')}
+                className={`flex-1 px-4 py-2.5 text-xs font-medium border-b-2 transition-colors ${
+                  rightTab === 'instructions'
+                    ? 'border-blue-600 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                GUIDELINES
+              </button>
+              <button
+                onClick={() => setRightTab('issues')}
+                className={`flex-1 px-4 py-2.5 text-xs font-medium border-b-2 transition-colors relative ${
+                  rightTab === 'issues'
+                    ? 'border-blue-600 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                ISSUES
+                {task?.reviewNotes && task.reviewNotes.length > 0 && (
+                  <span className="absolute top-1 right-2 w-4 h-4 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center">
+                    {task.reviewNotes.length}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Tab Content */}
+            <div className="flex-1 overflow-y-auto">
+              {rightTab === 'labels' && (
+                <div className="p-4 space-y-3">
+                  {/* Search */}
+                  <input
+                    type="text"
+                    placeholder="Q Filter objects..."
+                    className="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+
+                  {/* Label Classes */}
+                  {task?.projectId?.labelSet && task.projectId.labelSet.length > 0 ? (
                     <div className="space-y-2">
-                      <div className="flex items-center gap-2 text-sm">
-                        <span className="text-green-600">✓</span>
-                        <span className="text-gray-700">Boxes should include shadow under car.</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm">
-                        <span className="text-red-600">✗</span>
-                        <span className="text-gray-700">Do not label occluded parts.</span>
-                      </div>
+                      {task.projectId.labelSet.map((label, idx) => {
+                        const count = annotations.filter(a => a.label === label.name).length;
+                        return (
+                          <div
+                            key={idx}
+                            onClick={() => {
+                              const existingAnn = annotations.find(a => a.label === label.name);
+                              if (existingAnn) {
+                                setSelectedAnnotation(existingAnn);
+                              }
+                            }}
+                            className={`p-2.5 rounded-lg border cursor-pointer transition-colors ${
+                              selectedAnnotation?.label === label.name
+                                ? 'border-blue-300 bg-blue-50'
+                                : 'border-gray-200 hover:border-gray-300'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-1">
+                              <div className="flex items-center gap-2">
+                                <div
+                                  className="w-2.5 h-2.5 rounded-full"
+                                  style={{ backgroundColor: label.color || '#3b82f6' }}
+                                ></div>
+                                <span className="text-xs font-medium text-gray-900">{label.name}</span>
+                              </div>
+                              <span className="text-xs text-gray-500">{count}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-500">No labels defined</p>
+                  )}
+
+                  {/* Selected Annotation Attributes */}
+                  {selectedAnnotation && task?.projectId?.questions && (
+                    <div className="mt-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                      <h4 className="text-xs font-semibold text-gray-900 mb-2">
+                        {selectedAnnotation.label?.toUpperCase()} #{selectedAnnotation.id}
+                      </h4>
+                      {task.projectId.questions.map((question, qIdx) => (
+                        <div key={qIdx} className="mb-3">
+                          <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                            {question.question}
+                          </label>
+                          {question.options ? (
+                            <div className="space-y-1.5">
+                              {question.options.map((opt) => (
+                                <label key={opt.key} className="flex items-center gap-2">
+                                  <input
+                                    type="radio"
+                                    name={`question-${qIdx}`}
+                                    value={opt.key}
+                                    checked={selectedAnnotation.answer?.[qIdx] === opt.key}
+                                    onChange={() => {
+                                      const updated = annotations.map(a =>
+                                        a.id === selectedAnnotation.id
+                                          ? { ...a, answer: { ...a.answer, [qIdx]: opt.key } }
+                                          : a
+                                      );
+                                      setAnnotations(updated);
+                                    }}
+                                    className="text-blue-600"
+                                  />
+                                  <span className="text-xs text-gray-700">{opt.value}</span>
+                                </label>
+                              ))}
+                            </div>
+                          ) : (
+                            <input
+                              type="text"
+                              className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              value={selectedAnnotation.answer?.[qIdx] || ''}
+                              onChange={(e) => {
+                                const updated = annotations.map(a =>
+                                  a.id === selectedAnnotation.id
+                                    ? { ...a, answer: { ...a.answer, [qIdx]: e.target.value } }
+                                    : a
+                                );
+                                setAnnotations(updated);
+                              }}
+                            />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Review Feedback */}
+                  {task?.status === 'rejected' && task?.reviewComments && (
+                    <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                      <p className="text-xs font-semibold text-red-800 mb-1">
+                        Reviewer: {task?.reviewers?.[0]?.reviewerId?.fullName || 'Reviewer'}
+                      </p>
+                      <p className="text-xs text-red-700 italic">"{task.reviewComments}"</p>
                     </div>
                   )}
                 </div>
-              </div>
-            )}
+              )}
 
-            {rightTab === 'issues' && (
-              <div>
-                <h3 className="font-semibold text-gray-900 mb-4">ISSUES</h3>
-                {task?.reviewNotes && task.reviewNotes.length > 0 ? (
-                  <div className="space-y-3">
-                    {task.reviewNotes.map((note, idx) => (
-                      <div key={idx} className="p-3 bg-red-50 border border-red-200 rounded-lg">
-                        <p className="text-sm font-medium text-red-800 mb-1">
-                          Position: [{Math.round(note.bbox?.[0] || 0)}%, {Math.round(note.bbox?.[1] || 0)}%]
-                        </p>
-                        <p className="text-sm text-red-700">{note.comment}</p>
+              {rightTab === 'instructions' && (
+                <div className="p-4">
+                  <h3 className="text-xs font-semibold text-gray-900 mb-3">GUIDELINES</h3>
+                  <div className="prose prose-sm max-w-none">
+                    <p className="text-xs text-gray-600 whitespace-pre-wrap mb-4 leading-relaxed">
+                      {task?.projectId?.guidelines || 'No instructions provided.'}
+                    </p>
+                    {task?.projectId?.labelSet && task.projectId.labelSet.length > 0 && (
+                      <div className="space-y-2">
+                        <div className="flex items-start gap-2 text-xs">
+                          <span className="text-green-600 mt-0.5">✓</span>
+                          <span className="text-gray-700">Boxes should include shadow under car.</span>
+                        </div>
+                        <div className="flex items-start gap-2 text-xs">
+                          <span className="text-red-600 mt-0.5">✗</span>
+                          <span className="text-gray-700">Do not label occluded parts.</span>
+                        </div>
                       </div>
-                    ))}
+                    )}
                   </div>
-                ) : (
-                  <p className="text-sm text-gray-500">No issues reported</p>
-                )}
+                </div>
+              )}
+
+              {rightTab === 'issues' && (
+                <div className="p-4">
+                  <h3 className="text-xs font-semibold text-gray-900 mb-3">ISSUES & COMMENTS</h3>
+                  {task?.reviewNotes && task.reviewNotes.length > 0 ? (
+                    <div className="space-y-2">
+                      {task.reviewNotes.map((note, idx) => (
+                        <div key={idx} className="p-2.5 bg-red-50 border border-red-200 rounded-lg">
+                          <p className="text-xs font-medium text-red-800 mb-1">
+                            Position: [{Math.round(note.bbox?.[0] || 0)}%, {Math.round(note.bbox?.[1] || 0)}%]
+                          </p>
+                          <p className="text-xs text-red-700">{note.comment}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-500">No issues reported</p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Panel Footer */}
+            <div className="px-4 py-2.5 border-t border-gray-200 bg-gray-50">
+              <div className="text-xs text-gray-600 text-center">
+                VIEWS ({annotations.length}/{annotations.length})
               </div>
-            )}
+            </div>
           </div>
+        )}
+
+        {/* Collapse Button for Right Panel */}
+        {rightPanelCollapsed && (
+          <button
+            onClick={() => setRightPanelCollapsed(false)}
+            className="absolute right-0 top-1/2 -translate-y-1/2 z-30 w-6 h-12 bg-white border border-gray-200 rounded-l-lg shadow-sm flex items-center justify-center hover:bg-gray-50"
+          >
+            <svg className="w-4 h-4 text-gray-600 rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"/>
+            </svg>
+          </button>
+        )}
+      </div>
+
+      {/* Bottom Action Bar */}
+      <div className="bg-white border-t border-gray-200 px-6 py-2.5 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <button className="text-xs text-gray-600 hover:text-gray-900 px-2 py-1">← PREVIOUS</button>
+          <button className="text-xs text-gray-600 hover:text-gray-900 px-2 py-1">SKIP →</button>
+          <button className="text-xs text-gray-600 hover:text-gray-900 px-2 py-1">REQUEST REVISION</button>
+        </div>
+        
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleSave}
+            disabled={saving || task?.status === 'submitted' || task?.status === 'approved'}
+            className="px-4 py-1.5 text-xs font-medium bg-white text-gray-700 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            SAVE DRAFT
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={saving || task?.status === 'submitted' || task?.status === 'approved'}
+            className={`px-6 py-1.5 text-xs font-semibold text-white rounded transition-colors ${
+              task?.status === 'rejected' 
+                ? 'bg-yellow-600 hover:bg-yellow-700' 
+                : 'bg-green-600 hover:bg-green-700'
+            } disabled:opacity-50 disabled:cursor-not-allowed`}
+          >
+            APPROVE BATCH
+          </button>
         </div>
       </div>
+
+      {/* Global Status Bar */}
+      <div className="bg-gray-900 text-gray-300 px-6 py-1.5 flex items-center justify-between text-[10px] font-mono">
+        <div className="flex items-center gap-4">
+          <span className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
+            <span>CONNECTED</span>
+          </span>
+          <span>MOUSE: {mousePosition.x}, {mousePosition.y}</span>
+          <span>ZOOM: {zoom}%</span>
+          <span>LABELS: {annotations.length}</span>
+        </div>
+        <div className="flex items-center gap-4">
+          <span>SHORTCUTS: B=Box, P=Polygon, O=Point, +/-=Zoom, 0=Reset</span>
+          <span className="text-green-400">AUTO-SAVE ACTIVE</span>
+        </div>
+      </div>
+
+      {/* Message Alert */}
+      {message && (
+        <div className="fixed top-4 right-4 z-50 bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg text-sm">
+          {message}
+        </div>
+      )}
     </div>
   );
 };
