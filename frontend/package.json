@@ -8,11 +8,13 @@
     "@mui/icons-material": "^5.14.3",
     "@mui/material": "^5.14.5",
     "axios": "^1.5.0",
+    "framer-motion": "^12.28.1",
     "lucide-react": "^0.562.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-dropzone": "^14.2.3",
-    "react-router-dom": "^6.16.0"
+    "react-router-dom": "^6.16.0",
+    "recharts": "^3.7.0"
   },
   "scripts": {
     "start": "react-scripts start",

@@ -33,14 +33,14 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#030014] flex items-center justify-center p-4 selection:bg-indigo-500/30">
-      {/* Background Decorative Elements */}
+    <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center p-4 selection:bg-indigo-500/30 font-sans">
+      {/* Background Decorative Elements - Brighter/Softer */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-[10%] -left-[10%] w-[40%] h-[40%] bg-indigo-600/20 rounded-full blur-[120px]" />
-        <div className="absolute -bottom-[10%] -right-[10%] w-[40%] h-[40%] bg-purple-600/20 rounded-full blur-[120px]" />
+        <div className="absolute -top-[10%] -left-[10%] w-[50%] h-[50%] bg-indigo-200/40 rounded-full blur-[120px]" />
+        <div className="absolute -bottom-[10%] -right-[10%] w-[50%] h-[50%] bg-purple-200/40 rounded-full blur-[120px]" />
       </div>
 
-      <div className="w-full max-w-[1000px] grid lg:grid-cols-2 rounded-3xl overflow-hidden bg-white/[0.03] backdrop-blur-2xl border border-white/10 shadow-2xl relative z-10">
+      <div className="w-full max-w-[1050px] grid lg:grid-cols-2 rounded-[2.5rem] overflow-hidden bg-white/60 backdrop-blur-2xl border border-white shadow-[0_20px_50px_rgba(0,0,0,0.05)] relative z-10">
 
         {/* Left Side: Image/Branding */}
         <div className="hidden lg:block relative group overflow-hidden">
@@ -56,15 +56,14 @@ const Login = () => {
                 Data Labeling Support System
               </span>
             </h2>
-
           </div>
         </div>
 
         {/* Right Side: Form */}
-        <div className="p-8 lg:p-12 bg-white/5 backdrop-blur-md flex flex-col justify-center">
+        <div className="p-8 lg:p-14 bg-white/40 backdrop-blur-3xl flex flex-col justify-center">
           <div className="mb-10 text-center lg:text-left">
-            <h1 className="text-3xl font-bold text-white mb-2 justify-center">Welcome</h1>
-
+            <h1 className="text-4xl font-extrabold text-slate-900 mb-2">Welcome</h1>
+            <p className="text-slate-500">Sign in to your account to continue</p>
           </div>
 
           {error && (
@@ -76,9 +75,9 @@ const Login = () => {
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-300 ml-1">Email Address</label>
+              <label className="text-sm font-semibold text-slate-700 ml-1">Email Address</label>
               <div className="relative group">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-500 group-focus-within:text-indigo-400 transition-colors">
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400 group-focus-within:text-indigo-600 transition-colors">
                   <Mail size={18} />
                 </div>
                 <input
@@ -86,7 +85,7 @@ const Login = () => {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 text-white rounded-xl py-3 pl-11 pr-4 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all placeholder:text-gray-600"
+                  className="w-full bg-white/80 border border-slate-200 text-slate-900 rounded-2xl py-3.5 pl-11 pr-4 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder:text-slate-400 shadow-sm"
                   placeholder="name@company.com"
                 />
               </div>
@@ -94,11 +93,10 @@ const Login = () => {
 
             <div className="space-y-2">
               <div className="flex justify-between items-center ml-1">
-                <label className="text-sm font-medium text-gray-300">Password</label>
-
+                <label className="text-sm font-semibold text-slate-700">Password</label>
               </div>
               <div className="relative group">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-500 group-focus-within:text-indigo-400 transition-colors">
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400 group-focus-within:text-indigo-600 transition-colors">
                   <Lock size={18} />
                 </div>
                 <input
@@ -106,7 +104,7 @@ const Login = () => {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 text-white rounded-xl py-3 pl-11 pr-4 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all placeholder:text-gray-600"
+                  className="w-full bg-white/80 border border-slate-200 text-slate-900 rounded-2xl py-3.5 pl-11 pr-4 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder:text-slate-400 shadow-sm"
                   placeholder="••••••••"
                 />
               </div>
@@ -115,10 +113,10 @@ const Login = () => {
             <button
               type="submit"
               disabled={loading}
-              className="w-full relative group overflow-hidden rounded-xl p-[1px] font-semibold transition-all hover:shadow-[0_0_20px_rgba(99,102,241,0.4)] disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full relative group overflow-hidden rounded-2xl p-[1px] font-bold transition-all hover:shadow-xl hover:shadow-indigo-500/20 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <div className="absolute inset-0 bg-gradient-to-r from-indigo-600 to-purple-600 group-hover:from-indigo-500 group-hover:to-purple-500" />
-              <div className="relative bg-[#030014]/40 group-hover:bg-transparent transition-colors py-3 flex items-center justify-center gap-2 text-white">
+              <div className="relative bg-white/10 group-hover:bg-transparent transition-colors py-3.5 flex items-center justify-center gap-2 text-white">
                 {loading ? (
                   <Loader2 className="animate-spin" size={20} />
                 ) : (
@@ -131,7 +129,16 @@ const Login = () => {
             </button>
           </form>
 
-          <div className="mt-8 text-center text-gray-400">
+          <div className="mt-8 text-center">
+            <p className="text-sm text-slate-500">
+              Need access?{' '}
+              <button
+                onClick={() => navigate('/register')}
+                className="text-indigo-600 hover:text-indigo-700 font-bold transition-colors underline-offset-4 hover:underline"
+              >
+                Contact Administrator
+              </button>
+            </p>
           </div>
         </div>
       </div>
