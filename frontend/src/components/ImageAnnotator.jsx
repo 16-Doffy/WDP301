@@ -28,7 +28,7 @@ import {
   Add as AddIcon,
 } from '@mui/icons-material';
 
-const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotationsChange, initialAnnotations = [], selectedTool = 'bbox', onMouseMove = null }) => {
+const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotationsChange, initialAnnotations = [] }) => {
   const [annotations, setAnnotations] = useState(initialAnnotations);
   const [zoom, setZoom] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -146,14 +146,6 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
   };
 
   const handleMouseMove = (e) => {
-    // Call onMouseMove callback if provided
-    if (onMouseMove) {
-      const coords = getImageCoordinates(e);
-      if (coords) {
-        onMouseMove({ x: Math.round(coords.x), y: Math.round(coords.y) });
-      }
-    }
-    
     // Cancel previous animation frame
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);

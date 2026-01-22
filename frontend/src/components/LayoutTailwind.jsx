@@ -38,11 +38,11 @@ const LayoutTailwind = () => {
         icon: '📝',
         path: '/annotator/tasks',
       });
-      baseItems.push({
-        text: 'Reviews',
-        icon: '✅',
-        path: '/annotator/reviews',
-      });
+      // baseItems.push({
+      //   text: 'Reviews',
+      //   icon: '✅',
+      //   path: '/annotator/reviews',
+      // });
     }
 
     if (user.role === 'reviewer' || user.role === 'admin') {
