@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
@@ -17,10 +17,27 @@ const ReviewerTask = () => {
   const [viewMode, setViewMode] = useState('side-by-side');
   const [selectedError, setSelectedError] = useState('');
   const [autoNext, setAutoNext] = useState(false);
+  const [pendingTasks, setPendingTasks] = useState([]);
+  const [darkMode, setDarkMode] = useState(false);
+  const [hoveredObjectIndex, setHoveredObjectIndex] = useState(null);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [newMessage, setNewMessage] = useState('');
+  const carouselRef = useRef(null);
+  const [carouselScroll, setCarouselScroll] = useState(0);
 
   useEffect(() => {
     fetchTask();
+    fetchPendingTasks();
   }, [id]);
+
+  const fetchPendingTasks = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/api/reviews/all`);
+      setPendingTasks(response.data.pending || []);
+    } catch (error) {
+      console.error('Error fetching pending tasks:', error);
+    }
+  };
 
   const fetchTask = async () => {
     try {
@@ -28,6 +45,15 @@ const ReviewerTask = () => {
       setTask(response.data);
       setReviewNotes(response.data.reviewNotes || []);
       setReviewComments(response.data.reviewComments || '');
+      // Load chat messages from review comments
+      if (response.data.reviewComments) {
+        setChatMessages([{
+          id: 1,
+          text: response.data.reviewComments,
+          sender: 'reviewer',
+          timestamp: new Date()
+        }]);
+      }
     } catch (error) {
       console.error('Error fetching task:', error);
     } finally {
@@ -49,7 +75,13 @@ const ReviewerTask = () => {
           reviewNotes: payloadNotes,
         });
         alert('Đã phê duyệt task thành công!');
-        navigate('/reviewer/tasks');
+        const updatedResponse = await axios.get(`${API_URL}/api/reviews/all`);
+        const updatedPendingTasks = updatedResponse.data.pending || [];
+        if (autoNext && updatedPendingTasks.length > 0) {
+          navigate(`/reviewer/tasks/${updatedPendingTasks[0]._id}`);
+        } else {
+          navigate('/reviewer/tasks');
+        }
       } catch (error) {
         const errorMessage = error.response?.data?.message || 'Lỗi khi phê duyệt task';
         alert(errorMessage);
@@ -58,7 +90,7 @@ const ReviewerTask = () => {
         setProcessing(false);
       }
     }
-  }, [id, reviewComments, reviewNotes, navigate]);
+  }, [id, reviewComments, reviewNotes, autoNext, navigate]);
 
   const handleReject = useCallback(async () => {
     if (!reviewComments.trim()) {
@@ -80,11 +112,17 @@ const ReviewerTask = () => {
         }));
         await axios.post(`${API_URL}/api/reviews/${id}/reject`, {
           reviewComments: reviewComments.trim(),
-          errorCategory: errorCategory || 'other',
+          errorCategory: errorCategory || selectedError || 'other',
           reviewNotes: payloadNotes,
         });
         alert('Đã từ chối task thành công!');
-        navigate('/reviewer/tasks');
+        const updatedResponse = await axios.get(`${API_URL}/api/reviews/all`);
+        const updatedPendingTasks = updatedResponse.data.pending || [];
+        if (autoNext && updatedPendingTasks.length > 0) {
+          navigate(`/reviewer/tasks/${updatedPendingTasks[0]._id}`);
+        } else {
+          navigate('/reviewer/tasks');
+        }
       } catch (error) {
         const errorMessage = error.response?.data?.message || error.response?.data?.errors?.[0]?.msg || 'Lỗi khi từ chối task';
         alert(errorMessage);
@@ -93,38 +131,40 @@ const ReviewerTask = () => {
         setProcessing(false);
       }
     }
-  }, [id, reviewComments, reviewNotes, errorCategory, navigate]);
+  }, [id, reviewComments, reviewNotes, errorCategory, selectedError, autoNext, navigate]);
 
-  const addNoteForObject = (obj, idx) => {
-    const text = (noteDrafts[idx] || '').trim();
-    if (!text) {
-      alert('Nhập nội dung ghi chú trước khi thêm');
-      return;
+  const handleSkip = () => {
+    if (pendingTasks.length > 1) {
+      const currentIndex = pendingTasks.findIndex(t => t._id === id);
+      if (currentIndex < pendingTasks.length - 1) {
+        navigate(`/reviewer/tasks/${pendingTasks[currentIndex + 1]._id}`);
+      } else if (currentIndex > 0) {
+        navigate(`/reviewer/tasks/${pendingTasks[currentIndex - 1]._id}`);
+      }
     }
-    if (!obj?.bbox || obj.bbox.length < 4) {
-      alert('BBox không hợp lệ để ghi chú');
-      return;
-    }
-    const newNote = {
-      bbox: obj.bbox,
-      label: obj.label,
-      comment: text,
-      localId: Date.now() + idx
+  };
+
+  const sendMessage = () => {
+    if (!newMessage.trim()) return;
+    const message = {
+      id: Date.now(),
+      text: newMessage,
+      sender: 'reviewer',
+      timestamp: new Date()
     };
-    setReviewNotes([...reviewNotes, newNote]);
-    setNoteDrafts({ ...noteDrafts, [idx]: '' });
+    setChatMessages([...chatMessages, message]);
+    setReviewComments(prev => prev ? `${prev}\n${newMessage}` : newMessage);
+    setNewMessage('');
   };
 
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyPress = (e) => {
       if (task?.status === 'approved' || task?.status === 'rejected') return;
-      // Ctrl/Cmd + Enter to approve
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         handleApprove();
       }
-      // Ctrl/Cmd + Shift + Enter to reject
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'Enter') {
         e.preventDefault();
         if (reviewComments.trim() && reviewNotes.length > 0) {
@@ -136,7 +176,6 @@ const ReviewerTask = () => {
     return () => window.removeEventListener('keydown', handleKeyPress);
   }, [task, reviewComments, reviewNotes, handleApprove, handleReject]);
 
-  // Calculate accuracy/quality score
   const calculateQualityScore = () => {
     if (!task?.labels?.objects || task.labels.objects.length === 0) return 0;
     const totalObjects = task.labels.objects.length;
@@ -147,279 +186,588 @@ const ReviewerTask = () => {
 
   const qualityScore = calculateQualityScore();
   const isReviewed = task?.status === 'approved' || task?.status === 'rejected';
+  const accuracy = 94.2;
+  const rejection = 4.2;
+  const batchProgress = pendingTasks.length > 0 ? ((pendingTasks.length - pendingTasks.findIndex(t => t._id === id)) / pendingTasks.length) * 100 : 0;
+
+  const getTimeAgo = (date) => {
+    const now = new Date();
+    const diffInSeconds = Math.floor((now - date) / 1000);
+    if (diffInSeconds < 60) return `${diffInSeconds}s ago`;
+    const diffInMinutes = Math.floor(diffInSeconds / 60);
+    if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+    const diffInHours = Math.floor(diffInMinutes / 60);
+    if (diffInHours < 24) return `${diffInHours}h ago`;
+    const diffInDays = Math.floor(diffInHours / 24);
+    return `${diffInDays}d ago`;
+  };
+
+  const errorTypes = [
+    {
+      id: 'tightness',
+      name: 'Tightness Issue',
+      description: "Bounding box doesn't fit object",
+      icon: '📐',
+      color: 'from-yellow-400 to-orange-500'
+    },
+    {
+      id: 'missed',
+      name: 'Missed Object',
+      description: 'Visible object not labeled',
+      icon: '👁️',
+      color: 'from-blue-400 to-cyan-500'
+    },
+    {
+      id: 'wrong_class',
+      name: 'Wrong Class',
+      description: 'Categorization error',
+      icon: '🏷️',
+      color: 'from-purple-400 to-pink-500'
+    },
+    {
+      id: 'occlusion',
+      name: 'Occlusion Error',
+      description: 'Improper handling of overlap',
+      icon: '🔀',
+      color: 'from-red-400 to-rose-500'
+    }
+  ];
+
+  const scrollCarousel = (direction) => {
+    if (carouselRef.current) {
+      const scrollAmount = 300;
+      const currentScroll = carouselRef.current.scrollLeft;
+      const newScroll = direction === 'left' 
+        ? currentScroll - scrollAmount 
+        : currentScroll + scrollAmount;
+      const maxScroll = carouselRef.current.scrollWidth - carouselRef.current.clientWidth;
+      const finalScroll = Math.max(0, Math.min(newScroll, maxScroll));
+      carouselRef.current.scrollTo({ left: finalScroll, behavior: 'smooth' });
+      setCarouselScroll(finalScroll);
+    }
+  };
+
+  useEffect(() => {
+    if (carouselRef.current) {
+      const handleScroll = () => {
+        setCarouselScroll(carouselRef.current.scrollLeft);
+      };
+      carouselRef.current.addEventListener('scroll', handleScroll);
+      return () => {
+        if (carouselRef.current) {
+          carouselRef.current.removeEventListener('scroll', handleScroll);
+        }
+      };
+    }
+  }, [pendingTasks]);
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className={`flex items-center justify-center min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 to-purple-50'}`}>
+        <div className={`animate-spin rounded-full h-16 w-16 border-4 ${darkMode ? 'border-emerald-400 border-t-transparent' : 'border-emerald-500 border-t-transparent'}`}></div>
       </div>
     );
   }
 
   return (
-    <div className="flex-1 flex overflow-hidden bg-gray-50">
-      {/* Left Sidebar - Review Queue */}
-      <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
-        <div className="p-4 border-b border-gray-200">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="font-bold text-gray-900">REVIEW QUEUE</h2>
-            <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded-full">
-              12 Pending
-            </span>
-          </div>
+    <div className={`flex-1 flex flex-col overflow-hidden ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50'}`}>
+      {/* Top Header - Dynamic Style */}
+      <div className={`${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white/80 backdrop-blur-lg border-gray-200'} border-b px-6 py-4 flex items-center justify-between z-10`}>
+        <div className="flex items-center gap-4">
+          <h1 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+            {darkMode ? '🔍 Premium Dark Audit Station' : '⚡ Dynamic Reviewer Hub'}
+          </h1>
+          <span className={`px-3 py-1 rounded-full text-xs font-semibold ${darkMode ? 'bg-emerald-900/50 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}>
+            {pendingTasks.length} PENDING
+          </span>
         </div>
-        <div className="flex-1 overflow-y-auto p-2">
-          <div className="space-y-2">
-            <div className="p-3 bg-green-50 border-2 border-green-300 rounded-lg cursor-pointer hover:bg-green-100">
-              <div className="flex items-center justify-between mb-1">
-                <span className="font-semibold text-gray-900">TASK #{id?.substring(0, 8)}</span>
-                <span className="text-xs text-gray-500">2m ago</span>
-              </div>
-              <p className="text-sm text-gray-700 mb-1">Vehicle Detection: Urban St.</p>
-              <p className="text-xs text-gray-600">Annotator: {task?.annotatorId?.fullName || task?.annotatorId?.username || 'Unknown'}</p>
+        <div className="flex items-center gap-3">
+          <div className="flex gap-2">
+            <button 
+              onClick={() => setViewMode('side-by-side')}
+              className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
+                viewMode === 'side-by-side' 
+                  ? darkMode ? 'bg-emerald-600 text-white' : 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/50'
+                  : darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-white/60 text-gray-700 hover:bg-white/80'
+              }`}
+            >
+              Side-by-Side
+            </button>
+            <button 
+              onClick={() => setViewMode('overlay')}
+              className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
+                viewMode === 'overlay' 
+                  ? darkMode ? 'bg-emerald-600 text-white' : 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/50'
+                  : darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-white/60 text-gray-700 hover:bg-white/80'
+              }`}
+            >
+              Overlay
+            </button>
+          </div>
+          <button 
+            onClick={() => setDarkMode(!darkMode)}
+            className={`p-2 rounded-lg transition-all ${darkMode ? 'bg-gray-700 text-yellow-300 hover:bg-gray-600' : 'bg-white/60 text-gray-700 hover:bg-white/80'}`}
+          >
+            {darkMode ? '☀️' : '🌙'}
+          </button>
+        </div>
+      </div>
+
+      {/* Task Carousel - Horizontal Scroll */}
+      <div className={`${darkMode ? 'bg-gray-800/50' : 'bg-white/40 backdrop-blur-md'} border-b ${darkMode ? 'border-gray-700' : 'border-gray-200/50'} px-6 py-4 relative`}>
+        <div className="flex items-center gap-4">
+          <h2 className={`font-bold text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'} whitespace-nowrap`}>REVIEW QUEUE</h2>
+          <div className="flex-1 relative">
+            <div 
+              ref={carouselRef}
+              className="flex gap-3 overflow-x-auto scrollbar-hide scroll-smooth"
+              style={{ scrollLeft: carouselScroll }}
+            >
+              {pendingTasks.map((pendingTask, idx) => {
+                const isActive = pendingTask._id === id;
+                const timeAgo = pendingTask.submittedAt ? getTimeAgo(new Date(pendingTask.submittedAt)) : '';
+                return (
+                  <div
+                    key={pendingTask._id}
+                    onClick={() => navigate(`/reviewer/tasks/${pendingTask._id}`)}
+                    className={`flex-shrink-0 w-48 rounded-xl p-3 cursor-pointer transition-all duration-300 ${
+                      isActive
+                        ? darkMode 
+                          ? 'bg-emerald-600/30 border-2 border-emerald-400 shadow-lg shadow-emerald-500/50 scale-105' 
+                          : 'bg-gradient-to-br from-emerald-400 to-teal-500 border-2 border-emerald-300 shadow-xl shadow-emerald-500/50 scale-105'
+                        : darkMode
+                          ? 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700 hover:scale-102'
+                          : 'bg-white/60 backdrop-blur-sm border border-gray-300/50 hover:bg-white/80 hover:scale-102'
+                    }`}
+                  >
+                    {pendingTask.dataItem?.mimeType?.startsWith('image/') && (
+                      <div className="w-full h-24 mb-2 rounded-lg overflow-hidden bg-gray-200">
+                        <img 
+                          src={`${API_URL}/${pendingTask.dataItem?.path}`}
+                          alt="Task thumbnail"
+                          className="w-full h-full object-cover"
+                          onError={(e) => { e.target.style.display = 'none'; }}
+                        />
+                      </div>
+                    )}
+                    <div className={`text-xs font-bold mb-1 ${isActive ? (darkMode ? 'text-white' : 'text-white') : (darkMode ? 'text-gray-300' : 'text-gray-700')}`}>
+                      TSK-{pendingTask._id?.substring(0, 8).toUpperCase()}
+                    </div>
+                    <div className={`text-xs ${isActive ? (darkMode ? 'text-emerald-200' : 'text-white/90') : (darkMode ? 'text-gray-400' : 'text-gray-600')}`}>
+                      {pendingTask.projectId?.name || 'Project'}
+                    </div>
+                    {timeAgo && (
+                      <div className={`text-xs mt-1 ${isActive ? (darkMode ? 'text-emerald-300' : 'text-white/80') : (darkMode ? 'text-gray-500' : 'text-gray-500')}`}>
+                        {timeAgo}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-            <div className="p-3 bg-white border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
-              <div className="flex items-center justify-between mb-1">
-                <span className="font-semibold text-gray-900">TASK #84022</span>
-                <span className="text-xs text-gray-500">15m ago</span>
-              </div>
-              <p className="text-sm text-gray-700 mb-1">Lane Segmentation: Highway</p>
-              <p className="text-xs text-gray-600">Annotator: Sarah K.</p>
-            </div>
-            <div className="p-3 bg-white border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
-              <div className="flex items-center justify-between mb-1">
-                <span className="font-semibold text-gray-900">TASK #84023</span>
-                <span className="text-xs text-gray-500">1h ago</span>
-              </div>
-              <p className="text-sm text-gray-700 mb-1">Traffic Sign Recognition</p>
-              <p className="text-xs text-gray-600">Annotator: John D.</p>
-            </div>
+            {pendingTasks.length > 0 && (
+              <>
+                {carouselScroll > 10 && (
+                  <button
+                    onClick={() => scrollCarousel('left')}
+                    className={`absolute left-0 top-1/2 -translate-y-1/2 p-2 rounded-full z-10 ${darkMode ? 'bg-gray-700 text-white hover:bg-gray-600' : 'bg-white/80 text-gray-700 hover:bg-white'} shadow-lg`}
+                  >
+                    ←
+                  </button>
+                )}
+                {carouselRef.current && carouselScroll < (carouselRef.current.scrollWidth - carouselRef.current.clientWidth - 10) && (
+                  <button
+                    onClick={() => scrollCarousel('right')}
+                    className={`absolute right-0 top-1/2 -translate-y-1/2 p-2 rounded-full z-10 ${darkMode ? 'bg-gray-700 text-white hover:bg-gray-600' : 'bg-white/80 text-gray-700 hover:bg-white'} shadow-lg`}
+                  >
+                    →
+                  </button>
+                )}
+              </>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="bg-white border-b border-gray-200 px-6 py-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <span className="text-lg font-bold text-green-700">LABELCORE PRO - QUALITY AUDIT SYSTEM</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="flex gap-2">
-                <button 
-                  onClick={() => setViewMode('side-by-side')}
-                  className={`px-3 py-1 text-sm font-medium rounded ${viewMode === 'side-by-side' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}
+      {/* Main Content Area */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Left Sidebar - Detected Objects with Smart Highlight */}
+        <div className={`w-80 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white/60 backdrop-blur-lg border-gray-200/50'} border-r flex flex-col`}>
+          <div className={`p-4 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+            <h3 className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+              DETECTED OBJECTS
+            </h3>
+            <p className={`text-xs mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+              {task?.labels?.objects?.length || 0} TOTAL
+            </p>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 space-y-2">
+            {task?.labels?.objects?.map((obj, idx) => {
+              const labelInfo = task?.projectId?.labelSet?.find(l => l.name === obj.label);
+              const isHovered = hoveredObjectIndex === idx;
+              return (
+                <div
+                  key={idx}
+                  id={`object-${idx}`}
+                  onMouseEnter={() => setHoveredObjectIndex(idx)}
+                  onMouseLeave={() => setHoveredObjectIndex(null)}
+                  className={`p-3 rounded-lg cursor-pointer transition-all duration-200 ${
+                    isHovered
+                      ? darkMode
+                        ? 'bg-emerald-600/30 border-2 border-emerald-400 shadow-lg shadow-emerald-500/50'
+                        : 'bg-emerald-100 border-2 border-emerald-400 shadow-lg'
+                      : darkMode
+                        ? 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
+                        : 'bg-white/40 border border-gray-300/50 hover:bg-white/60'
+                  }`}
                 >
-                  Side-by-Side
-                </button>
-                <button 
-                  onClick={() => setViewMode('overlay')}
-                  className={`px-3 py-1 text-sm font-medium rounded ${viewMode === 'overlay' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}
-                >
-                  Overlay View
-                </button>
-              </div>
-              <button className="text-gray-600 hover:text-gray-900">🌙</button>
-              <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                <span className="text-xs font-medium text-green-700">JD</span>
-              </div>
-            </div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                      {obj.label || `OBJECT_${idx + 1}`}
+                    </span>
+                    <span className={`text-xs px-2 py-0.5 rounded ${darkMode ? 'bg-emerald-900/50 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}>
+                      {obj.confidence ? `${(obj.confidence * 100).toFixed(1)}%` : 'N/A'}
+                    </span>
+                  </div>
+                  <div className={`text-xs font-mono ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    [{obj.bbox?.[0]?.toFixed(0) || 0}, {obj.bbox?.[1]?.toFixed(0) || 0}, {obj.bbox?.[2]?.toFixed(0) || 0}, {obj.bbox?.[3]?.toFixed(0) || 0}]
+                  </div>
+                  {obj.answer && (
+                    <div className={`text-xs mt-1 ${darkMode ? 'text-emerald-300' : 'text-emerald-600'}`}>
+                      ✓ Has answers
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
 
-
-        {/* Main Content - Side by Side View */}
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="mb-4">
-            <h2 className="text-lg font-bold text-gray-900 mb-1">CURRENTLY AUDITING</h2>
-            <p className="text-sm text-gray-600">{task?.dataItem?.filename || 'Image'}</p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-6">
-            {/* Reference Guidelines */}
-            <div className="bg-white rounded-lg border border-gray-200 p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-bold text-gray-900">REFERENCE GUIDELINES</h3>
-                <span className="px-2 py-1 bg-red-100 text-red-800 text-xs font-semibold rounded">Strict Mode</span>
-              </div>
-          {task?.dataItem?.mimeType?.startsWith('image/') && (
-                <div className="mb-3">
-                  <ImageViewer
-                    imageUrl={`${API_URL}/${task.dataItem.path}`}
-                    annotations={[]}
-                    labelSet={task?.projectId?.labelSet || []}
-                    reviewNotes={[]}
-                    readOnly={true}
-                    maxHeight="300px"
-                  />
-                </div>
-              )}
-              <div className="text-sm text-gray-700">
-                <p className="font-semibold mb-1">Guideline 2.4: Tight Bounding Boxes</p>
-                <p className="text-gray-600">Ensure bounding boxes touch the outermost pixels of the object. No more than 2px gap allowed.</p>
-              </div>
+        {/* Center - Image Viewer with Smart Highlight */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className={`flex-1 overflow-y-auto p-6 ${darkMode ? 'bg-gray-900' : ''}`}>
+            <div className="mb-4">
+              <h2 className={`text-lg font-bold mb-1 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                CURRENTLY AUDITING
+              </h2>
+              <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                {task?.dataItem?.filename || 'Image'}
+              </p>
             </div>
 
-            {/* Annotator Output */}
-            <div className="bg-white rounded-lg border border-gray-200 p-4">
-              <h3 className="font-bold text-gray-900 mb-3">ANNOTATOR OUTPUT</h3>
-              {task?.dataItem?.mimeType?.startsWith('image/') ? (
-                <>
-                  <div className="mb-3">
+            <div className="grid grid-cols-2 gap-6">
+              {/* Reference Guidelines - Glassmorphism */}
+              <div className={`${darkMode ? 'bg-gray-800/80 border-gray-700' : 'bg-white/60 backdrop-blur-lg border-gray-200/50'} rounded-2xl border p-6 shadow-xl`}>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                    REFERENCE GUIDELINES
+                  </h3>
+                  <span className={`px-3 py-1 rounded-full text-xs font-semibold ${darkMode ? 'bg-red-900/50 text-red-300' : 'bg-red-100 text-red-700'}`}>
+                    STRICT MODE
+                  </span>
+                </div>
+                {task?.dataItem?.mimeType?.startsWith('image/') && (
+                  <div className="mb-4 rounded-xl overflow-hidden">
                     <ImageViewer
                       imageUrl={`${API_URL}/${task.dataItem.path}`}
-                      annotations={task?.labels?.objects?.map((obj, idx) => ({
-                        id: idx,
-                        bbox: obj.bbox,
-                        label: obj.label,
-                      })) || []}
+                      annotations={[]}
                       labelSet={task?.projectId?.labelSet || []}
-                      reviewNotes={reviewNotes}
-                      readOnly={false}
-                      maxHeight="300px"
-                      onAnnotationClick={(ann) => {
-                        const element = document.getElementById(`object-${ann.index}`);
-                        if (element) {
-                          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        }
-                      }}
+                      reviewNotes={[]}
+                      readOnly={true}
+                      maxHeight="400px"
                     />
                   </div>
-                  <div className="flex items-center gap-4 text-sm">
-                    <span className="text-green-600 font-semibold">CONFIDENCE 94.2%</span>
-                    <span className="text-gray-600">CLASSES {task?.labels?.objects?.length || 0} Total</span>
-                    <span className="text-gray-600">TIME TAKEN 04:12s</span>
+                )}
+                <div className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                  <p className="font-semibold mb-1">Guideline 2.4: Tight Bounding Boxes</p>
+                  <p className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
+                    Ensure bounding boxes touch the outermost pixels of the object. No more than 2px gap allowed.
+                  </p>
+                </div>
+              </div>
+
+              {/* Annotator Output - Glassmorphism with Neon Glow on Hover */}
+              <div className={`${darkMode ? 'bg-gray-800/80 border-gray-700' : 'bg-white/60 backdrop-blur-lg border-gray-200/50'} rounded-2xl border p-6 shadow-xl`}>
+                <h3 className={`font-bold mb-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                  ANNOTATOR OUTPUT
+                </h3>
+                {task?.dataItem?.mimeType?.startsWith('image/') ? (
+                  <>
+                    <div className={`mb-4 rounded-xl overflow-hidden transition-all duration-300 ${
+                      hoveredObjectIndex !== null 
+                        ? darkMode 
+                          ? 'ring-4 ring-emerald-400/50 shadow-2xl shadow-emerald-500/30' 
+                          : 'ring-4 ring-emerald-300/50 shadow-2xl'
+                        : ''
+                    }`}>
+                      <ImageViewer
+                        imageUrl={`${API_URL}/${task.dataItem.path}`}
+                        annotations={task?.labels?.objects?.map((obj, idx) => ({
+                          id: idx,
+                          bbox: obj.bbox,
+                          label: obj.label,
+                          index: idx,
+                        })) || []}
+                        labelSet={task?.projectId?.labelSet || []}
+                        reviewNotes={reviewNotes}
+                        readOnly={false}
+                        highlightedIndex={hoveredObjectIndex}
+                        maxHeight="400px"
+                        onAnnotationClick={(ann) => {
+                          setHoveredObjectIndex(ann.index);
+                          const element = document.getElementById(`object-${ann.index}`);
+                          if (element) {
+                            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                          }
+                        }}
+                      />
+                    </div>
+                    <div className="flex items-center gap-4 text-sm">
+                      <span className={`font-semibold ${darkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>
+                        CONFIDENCE {accuracy}%
+                      </span>
+                      <span className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
+                        CLASSES {task?.labels?.objects?.length || 0} Total
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <div className={`text-center py-12 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                    Not an image
                   </div>
-                </>
-              ) : (
-                <div className="text-center py-12 text-gray-500">Not an image</div>
-              )}
+                )}
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Right Sidebar - Quality Metrics */}
-        <div className="w-80 border-l border-gray-200 bg-white overflow-y-auto">
+        {/* Right Sidebar - Quality Metrics & Error Classification */}
+        <div className={`w-96 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white/60 backdrop-blur-lg border-gray-200/50'} border-l overflow-y-auto`}>
           <div className="p-6 space-y-6">
+            {/* Quality Metrics - Circular Progress */}
             <div>
-              <h3 className="font-bold text-gray-900 mb-4">QUALITY METRICS</h3>
-              <div className="mb-4">
+              <h3 className={`font-bold mb-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                QUALITY METRICS
+              </h3>
+              
+              {/* Batch Progress */}
+              <div className="mb-6">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm text-gray-600">Batch Progress</span>
-                  <span className="text-sm font-semibold text-gray-900">75%</span>
+                  <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    Batch Progress
+                  </span>
+                  <span className={`text-sm font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                    {Math.round(batchProgress)}%
+                  </span>
                 </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div className="bg-green-600 h-2 rounded-full" style={{ width: '75%' }}></div>
+                <div className={`w-full ${darkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-full h-3 overflow-hidden`}>
+                  <div 
+                    className="bg-gradient-to-r from-emerald-400 to-teal-500 h-3 rounded-full transition-all duration-500 shadow-lg"
+                    style={{ width: `${batchProgress}%` }}
+                  ></div>
                 </div>
               </div>
-              <div className="space-y-3">
-                <div>
-                  <span className="text-sm text-gray-600">ACCURACY</span>
-                  <p className="text-2xl font-bold text-gray-900">98.1</p>
+
+              {/* Circular Progress Charts */}
+              <div className="grid grid-cols-2 gap-4">
+                {/* Accuracy */}
+                <div className="relative w-32 h-32 mx-auto">
+                  <svg className="transform -rotate-90 w-32 h-32">
+                    <circle
+                      cx="64"
+                      cy="64"
+                      r="56"
+                      stroke={darkMode ? '#374151' : '#e5e7eb'}
+                      strokeWidth="12"
+                      fill="none"
+                    />
+                    <circle
+                      cx="64"
+                      cy="64"
+                      r="56"
+                      stroke="#10b981"
+                      strokeWidth="12"
+                      fill="none"
+                      strokeDasharray={`${(accuracy / 100) * 352} 352`}
+                      strokeLinecap="round"
+                      className="transition-all duration-1000"
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <span className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                      {accuracy}
+                    </span>
+                    <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                      ACCURACY
+                    </span>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-sm text-gray-600">REJECTION</span>
-                  <p className="text-2xl font-bold text-red-600">4.2%</p>
+
+                {/* Rejection */}
+                <div className="relative w-32 h-32 mx-auto">
+                  <svg className="transform -rotate-90 w-32 h-32">
+                    <circle
+                      cx="64"
+                      cy="64"
+                      r="56"
+                      stroke={darkMode ? '#374151' : '#e5e7eb'}
+                      strokeWidth="12"
+                      fill="none"
+                    />
+                    <circle
+                      cx="64"
+                      cy="64"
+                      r="56"
+                      stroke="#ef4444"
+                      strokeWidth="12"
+                      fill="none"
+                      strokeDasharray={`${(rejection / 100) * 352} 352`}
+                      strokeLinecap="round"
+                      className="transition-all duration-1000"
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <span className={`text-2xl font-bold ${darkMode ? 'text-red-400' : 'text-red-600'}`}>
+                      {rejection}%
+                    </span>
+                    <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                      REJECTION
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
 
+            {/* Error Classification - Tiles with Icons */}
             <div>
-              <h3 className="font-bold text-gray-900 mb-4">ERROR CLASSIFICATION</h3>
-              <div className="space-y-3">
-                <label className="flex items-start gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
+              <h3 className={`font-bold mb-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                ERROR CLASSIFICATION
+              </h3>
+              <div className="grid grid-cols-2 gap-3">
+                {errorTypes.map((errorType) => (
+                  <button
+                    key={errorType.id}
+                    onClick={() => {
+                      setSelectedError(errorType.id);
+                      setErrorCategory(errorType.id);
+                    }}
+                    className={`p-4 rounded-xl transition-all duration-300 transform ${
+                      selectedError === errorType.id
+                        ? darkMode
+                          ? `bg-gradient-to-br ${errorType.color} text-white shadow-2xl scale-105 ring-4 ring-white/20`
+                          : `bg-gradient-to-br ${errorType.color} text-white shadow-2xl scale-105`
+                        : darkMode
+                          ? 'bg-gray-700/50 text-gray-300 hover:bg-gray-700 hover:scale-102 border border-gray-600'
+                          : 'bg-white/60 text-gray-700 hover:bg-white/80 hover:scale-102 border border-gray-300/50'
+                    }`}
+                  >
+                    <div className="text-3xl mb-2">{errorType.icon}</div>
+                    <div className="text-xs font-bold mb-1">{errorType.name}</div>
+                    <div className={`text-xs ${selectedError === errorType.id ? 'text-white/90' : (darkMode ? 'text-gray-400' : 'text-gray-600')}`}>
+                      {errorType.description}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Chat-like Feedback System */}
+            <div>
+              <h3 className={`font-bold mb-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                AUDITOR FEEDBACK
+              </h3>
+              <div className={`${darkMode ? 'bg-gray-900/50' : 'bg-white/40'} rounded-xl p-4 h-64 flex flex-col`}>
+                <div className="flex-1 overflow-y-auto space-y-3 mb-3">
+                  {chatMessages.length === 0 ? (
+                    <div className={`text-center text-sm ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                      No feedback yet. Start typing...
+                    </div>
+                  ) : (
+                    chatMessages.map((msg) => (
+                      <div
+                        key={msg.id}
+                        className={`flex ${msg.sender === 'reviewer' ? 'justify-end' : 'justify-start'}`}
+                      >
+                        <div className={`max-w-[80%] rounded-lg px-3 py-2 ${
+                          msg.sender === 'reviewer'
+                            ? darkMode ? 'bg-emerald-600 text-white' : 'bg-emerald-500 text-white'
+                            : darkMode ? 'bg-gray-700 text-gray-200' : 'bg-gray-200 text-gray-800'
+                        }`}>
+                          <p className="text-sm">{msg.text}</p>
+                          <p className={`text-xs mt-1 ${msg.sender === 'reviewer' ? (darkMode ? 'text-emerald-200' : 'text-emerald-100') : (darkMode ? 'text-gray-400' : 'text-gray-500')}`}>
+                            {msg.timestamp.toLocaleTimeString()}
+                          </p>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <div className="flex gap-2">
                   <input
-                    type="radio"
-                    name="error"
-                    value="tightness"
-                    checked={selectedError === 'tightness'}
-                    onChange={(e) => setSelectedError(e.target.value)}
-                    className="mt-1"
+                    type="text"
+                    value={newMessage}
+                    onChange={(e) => setNewMessage(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                    placeholder="Add rejection comment..."
+                    className={`flex-1 px-3 py-2 rounded-lg text-sm ${
+                      darkMode 
+                        ? 'bg-gray-800 text-white border-gray-600 focus:border-emerald-500' 
+                        : 'bg-white text-gray-900 border-gray-300 focus:border-emerald-500'
+                    } border focus:outline-none focus:ring-2 focus:ring-emerald-500/50`}
                   />
-                  <div>
-                    <p className="font-medium text-gray-900">Tightness Issue</p>
-                    <p className="text-xs text-gray-600">Bounding box doesn't fit object</p>
-                  </div>
-                </label>
-                <label className="flex items-start gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
-                  <input
-                    type="radio"
-                    name="error"
-                    value="missed"
-                    checked={selectedError === 'missed'}
-                    onChange={(e) => setSelectedError(e.target.value)}
-                    className="mt-1"
-                  />
-                  <div>
-                    <p className="font-medium text-gray-900">Missed Object</p>
-                    <p className="text-xs text-gray-600">Visible object not labeled</p>
-                  </div>
-                </label>
-                <label className="flex items-start gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
-                  <input
-                    type="radio"
-                    name="error"
-                    value="wrong_class"
-                    checked={selectedError === 'wrong_class'}
-                    onChange={(e) => setSelectedError(e.target.value)}
-                    className="mt-1"
-                  />
-                  <div>
-                    <p className="font-medium text-gray-900">Wrong Class</p>
-                    <p className="text-xs text-gray-600">Categorization error</p>
-                  </div>
-                </label>
-                <label className="flex items-start gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
-                  <input
-                    type="radio"
-                    name="error"
-                    value="occlusion"
-                    checked={selectedError === 'occlusion'}
-                    onChange={(e) => setSelectedError(e.target.value)}
-                    className="mt-1"
-                  />
-                  <div>
-                    <p className="font-medium text-gray-900">Occlusion Error</p>
-                    <p className="text-xs text-gray-600">Improper handling of overlap</p>
-                  </div>
-                </label>
+                  <button
+                    onClick={sendMessage}
+                    disabled={!newMessage.trim()}
+                    className={`px-4 py-2 rounded-lg font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                      darkMode
+                        ? 'bg-emerald-600 text-white hover:bg-emerald-500'
+                        : 'bg-emerald-500 text-white hover:bg-emerald-600 shadow-lg'
+                    }`}
+                  >
+                    ➤
+                  </button>
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Bottom Action Bar */}
+      {/* Floating Action Dock */}
       {!isReviewed && (
-        <div className="border-t border-gray-200 bg-white px-6 py-4 flex items-center justify-between">
-          <input
-            type="text"
-          value={reviewComments}
-          onChange={(e) => setReviewComments(e.target.value)}
-            placeholder="Add mandatory feedback for rejection..."
-            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-          />
-          <div className="flex items-center gap-3 ml-4">
-            <button
-              onClick={handleReject}
-              disabled={processing || !reviewComments.trim() || reviewNotes.length === 0}
-              className="px-6 py-2 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-            >
-              <span>×</span> Reject Annotation
-            </button>
-            <button
-              onClick={handleApprove}
-              disabled={processing}
-              className="px-6 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-            >
-              <span>✓</span> Approve Task
-            </button>
-          </div>
-          <div className="flex items-center gap-2 ml-4">
-            <span className="text-sm text-gray-600">►I</span>
-            <span className="text-sm text-gray-600">AUTO-NEXT</span>
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 px-6 py-4 rounded-2xl shadow-2xl ${
+          darkMode 
+            ? 'bg-gray-800/90 backdrop-blur-xl border border-gray-700' 
+            : 'bg-white/90 backdrop-blur-xl border border-gray-200/50'
+        }`}>
+          <button
+            onClick={handleSkip}
+            className={`px-6 py-3 rounded-xl font-bold transition-all transform hover:scale-105 ${
+              darkMode
+                ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`}
+          >
+            <span className="mr-2">⏭️</span> Skip
+          </button>
+          <button
+            onClick={handleReject}
+            disabled={processing || !reviewComments.trim() || reviewNotes.length === 0}
+            className="px-8 py-3 bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-xl font-bold shadow-lg shadow-red-500/50 transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+          >
+            <span className="mr-2">✕</span> Request Change
+          </button>
+          <button
+            onClick={handleApprove}
+            disabled={processing}
+            className="px-8 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl font-bold shadow-lg shadow-emerald-500/50 transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+          >
+            <span className="mr-2">✓</span> Approve Task
+          </button>
+          <div className={`flex items-center gap-2 ml-4 pl-4 border-l ${darkMode ? 'border-gray-700' : 'border-gray-300'}`}>
+            <span className={`text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+              AUTO-NEXT
+            </span>
             <label className="relative inline-flex items-center cursor-pointer">
               <input
                 type="checkbox"
@@ -427,7 +775,15 @@ const ReviewerTask = () => {
                 onChange={(e) => setAutoNext(e.target.checked)}
                 className="sr-only peer"
               />
-              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
+              <div className={`w-12 h-6 rounded-full peer transition-all ${
+                autoNext
+                  ? darkMode ? 'bg-emerald-600' : 'bg-emerald-500'
+                  : darkMode ? 'bg-gray-700' : 'bg-gray-300'
+              } peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300/50`}>
+                <div className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-all ${
+                  autoNext ? 'translate-x-6' : 'translate-x-0'
+                }`}></div>
+              </div>
             </label>
           </div>
         </div>

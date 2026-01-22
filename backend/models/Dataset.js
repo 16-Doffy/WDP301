@@ -4,7 +4,12 @@ const datasetSchema = new mongoose.Schema({
   projectId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Project',
-    required: true
+    required: false // Optional - dataset can exist before project
+  },
+  managerId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true // Required to track who owns the dataset
   },
   name: {
     type: String,

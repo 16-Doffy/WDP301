@@ -62,6 +62,14 @@ const projectSchema = new mongoose.Schema({
     enum: ['draft', 'active', 'completed', 'archived'],
     default: 'draft'
   },
+  deadline: {
+    type: Date
+  },
+  exportFormat: {
+    type: String,
+    enum: ['YOLO', 'VOC', 'COCO', 'JSON', 'CSV'],
+    default: 'JSON'
+  },
   createdAt: {
     type: Date,
     default: Date.now

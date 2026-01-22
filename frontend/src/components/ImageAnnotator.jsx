@@ -464,6 +464,9 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
     if (containerRef.current) {
       containerRef.current.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
     }
+    if (imageRef.current) {
+      imageRef.current.style.transform = '';
+    }
   };
 
   // Cleanup animation frame on unmount
@@ -772,17 +775,6 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
           <Typography variant="body2" color="textSecondary" gutterBottom>
             Bạn đã khoanh vùng một khu vực trên ảnh.
           </Typography>
-          {pendingAnnotation && (
-            <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
-              <Typography variant="body2" gutterBottom>
-                <strong>Vị trí:</strong> [{Math.round(pendingAnnotation.bbox[0])}%, {Math.round(pendingAnnotation.bbox[1])}%] 
-                đến [{Math.round(pendingAnnotation.bbox[2])}%, {Math.round(pendingAnnotation.bbox[3])}%]
-              </Typography>
-              <Typography variant="body2">
-                <strong>Kích thước:</strong> {Math.round(Math.abs(pendingAnnotation.bbox[2] - pendingAnnotation.bbox[0]))}% × {Math.round(Math.abs(pendingAnnotation.bbox[3] - pendingAnnotation.bbox[1]))}%
-              </Typography>
-            </Box>
-          )}
           <Typography variant="body2" sx={{ mt: 2 }}>
             Bạn có muốn tiếp tục chọn label cho vùng này không?
           </Typography>
@@ -804,10 +796,7 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
       }} maxWidth="sm" fullWidth>
         <DialogTitle>Chọn Label cho vùng đã khoanh</DialogTitle>
         <DialogContent>
-          <Typography variant="body2" color="textSecondary" gutterBottom>
-            Bạn đã khoanh vùng từ ({Math.round(pendingAnnotation?.bbox[0] || 0)}%, {Math.round(pendingAnnotation?.bbox[1] || 0)}%) đến ({Math.round(pendingAnnotation?.bbox[2] || 0)}%, {Math.round(pendingAnnotation?.bbox[3] || 0)}%)
-          </Typography>
-          <Typography variant="body2" sx={{ mt: 2, mb: 1 }}>
+          <Typography variant="body2" sx={{ mt: 1, mb: 2 }}>
             Chọn label phù hợp:
           </Typography>
           <FormControl fullWidth sx={{ mt: 1 }}>
@@ -950,10 +939,6 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
         <DialogContent>
           {editingAnnotation && (
             <>
-              <Typography variant="body2" color="textSecondary" gutterBottom>
-                Vị trí: [{Math.round(editingAnnotation.bbox[0])}%, {Math.round(editingAnnotation.bbox[1])}%] đến [{Math.round(editingAnnotation.bbox[2])}%, {Math.round(editingAnnotation.bbox[3])}%]
-              </Typography>
-              
               <FormControl fullWidth sx={{ mt: 2 }}>
                 <InputLabel>Label *</InputLabel>
                 <Select

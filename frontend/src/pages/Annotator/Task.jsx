@@ -17,13 +17,9 @@ const AnnotatorTask = () => {
   const [annotations, setAnnotations] = useState([]);
   const [progress, setProgress] = useState(0);
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString());
-  const [selectedTool, setSelectedTool] = useState('bbox');
   const [rightTab, setRightTab] = useState('labels');
-  const [brightness, setBrightness] = useState(100);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [selectedAnnotation, setSelectedAnnotation] = useState(null);
-  const [zoom, setZoom] = useState(100);
-  const [toolbarCollapsed, setToolbarCollapsed] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const canvasRef = useRef(null);
 
@@ -126,7 +122,7 @@ const AnnotatorTask = () => {
     }
   }, [task]);
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
     setSaving(true);
     try {
       await axios.put(`${API_URL}/api/tasks/${id}/label`, {
@@ -140,9 +136,9 @@ const AnnotatorTask = () => {
     } finally {
       setSaving(false);
     }
-  };
+  }, [id, labels]);
 
-  const handleSubmit = async () => {
+  const handleSubmit = useCallback(async () => {
     if (Object.keys(labels).length === 0 || (labels.objects && labels.objects.length === 0)) {
       alert('Bạn chưa khoanh vùng đối tượng nào. Vui lòng thêm annotations trước khi nộp bài.');
       return;
@@ -193,7 +189,7 @@ const AnnotatorTask = () => {
         setSaving(false);
       }
     }
-  };
+  }, [id, labels, task, currentTaskIndex, batchTasks, navigate]);
 
   const navigateToTask = (taskId) => {
     navigate(`/annotator/tasks/${taskId}`);
@@ -211,6 +207,28 @@ const AnnotatorTask = () => {
     }
   };
 
+  // Keyboard shortcuts - MUST be before any conditional returns
+  useEffect(() => {
+    if (loading) return; // Don't set up shortcuts while loading
+    
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        if (!saving && task?.status !== 'submitted' && task?.status !== 'approved') {
+          handleSave();
+        }
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        if (!saving && task?.status !== 'submitted' && task?.status !== 'approved') {
+          handleSubmit();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [loading, saving, task?.status, handleSave, handleSubmit]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50">
@@ -225,142 +243,10 @@ const AnnotatorTask = () => {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-gray-50 h-screen">
-      {/* Top Header Bar */}
-      <div className="bg-white border-b border-gray-200 px-6 py-3 flex-shrink-0">
-        <div className="flex items-center justify-between">
-          {/* Breadcrumbs */}
-          <div className="flex items-center gap-2 text-sm">
-            <button 
-              onClick={() => navigate('/annotator/tasks')}
-              className="text-gray-600 hover:text-gray-900"
-            >
-              Projects
-            </button>
-            <span className="text-gray-400">›</span>
-            <span className="text-gray-900 font-medium">{task?.projectId?.name || 'Project'}</span>
-            {task?.datasetId?.name && (
-              <>
-                <span className="text-gray-400">›</span>
-                <span className="text-gray-600">{task.datasetId.name}</span>
-              </>
-            )}
-            <span className="text-gray-400">›</span>
-            <span className="text-gray-600">Task #{id?.substring(0, 8)}</span>
-          </div>
-
-          {/* Right Actions */}
-          <div className="flex items-center gap-4">
-            {batchTasks.length > 0 && (
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-gray-500">BATCH PROGRESS</span>
-                <div className="w-32 bg-gray-200 rounded-full h-2">
-                  <div 
-                    className="bg-blue-600 h-2 rounded-full transition-all"
-                    style={{ width: `${batchProgress}%` }}
-                  ></div>
-                </div>
-                <span className="text-xs text-gray-600">
-                  {currentTaskIndex + 1} / {batchTasks.length}
-                </span>
-              </div>
-      )}
-            <button className="text-gray-600 hover:text-gray-900 text-xl">🌙</button>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={handleSave}
-                disabled={saving || task?.status === 'submitted' || task?.status === 'approved'}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                Save Draft
-              </button>
-              <button
-                onClick={handleSubmit}
-                disabled={saving || task?.status === 'submitted' || task?.status === 'approved'}
-                className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors ${
-                  task?.status === 'rejected' 
-                    ? 'bg-yellow-600 hover:bg-yellow-700' 
-                    : 'bg-blue-600 hover:bg-blue-700'
-                } disabled:opacity-50 disabled:cursor-not-allowed`}
-              >
-                Submit Task
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
 
       {/* Main Content Area */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Floating Toolbar (Left) */}
-        <div 
-          className={`bg-white border-r border-gray-200 flex flex-col items-center py-4 gap-3 transition-all duration-300 ${
-            toolbarCollapsed ? 'w-12' : 'w-16'
-          }`}
-        >
-          <button
-            onClick={() => setToolbarCollapsed(!toolbarCollapsed)}
-            className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100 transition-colors"
-            title={toolbarCollapsed ? "Expand toolbar" : "Collapse toolbar"}
-          >
-            {toolbarCollapsed ? '→' : '←'}
-          </button>
-          
-          {!toolbarCollapsed && (
-            <>
-              <button
-                onClick={() => setSelectedTool('bbox')}
-                className={`w-12 h-12 flex items-center justify-center rounded-lg transition-colors ${
-                  selectedTool === 'bbox' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-                title="Bounding Box"
-              >
-                ▢
-              </button>
-              <button
-                onClick={() => setSelectedTool('polygon')}
-                className={`w-12 h-12 flex items-center justify-center rounded-lg transition-colors ${
-                  selectedTool === 'polygon' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-                title="Polygon"
-              >
-                ⬟
-              </button>
-              <button
-                onClick={() => setSelectedTool('point')}
-                className={`w-12 h-12 flex items-center justify-center rounded-lg transition-colors ${
-                  selectedTool === 'point' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
-                title="Point"
-              >
-                🎯
-              </button>
-              <div className="border-t border-gray-200 my-2 w-8"></div>
-              <button
-                onClick={() => setZoom(Math.min(zoom + 10, 200))}
-                className="w-12 h-12 flex items-center justify-center rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
-                title="Zoom In"
-              >
-                🔍+
-              </button>
-              <button
-                onClick={() => setZoom(Math.max(zoom - 10, 25))}
-                className="w-12 h-12 flex items-center justify-center rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
-                title="Zoom Out"
-              >
-                🔍-
-              </button>
-              <button
-                onClick={() => setZoom(100)}
-                className="w-12 h-12 flex items-center justify-center rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors text-xs"
-                title="Reset Zoom"
-              >
-                {zoom}%
-              </button>
-            </>
-              )}
-        </div>
-
-        {/* Canvas Area (70-80% width) */}
+        {/* Canvas Area */}
         <div 
           className="flex-1 flex flex-col overflow-hidden bg-gray-100"
           ref={canvasRef}
@@ -369,7 +255,6 @@ const AnnotatorTask = () => {
           <div className="flex-1 overflow-auto bg-gray-50 p-6 flex items-center justify-center">
           {task?.dataItem?.mimeType?.startsWith('image/') ? (
               <div className="bg-white rounded-lg shadow-lg p-4 max-w-full">
-                <div style={{ transform: `scale(${zoom / 100})`, transformOrigin: 'top left' }}>
                 <ImageAnnotator
                   imageUrl={`${API_URL}/${task.dataItem.path}`}
                   labelSet={task?.projectId?.labelSet || []}
@@ -377,7 +262,6 @@ const AnnotatorTask = () => {
                   onAnnotationsChange={handleAnnotationsChange}
                   initialAnnotations={annotations}
                 />
-                </div>
               </div>
               ) : (
               <div className="text-center py-12 text-gray-500">
@@ -386,40 +270,6 @@ const AnnotatorTask = () => {
             )}
           </div>
 
-          {/* Navigation Bar (Bottom of Canvas) */}
-          <div className="bg-white border-t border-gray-200 px-6 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <button
-                onClick={navigateToPrevious}
-                disabled={currentTaskIndex === 0}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                ← Previous
-              </button>
-              <span className="text-sm text-gray-600">
-                Image {currentTaskIndex + 1} of {batchTasks.length || 1}
-              </span>
-              <button
-                onClick={navigateToNext}
-                disabled={currentTaskIndex >= batchTasks.length - 1}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                Next →
-              </button>
-            </div>
-            <div className="flex items-center gap-4">
-              <span className="text-sm text-gray-600">Brightness</span>
-              <input
-                type="range"
-                min="0"
-                max="200"
-                value={brightness}
-                onChange={(e) => setBrightness(e.target.value)}
-                className="w-32"
-              />
-              <span className="text-sm text-gray-600">{brightness}%</span>
-            </div>
-          </div>
         </div>
 
         {/* Right Sidebar (Collapsible) */}
@@ -650,7 +500,6 @@ const AnnotatorTask = () => {
             <span>CONNECTED</span>
           </span>
           <span>Mouse: {mousePosition.x}, {mousePosition.y}</span>
-          <span>Zoom: {zoom}%</span>
           <span>Labels: {annotations.length}</span>
           <span>Objects: {annotations.length}</span>
         </div>

@@ -16,6 +16,10 @@ import {
   Tabs,
   Tab,
   Alert,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from '@mui/material';
 import { Visibility as ViewIcon } from '@mui/icons-material';
 import axios from 'axios';
@@ -24,6 +28,10 @@ import { API_URL } from '../../config/api';
 const ReviewerDashboard = () => {
   const [pendingTasks, setPendingTasks] = useState([]);
   const [reviewedTasks, setReviewedTasks] = useState([]);
+  const [allPendingTasks, setAllPendingTasks] = useState([]);
+  const [allReviewedTasks, setAllReviewedTasks] = useState([]);
+  const [datasets, setDatasets] = useState([]);
+  const [selectedDataset, setSelectedDataset] = useState('all');
   const [loading, setLoading] = useState(true);
   const [tabValue, setTabValue] = useState(0);
   const navigate = useNavigate();
@@ -32,15 +40,52 @@ const ReviewerDashboard = () => {
     fetchTasks();
   }, []);
 
+  useEffect(() => {
+    filterTasks();
+  }, [selectedDataset, allPendingTasks, allReviewedTasks]);
+
   const fetchTasks = async () => {
     try {
       const response = await axios.get(`${API_URL}/api/reviews/all`);
-      setPendingTasks(response.data.pending || []);
-      setReviewedTasks(response.data.reviewed || []);
+      const pending = response.data.pending || [];
+      const reviewed = response.data.reviewed || [];
+      
+      setAllPendingTasks(pending);
+      setAllReviewedTasks(reviewed);
+      
+      // Extract unique datasets
+      const datasetSet = new Set();
+      [...pending, ...reviewed].forEach(task => {
+        if (task.datasetId?._id) {
+          datasetSet.add(JSON.stringify({
+            _id: task.datasetId._id,
+            name: task.datasetId.name || 'Unknown Dataset'
+          }));
+        }
+      });
+      setDatasets(Array.from(datasetSet).map(ds => JSON.parse(ds)));
+      
+      filterTasks(pending, reviewed);
     } catch (error) {
       console.error('Error fetching tasks:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const filterTasks = (pending = allPendingTasks, reviewed = allReviewedTasks) => {
+    if (selectedDataset === 'all') {
+      setPendingTasks(pending);
+      setReviewedTasks(reviewed);
+    } else {
+      setPendingTasks(pending.filter(task => 
+        task.datasetId?._id === selectedDataset || 
+        task.datasetId?._id?.toString() === selectedDataset
+      ));
+      setReviewedTasks(reviewed.filter(task => 
+        task.datasetId?._id === selectedDataset || 
+        task.datasetId?._id?.toString() === selectedDataset
+      ));
     }
   };
 
@@ -65,9 +110,26 @@ const ReviewerDashboard = () => {
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>
-        Review Dashboard
-      </Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+        <Typography variant="h4">
+          Review Dashboard
+        </Typography>
+        <FormControl sx={{ minWidth: 200 }}>
+          <InputLabel>Filter by Dataset</InputLabel>
+          <Select
+            value={selectedDataset}
+            onChange={(e) => setSelectedDataset(e.target.value)}
+            label="Filter by Dataset"
+          >
+            <MenuItem value="all">All Datasets</MenuItem>
+            {datasets.map((dataset) => (
+              <MenuItem key={dataset._id} value={dataset._id}>
+                {dataset.name}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+      </Box>
       <Tabs value={tabValue} onChange={(e, newValue) => setTabValue(newValue)} sx={{ mb: 2 }}>
         <Tab label={`Pending Reviews (${pendingTasks.length})`} />
         <Tab label={`Reviewed (${reviewedTasks.length})`} />

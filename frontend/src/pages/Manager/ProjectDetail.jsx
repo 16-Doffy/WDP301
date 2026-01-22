@@ -70,7 +70,11 @@ const ManagerProjectDetail = () => {
     labelSet: [],
     questions: [],
     status: 'draft',
+    deadline: '',
+    exportFormat: 'JSON',
   });
+  const [currentAnnotators, setCurrentAnnotators] = useState([]);
+  const [currentReviewers, setCurrentReviewers] = useState([]);
   const [qualityStats, setQualityStats] = useState(null);
   const [qualityDialogOpen, setQualityDialogOpen] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
@@ -93,6 +97,8 @@ const ManagerProjectDetail = () => {
         labelSet: project.labelSet || [],
         questions: project.questions || [],
         status: project.status || 'draft',
+        deadline: project.deadline ? new Date(project.deadline).toISOString().slice(0, 16) : '',
+        exportFormat: project.exportFormat || 'JSON',
       });
       setReviewPolicy({
         mode: project.reviewPolicy?.mode || 'full',
@@ -100,6 +106,20 @@ const ManagerProjectDetail = () => {
       });
     }
   }, [project]);
+
+  useEffect(() => {
+    // Get current assigned annotators and reviewers from tasks
+    if (tasks.length > 0) {
+      const annotatorIds = [...new Set(tasks.map(t => t.annotatorId?._id || t.annotatorId).filter(Boolean))];
+      const reviewerIds = [...new Set(
+        tasks.flatMap(t => 
+          (t.reviewers || []).map(r => r.reviewerId?._id || r.reviewerId).filter(Boolean)
+        )
+      )];
+      setCurrentAnnotators(annotatorIds);
+      setCurrentReviewers(reviewerIds);
+    }
+  }, [tasks]);
 
   const fetchData = async () => {
     try {
@@ -285,7 +305,14 @@ const ManagerProjectDetail = () => {
 
   const handleUpdateProject = async () => {
     try {
-      await axios.put(`${API_URL}/api/projects/${id}`, editFormData);
+      await axios.put(`${API_URL}/api/projects/${id}`, {
+        ...editFormData,
+        deadline: editFormData.deadline || undefined,
+      }, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
       alert('Cập nhật project thành công!');
       setEditDialogOpen(false);
       fetchData();
@@ -421,25 +448,13 @@ const ManagerProjectDetail = () => {
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-900">Datasets</h2>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    setAssignMode('upload');
-                    setAssignDialogOpen(true);
-                  }}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  <span>📋</span>
-                  <span>Assign Tasks</span>
-                </button>
-                <button
-                  onClick={() => setUploadDialogOpen(true)}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  <span>⬆️</span>
-                  <span>Upload Dataset</span>
-                </button>
-              </div>
+              <button
+                onClick={() => setUploadDialogOpen(true)}
+                className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                <span>⬆️</span>
+                <span>Upload Dataset</span>
+              </button>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -447,13 +462,12 @@ const ManagerProjectDetail = () => {
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">DATASET NAME</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">FILES</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">ACTIONS</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {datasets.length === 0 ? (
                     <tr>
-                      <td colSpan={3} className="px-4 py-8 text-center text-gray-500">
+                      <td colSpan={2} className="px-4 py-8 text-center text-gray-500">
                         No datasets found
                       </td>
                     </tr>
@@ -462,18 +476,6 @@ const ManagerProjectDetail = () => {
                       <tr key={dataset._id} className="hover:bg-gray-50">
                         <td className="px-4 py-3 text-gray-900">{dataset.name}</td>
                         <td className="px-4 py-3 text-gray-600">{dataset.totalItems || 0}</td>
-                        <td className="px-4 py-3">
-                          <button
-                            onClick={() => {
-                              setAssignMode('existing');
-                              setSelectedDataset(dataset._id);
-                              setAssignDialogOpen(true);
-                            }}
-                            className="text-blue-600 hover:text-blue-800 font-medium text-sm"
-                          >
-                            ASSIGN
-                          </button>
-                        </td>
                       </tr>
                     ))
                   )}
@@ -1051,117 +1053,328 @@ const ManagerProjectDetail = () => {
       </Dialog>
 
       {/* Edit Project Dialog */}
-      <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)} maxWidth="md" fullWidth>
-        <DialogTitle>Chỉnh sửa Project - Labels & Questions</DialogTitle>
-        <DialogContent>
-          <TextField
-            fullWidth
-            label="Project Name"
-            value={editFormData.name}
-            onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
-            margin="normal"
-            required
-          />
-          <TextField
-            fullWidth
-            label="Description"
-            value={editFormData.description}
-            onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
-            margin="normal"
-            multiline
-            rows={3}
-          />
-          {user?.role === 'manager' && (
-            <FormControl fullWidth margin="normal">
-              <InputLabel>Status</InputLabel>
-              <Select
-                value={editFormData.status || 'draft'}
-                label="Status"
-                onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })}
-              >
-                <MenuItem value="draft">Draft</MenuItem>
-                <MenuItem value="active">Active</MenuItem>
-                <MenuItem value="completed">Completed</MenuItem>
-                <MenuItem value="archived">Archived</MenuItem>
-              </Select>
-            </FormControl>
-          )}
-          <TextField
-            fullWidth
-            label="Guidelines"
-            value={editFormData.guidelines}
-            onChange={(e) => setEditFormData({ ...editFormData, guidelines: e.target.value })}
-            margin="normal"
-            multiline
-            rows={5}
-            required
-            helperText="Hướng dẫn cho Annotator"
-          />
-          
-          <Accordion sx={{ mt: 2 }} defaultExpanded>
-            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-              <Typography fontWeight="bold">Bộ nhãn (Labels) - BẮT BUỘC cho Annotator</Typography>
-            </AccordionSummary>
-            <AccordionDetails>
-              <Alert severity="info" sx={{ mb: 2 }}>
-                Thêm các nhãn mà Annotator có thể chọn khi khoanh vùng (ví dụ: Dog, Cat, Person...). 
-                Nếu không có labels, Annotator sẽ không thể chọn label khi khoanh vùng!
-              </Alert>
-              <Button
-                size="small"
-                startIcon={<AddIcon />}
-                onClick={() => {
-                  const newLabelSet = [...(editFormData.labelSet || []), { name: '', color: '#1976d2' }];
-                  setEditFormData({ ...editFormData, labelSet: newLabelSet });
+      <Dialog 
+        open={editDialogOpen} 
+        onClose={() => setEditDialogOpen(false)} 
+        maxWidth="lg" 
+        fullWidth
+        PaperProps={{
+          sx: { maxHeight: '90vh', display: 'flex', flexDirection: 'column' }
+        }}
+      >
+        <DialogTitle sx={{ flexShrink: 0 }}>Chỉnh sửa Project</DialogTitle>
+        <DialogContent 
+          dividers 
+          sx={{ 
+            overflowY: 'auto', 
+            overflowX: 'hidden',
+            flex: 1,
+            '&::-webkit-scrollbar': {
+              width: '10px',
+            },
+            '&::-webkit-scrollbar-track': {
+              background: '#f1f1f1',
+              borderRadius: '5px',
+            },
+            '&::-webkit-scrollbar-thumb': {
+              background: '#888',
+              borderRadius: '5px',
+              '&:hover': {
+                background: '#555',
+              },
+            },
+          }}
+        >
+          <Grid container spacing={3}>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Project Name *"
+                value={editFormData.name}
+                onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                required
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Description"
+                value={editFormData.description}
+                onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
+                multiline
+                rows={3}
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Guidelines *"
+                value={editFormData.guidelines}
+                onChange={(e) => setEditFormData({ ...editFormData, guidelines: e.target.value })}
+                multiline
+                rows={5}
+                required
+                helperText="Hướng dẫn cho Annotator"
+              />
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <TextField
+                fullWidth
+                label="Deadline"
+                type="datetime-local"
+                value={editFormData.deadline}
+                onChange={(e) => setEditFormData({ ...editFormData, deadline: e.target.value })}
+                InputLabelProps={{
+                  shrink: true,
                 }}
-                sx={{ mt: 1 }}
-              >
-                Thêm Label
-              </Button>
-              {editFormData.labelSet && editFormData.labelSet.length > 0 ? (
-                editFormData.labelSet.map((label, idx) => (
-                  <Box key={idx} sx={{ display: 'flex', gap: 1, mt: 1, alignItems: 'center' }}>
-                    <TextField
-                      size="small"
-                      label="Tên label"
-                      value={label.name}
-                      onChange={(e) => {
-                        const newLabelSet = [...editFormData.labelSet];
-                        newLabelSet[idx].name = e.target.value;
-                        setEditFormData({ ...editFormData, labelSet: newLabelSet });
-                      }}
-                      placeholder="Ví dụ: Dog, Cat, Person..."
-                    />
-                    <TextField
-                      size="small"
-                      type="color"
-                      label="Màu"
-                      value={label.color || '#1976d2'}
-                      onChange={(e) => {
-                        const newLabelSet = [...editFormData.labelSet];
-                        newLabelSet[idx].color = e.target.value;
-                        setEditFormData({ ...editFormData, labelSet: newLabelSet });
-                      }}
-                      sx={{ width: 100 }}
-                    />
-                    <IconButton
-                      size="small"
-                      onClick={() => {
-                        const newLabelSet = editFormData.labelSet.filter((_, i) => i !== idx);
-                        setEditFormData({ ...editFormData, labelSet: newLabelSet });
-                      }}
-                    >
-                      <DeleteIcon />
-                    </IconButton>
+                helperText="Set project deadline (optional)"
+              />
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <FormControl fullWidth>
+                <InputLabel>Export Format</InputLabel>
+                <Select
+                  value={editFormData.exportFormat || 'JSON'}
+                  label="Export Format"
+                  onChange={(e) => setEditFormData({ ...editFormData, exportFormat: e.target.value })}
+                >
+                  <MenuItem value="JSON">JSON (Default)</MenuItem>
+                  <MenuItem value="YOLO">YOLO</MenuItem>
+                  <MenuItem value="VOC">VOC (Pascal VOC)</MenuItem>
+                  <MenuItem value="COCO">COCO</MenuItem>
+                  <MenuItem value="CSV">CSV</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            {user?.role === 'manager' && (
+              <Grid item xs={12} md={6}>
+                <FormControl fullWidth>
+                  <InputLabel>Status</InputLabel>
+                  <Select
+                    value={editFormData.status || 'draft'}
+                    label="Status"
+                    onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })}
+                  >
+                    <MenuItem value="draft">Draft</MenuItem>
+                    <MenuItem value="active">Active</MenuItem>
+                    <MenuItem value="completed">Completed</MenuItem>
+                    <MenuItem value="archived">Archived</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+            )}
+            {/* Label Set */}
+            <Grid item xs={12}>
+              <Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                  <Typography variant="h6">Label Set</Typography>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<AddIcon />}
+                    onClick={() => {
+                      const newLabel = {
+                        name: '',
+                        color: `#${Math.floor(Math.random()*16777215).toString(16)}`,
+                        description: ''
+                      };
+                      setEditFormData({
+                        ...editFormData,
+                        labelSet: [...(editFormData.labelSet || []), newLabel]
+                      });
+                    }}
+                  >
+                    Add Label
+                  </Button>
+                </Box>
+                
+                {editFormData.labelSet && editFormData.labelSet.length > 0 ? (
+                  <Box 
+                    sx={{ 
+                      display: 'flex', 
+                      flexDirection: 'column', 
+                      gap: 2,
+                      maxHeight: '500px',
+                      minHeight: '200px',
+                      overflowY: 'auto',
+                      overflowX: 'hidden',
+                      pr: 2,
+                      pb: 2,
+                      border: '2px solid #e0e0e0',
+                      borderRadius: 2,
+                      p: 2,
+                      backgroundColor: '#fafafa',
+                      '&::-webkit-scrollbar': {
+                        width: '12px',
+                      },
+                      '&::-webkit-scrollbar-track': {
+                        background: '#e0e0e0',
+                        borderRadius: '6px',
+                      },
+                      '&::-webkit-scrollbar-thumb': {
+                        background: '#888',
+                        borderRadius: '6px',
+                        border: '2px solid #e0e0e0',
+                        '&:hover': {
+                          background: '#555',
+                        },
+                      },
+                    }}
+                  >
+                    {editFormData.labelSet.map((label, idx) => (
+                      <Card key={idx} variant="outlined" sx={{ flexShrink: 0 }}>
+                        <CardContent>
+                          <Grid container spacing={2} alignItems="center">
+                            <Grid item xs={12} sm={4}>
+                              <TextField
+                                fullWidth
+                                size="small"
+                                label="Label Name *"
+                                value={label.name || ''}
+                                onChange={(e) => {
+                                  const newLabelSet = [...editFormData.labelSet];
+                                  newLabelSet[idx].name = e.target.value;
+                                  setEditFormData({ ...editFormData, labelSet: newLabelSet });
+                                }}
+                                placeholder="e.g., Car, Person, Dog"
+                                required
+                              />
+                            </Grid>
+                            <Grid item xs={12} sm={3}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <input
+                                  type="color"
+                                  value={label.color || '#000000'}
+                                  onChange={(e) => {
+                                    const newLabelSet = [...editFormData.labelSet];
+                                    newLabelSet[idx].color = e.target.value;
+                                    setEditFormData({ ...editFormData, labelSet: newLabelSet });
+                                  }}
+                                  style={{
+                                    width: '50px',
+                                    height: '40px',
+                                    border: '1px solid #ccc',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer'
+                                  }}
+                                />
+                                <TextField
+                                  size="small"
+                                  value={label.color || '#000000'}
+                                  onChange={(e) => {
+                                    const newLabelSet = [...editFormData.labelSet];
+                                    newLabelSet[idx].color = e.target.value;
+                                    setEditFormData({ ...editFormData, labelSet: newLabelSet });
+                                  }}
+                                  placeholder="#000000"
+                                  sx={{ flex: 1 }}
+                                />
+                              </Box>
+                            </Grid>
+                            <Grid item xs={12} sm={4}>
+                              <TextField
+                                fullWidth
+                                size="small"
+                                label="Description (Optional)"
+                                value={label.description || ''}
+                                onChange={(e) => {
+                                  const newLabelSet = [...editFormData.labelSet];
+                                  newLabelSet[idx].description = e.target.value;
+                                  setEditFormData({ ...editFormData, labelSet: newLabelSet });
+                                }}
+                                placeholder="Brief description"
+                              />
+                            </Grid>
+                            <Grid item xs={12} sm={1}>
+                              <IconButton
+                                color="error"
+                                onClick={() => {
+                                  const newLabelSet = editFormData.labelSet.filter((_, i) => i !== idx);
+                                  setEditFormData({ ...editFormData, labelSet: newLabelSet });
+                                }}
+                              >
+                                <DeleteIcon />
+                              </IconButton>
+                            </Grid>
+                          </Grid>
+                        </CardContent>
+                      </Card>
+                    ))}
                   </Box>
-                ))
-              ) : (
-                <Alert severity="warning" sx={{ mt: 2 }}>
-                  Chưa có labels nào! Annotator sẽ không thể chọn label khi khoanh vùng.
-                </Alert>
-              )}
-            </AccordionDetails>
-          </Accordion>
+                ) : (
+                  <Alert severity="info">
+                    Chưa có label nào. Vui lòng thêm ít nhất một label để annotator có thể chọn khi gán nhãn.
+                  </Alert>
+                )}
+              </Box>
+            </Grid>
+
+            {/* Datasets Info */}
+            <Grid item xs={12}>
+              <Box>
+                <Typography variant="h6" gutterBottom>Datasets</Typography>
+                {datasets.length === 0 ? (
+                  <Alert severity="info">Chưa có dataset nào</Alert>
+                ) : (
+                  <Box sx={{ maxHeight: 200, overflowY: 'auto' }}>
+                    {datasets.map((dataset) => (
+                      <Card key={dataset._id} sx={{ mb: 1 }}>
+                        <CardContent sx={{ py: 1.5 }}>
+                          <Typography variant="body2" fontWeight="bold">{dataset.name}</Typography>
+                          <Typography variant="caption" color="textSecondary">
+                            {dataset.totalItems || 0} files
+                          </Typography>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </Box>
+                )}
+              </Box>
+            </Grid>
+
+            {/* Team Assignment Info */}
+            <Grid item xs={12} md={6}>
+              <Box>
+                <Typography variant="h6" gutterBottom>Assigned Annotators</Typography>
+                {currentAnnotators.length === 0 ? (
+                  <Alert severity="info">Chưa có annotator nào được gán</Alert>
+                ) : (
+                  <Box sx={{ maxHeight: 200, overflowY: 'auto' }}>
+                    {annotators.filter(a => currentAnnotators.includes(a._id)).map((ann) => (
+                      <Chip
+                        key={ann._id}
+                        label={ann.fullName || ann.username}
+                        sx={{ m: 0.5 }}
+                        color="primary"
+                        variant="outlined"
+                      />
+                    ))}
+                  </Box>
+                )}
+              </Box>
+            </Grid>
+
+            <Grid item xs={12} md={6}>
+              <Box>
+                <Typography variant="h6" gutterBottom>Assigned Reviewers</Typography>
+                {currentReviewers.length === 0 ? (
+                  <Alert severity="info">Chưa có reviewer nào được gán</Alert>
+                ) : (
+                  <Box sx={{ maxHeight: 200, overflowY: 'auto' }}>
+                    {reviewers.filter(r => currentReviewers.includes(r._id)).map((rev) => (
+                      <Chip
+                        key={rev._id}
+                        label={rev.fullName || rev.username}
+                        sx={{ m: 0.5 }}
+                        color="success"
+                        variant="outlined"
+                      />
+                    ))}
+                  </Box>
+                )}
+              </Box>
+            </Grid>
+          </Grid>
 
           <Accordion sx={{ mt: 2 }}>
             <AccordionSummary expandIcon={<ExpandMoreIcon />}>
