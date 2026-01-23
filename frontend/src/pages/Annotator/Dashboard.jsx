@@ -44,10 +44,14 @@ const AnnotatorDashboard = () => {
         batch.tasks.push(task);
         batch.totalTasks++;
         
-        if (task.status === 'approved' || task.status === 'submitted') {
+        if (task.status === 'approved') {
           batch.completedTasks++;
+        } else if (task.status === 'submitted') {
+          batch.completedTasks++; // Count submitted as completed (waiting review)
         } else if (task.status === 'in_progress') {
           batch.inProgressTasks++;
+        } else if (task.status === 'rejected') {
+          batch.inProgressTasks++; // Rejected tasks need to be redone
         }
         
         // Determine batch status
@@ -209,7 +213,24 @@ const AnnotatorDashboard = () => {
                 {/* Batch Info */}
                 <div className="p-4">
                   <h3 className="font-semibold text-gray-900 mb-1">{batch.name}</h3>
-                  <p className="text-sm text-gray-600 mb-4">Project: {batch.project}</p>
+                  <p className="text-sm text-gray-600 mb-2">Project: {batch.project}</p>
+                  
+                  {/* Task Status Summary */}
+                  {batch.tasks.some(t => t.status === 'rejected') && (
+                    <div className="mb-2 px-2 py-1 bg-red-50 border border-red-200 rounded text-xs">
+                      <span className="text-red-700 font-semibold">⚠ {batch.tasks.filter(t => t.status === 'rejected').length} task(s) rejected - needs revision</span>
+                    </div>
+                  )}
+                  {batch.tasks.some(t => t.status === 'approved') && (
+                    <div className="mb-2 px-2 py-1 bg-green-50 border border-green-200 rounded text-xs">
+                      <span className="text-green-700 font-semibold">✓ {batch.tasks.filter(t => t.status === 'approved').length} task(s) approved</span>
+                    </div>
+                  )}
+                  {batch.tasks.some(t => t.status === 'submitted') && (
+                    <div className="mb-2 px-2 py-1 bg-yellow-50 border border-yellow-200 rounded text-xs">
+                      <span className="text-yellow-700 font-semibold">⏳ {batch.tasks.filter(t => t.status === 'submitted').length} task(s) pending review</span>
+                    </div>
+                  )}
 
                   {/* Progress */}
                   <div className="mb-4">
@@ -237,22 +258,55 @@ const AnnotatorDashboard = () => {
                     </div>
                   </div>
 
-                  {/* Action Button */}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (firstTask) {
-                        navigate(`/annotator/tasks/${firstTask._id}`);
-                      }
-                    }}
-                    className={`w-full py-2 rounded-lg font-medium transition-colors ${
-                      batch.status === 'new'
-                        ? 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                        : 'bg-blue-600 text-white hover:bg-blue-700'
-                    }`}
-                  >
-                    {batch.status === 'new' ? 'Start Labeling' : 'Continue Labeling'}
-                  </button>
+                  {/* Action Button - Smart button based on task status */}
+                  {(() => {
+                    // Find the most relevant task to navigate to
+                    const rejectedTask = batch.tasks.find(t => t.status === 'rejected');
+                    const inProgressTask = batch.tasks.find(t => t.status === 'in_progress');
+                    const newTask = batch.tasks.find(t => !t.status || t.status === 'new' || t.status === 'assigned');
+                    const submittedTask = batch.tasks.find(t => t.status === 'submitted');
+                    const approvedTask = batch.tasks.find(t => t.status === 'approved');
+                    
+                    // Priority: rejected > in_progress > new > submitted > approved
+                    const targetTask = rejectedTask || inProgressTask || newTask || submittedTask || approvedTask || firstTask;
+                    
+                    let buttonText = 'View Tasks';
+                    let buttonColor = 'bg-blue-600 text-white hover:bg-blue-700';
+                    
+                    if (rejectedTask) {
+                      buttonText = '🔧 Fix Rejected Task';
+                      buttonColor = 'bg-red-600 text-white hover:bg-red-700';
+                    } else if (inProgressTask) {
+                      buttonText = 'Continue Labeling';
+                      buttonColor = 'bg-blue-600 text-white hover:bg-blue-700';
+                    } else if (newTask) {
+                      buttonText = 'Start Labeling';
+                      buttonColor = 'bg-green-600 text-white hover:bg-green-700';
+                    } else if (submittedTask) {
+                      buttonText = '⏳ Check Review Status';
+                      buttonColor = 'bg-yellow-600 text-white hover:bg-yellow-700';
+                    } else if (batch.tasks.every(t => t.status === 'approved')) {
+                      buttonText = '✓ View Completed';
+                      buttonColor = 'bg-green-500 text-white hover:bg-green-600';
+                    } else {
+                      buttonText = 'View Tasks';
+                      buttonColor = 'bg-gray-600 text-white hover:bg-gray-700';
+                    }
+                    
+                    return (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (targetTask) {
+                            navigate(`/annotator/tasks/${targetTask._id}`);
+                          }
+                        }}
+                        className={`w-full py-2 rounded-lg font-medium transition-colors ${buttonColor}`}
+                      >
+                        {buttonText}
+                      </button>
+                    );
+                  })()}
                 </div>
               </div>
             );

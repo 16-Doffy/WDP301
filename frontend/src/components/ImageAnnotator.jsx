@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Box,
   Paper,
@@ -26,10 +26,13 @@ import {
   ZoomOut as ZoomOutIcon,
   Delete as DeleteIcon,
   Add as AddIcon,
+  Undo as UndoIcon,
 } from '@mui/icons-material';
 
-const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotationsChange, initialAnnotations = [], onSubmit }) => {
+const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotationsChange, initialAnnotations = [], onSubmit, readOnly = false }) => {
   const [annotations, setAnnotations] = useState(initialAnnotations);
+  const [annotationHistory, setAnnotationHistory] = useState([initialAnnotations]); // History for undo
+  const [historyIndex, setHistoryIndex] = useState(0); // Current position in history
   const [zoom, setZoom] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -51,12 +54,21 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
   const containerRef = useRef(null);
   const animationFrameRef = useRef(null);
 
+  const saveToHistory = useCallback((newAnnotations) => {
+    const base = annotationHistory.slice(0, historyIndex + 1);
+    base.push(JSON.parse(JSON.stringify(newAnnotations || [])));
+    setAnnotationHistory(base);
+    setHistoryIndex(base.length - 1);
+  }, [annotationHistory, historyIndex]);
+
   // Sync initialAnnotations with state when imageUrl changes (new task loaded)
   const prevImageUrlRef = useRef(imageUrl);
   useEffect(() => {
     if (prevImageUrlRef.current !== imageUrl) {
       prevImageUrlRef.current = imageUrl;
       setAnnotations(initialAnnotations);
+      setAnnotationHistory([initialAnnotations]);
+      setHistoryIndex(0);
       prevAnnotationsRef.current = JSON.stringify(initialAnnotations);
     }
   }, [imageUrl, initialAnnotations]);
@@ -115,6 +127,7 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
   };
 
   const handleMouseDown = (e) => {
+    if (readOnly) return;
     // Prevent default to avoid text selection
     e.preventDefault();
     
@@ -145,6 +158,7 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
   };
 
   const handleMouseMove = (e) => {
+    if (readOnly) return;
     // Cancel previous animation frame
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
@@ -189,6 +203,7 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
   };
 
   const handleMouseUp = (e) => {
+    if (readOnly) return;
     if (isResizing || isMoving) {
       handleAnnotationMouseUp();
       return;
@@ -237,6 +252,7 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
   };
 
   const handleAddAnnotation = (label) => {
+    if (readOnly) return;
     if (!label || !pendingAnnotation) return;
     
     const newAnnotation = {
@@ -256,13 +272,16 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
       setShowAnswerDialog(true);
     } else {
       // No questions, just add the annotation with answer = null
-      setAnnotations([...annotations, newAnnotation]);
+      const updatedAnnotations = [...annotations, newAnnotation];
+      saveToHistory(updatedAnnotations);
+      setAnnotations(updatedAnnotations);
       setShowLabelDialog(false);
       setPendingAnnotation(null);
     }
   };
 
   const handleSelectAnswer = (answer) => {
+    if (readOnly) return;
     if (!pendingAnnotation) return;
     
     const finalAnnotation = {
@@ -270,36 +289,46 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
       answer: answer, // Can be null if no questions, or object if has questions
     };
     
-    setAnnotations([...annotations, finalAnnotation]);
+    const updatedAnnotations = [...annotations, finalAnnotation];
+    saveToHistory(updatedAnnotations);
+    setAnnotations(updatedAnnotations);
     setShowAnswerDialog(false);
     setPendingAnnotation(null);
   };
 
   const handleDeleteAnnotation = (id) => {
-    setAnnotations(annotations.filter(ann => ann.id !== id));
+    if (readOnly) return;
+    const updatedAnnotations = annotations.filter(ann => ann.id !== id);
+    saveToHistory(updatedAnnotations);
+    setAnnotations(updatedAnnotations);
     if (selectedAnnotation?.id === id) {
       setSelectedAnnotation(null);
     }
   };
 
   const handleEditAnnotation = (annotation) => {
+    if (readOnly) return;
     setEditingAnnotation({ ...annotation });
     setShowEditDialog(true);
   };
 
   const handleUpdateAnnotation = () => {
+    if (readOnly) return;
     if (!editingAnnotation) return;
     
-    setAnnotations(annotations.map(ann => 
+    const updatedAnnotations = annotations.map(ann => 
       ann.id === editingAnnotation.id 
         ? { ...ann, label: editingAnnotation.label, answer: editingAnnotation.answer }
         : ann
-    ));
+    );
+    saveToHistory(updatedAnnotations);
+    setAnnotations(updatedAnnotations);
     setShowEditDialog(false);
     setEditingAnnotation(null);
   };
 
   const handleResizeStart = (e, annotationId, handle) => {
+    if (readOnly) return;
     e.stopPropagation();
     const annotation = annotations.find(a => a.id === annotationId);
     if (annotation) {
@@ -319,6 +348,7 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
   };
 
   const handleMoveStart = (e, annotationId) => {
+    if (readOnly) return;
     e.stopPropagation();
     if (e.target.closest('.resize-handle')) return; // Don't move if clicking resize handle
     
@@ -434,6 +464,10 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
   };
 
   const handleAnnotationMouseUp = () => {
+    // Save to history when resize/move is complete
+    if (isResizing || isMoving) {
+      saveToHistory(annotations);
+    }
     setIsResizing(false);
     setIsMoving(false);
     setResizeHandle(null);
@@ -450,13 +484,27 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
   };
 
   const handleReset = () => {
+    if (readOnly) return;
+    // Reset zoom and position
     setZoom(1);
     setPosition({ x: 0, y: 0 });
     if (containerRef.current) {
       containerRef.current.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
     }
-    if (imageRef.current) {
-      imageRef.current.style.transform = '';
+    // Clear all annotations
+    const emptyAnnotations = [];
+    saveToHistory(emptyAnnotations);
+    setAnnotations(emptyAnnotations);
+    setSelectedAnnotation(null);
+  };
+
+  const handleUndo = () => {
+    if (readOnly) return;
+    if (historyIndex > 0) {
+      const newIndex = historyIndex - 1;
+      setHistoryIndex(newIndex);
+      setAnnotations(JSON.parse(JSON.stringify(annotationHistory[newIndex]))); // Deep copy
+      setSelectedAnnotation(null);
     }
   };
 
@@ -567,7 +615,20 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
             <IconButton onClick={handleZoomIn} size="small">
               <ZoomInIcon />
             </IconButton>
-            <Button size="small" onClick={handleReset}>
+            <Button 
+              size="small" 
+              onClick={handleUndo}
+              disabled={readOnly || historyIndex <= 0}
+              startIcon={<UndoIcon />}
+            >
+              Undo
+            </Button>
+            <Button 
+              size="small" 
+              onClick={handleReset}
+              color="error"
+              disabled={readOnly}
+            >
               Reset
             </Button>
             {onSubmit && (
@@ -575,6 +636,7 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
                 variant="contained" 
                 color="success"
                 onClick={onSubmit}
+                disabled={readOnly}
                 sx={{ 
                   ml: 2,
                   px: 3,

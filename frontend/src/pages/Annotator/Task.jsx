@@ -36,6 +36,17 @@ const AnnotatorTask = () => {
     fetchTask();
   }, [id]);
 
+  // Auto-refresh task every 5 seconds to check for status updates from reviewer
+  useEffect(() => {
+    if (!task || task.status !== 'submitted') return;
+    
+    const interval = setInterval(() => {
+      fetchTask();
+    }, 5000);
+    
+    return () => clearInterval(interval);
+  }, [id, task?.status]);
+
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentTime(new Date().toLocaleTimeString());
@@ -179,6 +190,10 @@ const AnnotatorTask = () => {
 
   const handleConfirmSubmit = useCallback(async () => {
     setShowSubmitConfirm(false);
+    if (task?.status === 'submitted' || task?.status === 'approved') {
+      alert('Task đã được nộp. Vui lòng chờ reviewer đánh giá.');
+      return;
+    }
     setSaving(true);
     try {
       await axios.put(`${API_URL}/api/tasks/${id}/label`, {
@@ -187,6 +202,7 @@ const AnnotatorTask = () => {
       });
       await axios.post(`${API_URL}/api/tasks/${id}/submit`);
       alert('Nộp bài thành công! Reviewer sẽ kiểm tra và phản hồi.');
+      setTask((prev) => (prev ? { ...prev, status: 'submitted' } : prev));
       
       // Navigate to next task in batch or back to dashboard
       if (currentTaskIndex < batchTasks.length - 1) {
@@ -201,7 +217,7 @@ const AnnotatorTask = () => {
     } finally {
       setSaving(false);
     }
-  }, [id, labels, currentTaskIndex, batchTasks, navigate]);
+  }, [id, labels, currentTaskIndex, batchTasks, navigate, task?.status]);
 
   const navigateToTask = (taskId) => {
     navigate(`/annotator/tasks/${taskId}`);
@@ -253,8 +269,66 @@ const AnnotatorTask = () => {
     ? ((currentTaskIndex + 1) / batchTasks.length) * 100 
     : 0;
 
+  const getStatusBadge = () => {
+    if (!task) return null;
+    const status = task.status;
+    if (status === 'approved') {
+      return (
+        <div className="px-4 py-2 bg-green-100 border-2 border-green-400 rounded-lg">
+          <div className="flex items-center gap-2">
+            <span className="text-green-800 font-bold">✓ APPROVED</span>
+            {task.reviewedAt && (
+              <span className="text-green-600 text-sm">
+                by {task.reviewerId?.fullName || task.reviewerId?.username || 'Reviewer'} on {new Date(task.reviewedAt).toLocaleString()}
+              </span>
+            )}
+          </div>
+          {task.reviewComments && (
+            <p className="text-green-700 text-sm mt-2 italic">"{task.reviewComments}"</p>
+          )}
+        </div>
+      );
+    }
+    if (status === 'rejected') {
+      return (
+        <div className="px-4 py-2 bg-red-100 border-2 border-red-400 rounded-lg">
+          <div className="flex items-center gap-2">
+            <span className="text-red-800 font-bold">✗ REJECTED</span>
+            {task.reviewedAt && (
+              <span className="text-red-600 text-sm">
+                by {task.reviewerId?.fullName || task.reviewerId?.username || 'Reviewer'} on {new Date(task.reviewedAt).toLocaleString()}
+              </span>
+            )}
+          </div>
+          {task.reviewComments && (
+            <>
+              <p className="text-red-700 text-sm mt-2 font-semibold">Reviewer Comments:</p>
+              <p className="text-red-700 text-sm mt-1 italic">"{task.reviewComments}"</p>
+            </>
+          )}
+        </div>
+      );
+    }
+    if (status === 'submitted') {
+      return (
+        <div className="px-4 py-2 bg-yellow-100 border-2 border-yellow-400 rounded-lg">
+          <span className="text-yellow-800 font-bold">⏳ PENDING REVIEW</span>
+          <span className="text-yellow-600 text-sm ml-2">Waiting for reviewer...</span>
+        </div>
+      );
+    }
+    return null;
+  };
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-gray-50 h-screen">
+
+      {/* Status Banner */}
+      {getStatusBadge() && (
+        <div className="px-6 pt-4">
+          {getStatusBadge()}
+        </div>
+      )}
 
       {/* Main Content Area */}
       <div className="flex-1 flex overflow-hidden">
@@ -265,7 +339,7 @@ const AnnotatorTask = () => {
         >
           {/* Image Annotation Canvas */}
           <div className="flex-1 overflow-auto bg-gray-50 p-6 flex items-center justify-center">
-          {task?.dataItem?.mimeType?.startsWith('image/') ? (
+              {task?.dataItem?.mimeType?.startsWith('image/') ? (
               <div className="bg-white rounded-lg shadow-lg p-4 max-w-full">
                 <ImageAnnotator
                   imageUrl={`${API_URL}/${task.dataItem.path}`}
@@ -274,6 +348,7 @@ const AnnotatorTask = () => {
                   onAnnotationsChange={handleAnnotationsChange}
                   initialAnnotations={annotations}
                   onSubmit={handleSubmit}
+                  readOnly={task?.status === 'submitted' || task?.status === 'approved'}
                 />
               </div>
               ) : (
@@ -437,15 +512,36 @@ const AnnotatorTask = () => {
                       </div>
                     )}
 
-                    {/* Review Feedback */}
-                    {task?.status === 'rejected' && task?.reviewComments && (
-                      <div className="mt-6 p-4 bg-red-50 border-2 border-red-200 rounded-lg">
-                        <p className="text-sm font-semibold text-red-800 mb-2">
-                          Reviewer: {task?.reviewers?.[0]?.reviewerId?.fullName || 'Reviewer'}
-                        </p>
-                        <p className="text-sm text-red-700 italic">"{task.reviewComments}"</p>
+                    {/* Review Feedback - Show for both approved and rejected */}
+                    {(task?.status === 'approved' || task?.status === 'rejected') && (
+                      <div className="mt-6 space-y-4">
+                        {task?.reviewComments && (
+                          <div className={`p-4 border-2 rounded-lg ${
+                            task.status === 'approved' 
+                              ? 'bg-green-50 border-green-200' 
+                              : 'bg-red-50 border-red-200'
+                          }`}>
+                            <p className={`text-sm font-semibold mb-2 ${
+                              task.status === 'approved' ? 'text-green-800' : 'text-red-800'
+                            }`}>
+                              Reviewer Feedback:
+                            </p>
+                            <p className={`text-sm italic ${
+                              task.status === 'approved' ? 'text-green-700' : 'text-red-700'
+                            }`}>
+                              "{task.reviewComments}"
+                            </p>
+                            {task.reviewedAt && (
+                              <p className={`text-xs mt-2 ${
+                                task.status === 'approved' ? 'text-green-600' : 'text-red-600'
+                              }`}>
+                                Reviewed on: {new Date(task.reviewedAt).toLocaleString()}
+                              </p>
+                            )}
+                          </div>
+                        )}
                       </div>
-            )}
+                    )}
                   </div>
         )}
 
@@ -518,30 +614,6 @@ const AnnotatorTask = () => {
         </div>
       </div>
 
-      {/* Global Status Bar (Bottom) */}
-      <div className="bg-gray-800 text-gray-300 px-6 py-2 flex items-center justify-between text-xs flex-shrink-0">
-        <div className="flex items-center gap-6">
-          <span className="flex items-center gap-2">
-            <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-            <span>CONNECTED</span>
-          </span>
-          <span>Mouse: {mousePosition.x}, {mousePosition.y}</span>
-          <span>Labels: {annotations.length}</span>
-          <span>Objects: {annotations.length}</span>
-        </div>
-        <div className="flex items-center gap-6">
-          <span>Time: {currentTime}</span>
-          <span className="text-green-400">AUTO-SAVE ACTIVE</span>
-          <div className="flex items-center gap-2">
-            <kbd className="px-2 py-1 bg-gray-700 rounded text-xs">Ctrl+S</kbd>
-            <span>Save</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <kbd className="px-2 py-1 bg-gray-700 rounded text-xs">Ctrl+Enter</kbd>
-            <span>Submit</span>
-          </div>
-        </div>
-      </div>
 
       {/* Submit Confirmation Dialog */}
       <Dialog open={showSubmitConfirm} onClose={() => setShowSubmitConfirm(false)} maxWidth="sm" fullWidth>

@@ -14,7 +14,6 @@ const ReviewerTask = () => {
   const [processing, setProcessing] = useState(false);
   const [reviewNotes, setReviewNotes] = useState([]);
   const [noteDrafts, setNoteDrafts] = useState({});
-  const [viewMode, setViewMode] = useState('side-by-side');
   const [selectedError, setSelectedError] = useState('');
   const [autoNext, setAutoNext] = useState(false);
   const [pendingTasks, setPendingTasks] = useState([]);
@@ -282,110 +281,12 @@ const ReviewerTask = () => {
           </span>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex gap-2">
-            <button 
-              onClick={() => setViewMode('side-by-side')}
-              className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
-                viewMode === 'side-by-side' 
-                  ? darkMode ? 'bg-emerald-600 text-white' : 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/50'
-                  : darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-white/60 text-gray-700 hover:bg-white/80'
-              }`}
-            >
-              Side-by-Side
-            </button>
-            <button 
-              onClick={() => setViewMode('overlay')}
-              className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
-                viewMode === 'overlay' 
-                  ? darkMode ? 'bg-emerald-600 text-white' : 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/50'
-                  : darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-white/60 text-gray-700 hover:bg-white/80'
-              }`}
-            >
-              Overlay
-            </button>
-          </div>
           <button 
             onClick={() => setDarkMode(!darkMode)}
             className={`p-2 rounded-lg transition-all ${darkMode ? 'bg-gray-700 text-yellow-300 hover:bg-gray-600' : 'bg-white/60 text-gray-700 hover:bg-white/80'}`}
           >
             {darkMode ? '☀️' : '🌙'}
           </button>
-        </div>
-      </div>
-
-      {/* Task Carousel - Horizontal Scroll */}
-      <div className={`${darkMode ? 'bg-gray-800/50' : 'bg-white/40 backdrop-blur-md'} border-b ${darkMode ? 'border-gray-700' : 'border-gray-200/50'} px-6 py-4 relative`}>
-        <div className="flex items-center gap-4">
-          <h2 className={`font-bold text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'} whitespace-nowrap`}>REVIEW QUEUE</h2>
-          <div className="flex-1 relative">
-            <div 
-              ref={carouselRef}
-              className="flex gap-3 overflow-x-auto scrollbar-hide scroll-smooth"
-              style={{ scrollLeft: carouselScroll }}
-            >
-              {pendingTasks.map((pendingTask, idx) => {
-                const isActive = pendingTask._id === id;
-                const timeAgo = pendingTask.submittedAt ? getTimeAgo(new Date(pendingTask.submittedAt)) : '';
-                return (
-                  <div
-                    key={pendingTask._id}
-                    onClick={() => navigate(`/reviewer/tasks/${pendingTask._id}`)}
-                    className={`flex-shrink-0 w-48 rounded-xl p-3 cursor-pointer transition-all duration-300 ${
-                      isActive
-                        ? darkMode 
-                          ? 'bg-emerald-600/30 border-2 border-emerald-400 shadow-lg shadow-emerald-500/50 scale-105' 
-                          : 'bg-gradient-to-br from-emerald-400 to-teal-500 border-2 border-emerald-300 shadow-xl shadow-emerald-500/50 scale-105'
-                        : darkMode
-                          ? 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700 hover:scale-102'
-                          : 'bg-white/60 backdrop-blur-sm border border-gray-300/50 hover:bg-white/80 hover:scale-102'
-                    }`}
-                  >
-                    {pendingTask.dataItem?.mimeType?.startsWith('image/') && (
-                      <div className="w-full h-24 mb-2 rounded-lg overflow-hidden bg-gray-200">
-                        <img 
-                          src={`${API_URL}/${pendingTask.dataItem?.path}`}
-                          alt="Task thumbnail"
-                          className="w-full h-full object-cover"
-                          onError={(e) => { e.target.style.display = 'none'; }}
-                        />
-                      </div>
-                    )}
-                    <div className={`text-xs font-bold mb-1 ${isActive ? (darkMode ? 'text-white' : 'text-white') : (darkMode ? 'text-gray-300' : 'text-gray-700')}`}>
-                      TSK-{pendingTask._id?.substring(0, 8).toUpperCase()}
-                    </div>
-                    <div className={`text-xs ${isActive ? (darkMode ? 'text-emerald-200' : 'text-white/90') : (darkMode ? 'text-gray-400' : 'text-gray-600')}`}>
-                      {pendingTask.projectId?.name || 'Project'}
-                    </div>
-                    {timeAgo && (
-                      <div className={`text-xs mt-1 ${isActive ? (darkMode ? 'text-emerald-300' : 'text-white/80') : (darkMode ? 'text-gray-500' : 'text-gray-500')}`}>
-                        {timeAgo}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            {pendingTasks.length > 0 && (
-              <>
-                {carouselScroll > 10 && (
-                  <button
-                    onClick={() => scrollCarousel('left')}
-                    className={`absolute left-0 top-1/2 -translate-y-1/2 p-2 rounded-full z-10 ${darkMode ? 'bg-gray-700 text-white hover:bg-gray-600' : 'bg-white/80 text-gray-700 hover:bg-white'} shadow-lg`}
-                  >
-                    ←
-                  </button>
-                )}
-                {carouselRef.current && carouselScroll < (carouselRef.current.scrollWidth - carouselRef.current.clientWidth - 10) && (
-                  <button
-                    onClick={() => scrollCarousel('right')}
-                    className={`absolute right-0 top-1/2 -translate-y-1/2 p-2 rounded-full z-10 ${darkMode ? 'bg-gray-700 text-white hover:bg-gray-600' : 'bg-white/80 text-gray-700 hover:bg-white'} shadow-lg`}
-                  >
-                    →
-                  </button>
-                )}
-              </>
-            )}
-          </div>
         </div>
       </div>
 
@@ -429,9 +330,6 @@ const ReviewerTask = () => {
                       {obj.confidence ? `${(obj.confidence * 100).toFixed(1)}%` : 'N/A'}
                     </span>
                   </div>
-                  <div className={`text-xs font-mono ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                    [{obj.bbox?.[0]?.toFixed(0) || 0}, {obj.bbox?.[1]?.toFixed(0) || 0}, {obj.bbox?.[2]?.toFixed(0) || 0}, {obj.bbox?.[3]?.toFixed(0) || 0}]
-                  </div>
                   {obj.answer && (
                     <div className={`text-xs mt-1 ${darkMode ? 'text-emerald-300' : 'text-emerald-600'}`}>
                       ✓ Has answers
@@ -456,33 +354,68 @@ const ReviewerTask = () => {
             </div>
 
             <div className="grid grid-cols-2 gap-6">
-              {/* Reference Guidelines - Glassmorphism */}
+              {/* Review Queue (moved down here to replace comparison section) */}
               <div className={`${darkMode ? 'bg-gray-800/80 border-gray-700' : 'bg-white/60 backdrop-blur-lg border-gray-200/50'} rounded-2xl border p-6 shadow-xl`}>
                 <div className="flex items-center justify-between mb-4">
                   <h3 className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                    REFERENCE GUIDELINES
+                    REVIEW QUEUE
                   </h3>
-                  <span className={`px-3 py-1 rounded-full text-xs font-semibold ${darkMode ? 'bg-red-900/50 text-red-300' : 'bg-red-100 text-red-700'}`}>
-                    STRICT MODE
+                  <span className={`px-3 py-1 rounded-full text-xs font-semibold ${darkMode ? 'bg-emerald-900/50 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}>
+                    {pendingTasks.length} PENDING
                   </span>
                 </div>
-                {task?.dataItem?.mimeType?.startsWith('image/') && (
-                  <div className="mb-4 rounded-xl overflow-hidden">
-                    <ImageViewer
-                      imageUrl={`${API_URL}/${task.dataItem.path}`}
-                      annotations={[]}
-                      labelSet={task?.projectId?.labelSet || []}
-                      reviewNotes={[]}
-                      readOnly={true}
-                      maxHeight="400px"
-                    />
-                  </div>
-                )}
-                <div className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                  <p className="font-semibold mb-1">Guideline 2.4: Tight Bounding Boxes</p>
-                  <p className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
-                    Ensure bounding boxes touch the outermost pixels of the object. No more than 2px gap allowed.
-                  </p>
+                <div className="space-y-3">
+                  {pendingTasks.length === 0 ? (
+                    <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                      Không có task nào đang chờ review.
+                    </div>
+                  ) : (
+                    pendingTasks.map((pendingTask) => {
+                      const isActive = pendingTask._id === id;
+                      const timeAgo = pendingTask.submittedAt ? getTimeAgo(new Date(pendingTask.submittedAt)) : '';
+                      return (
+                        <button
+                          key={pendingTask._id}
+                          onClick={() => navigate(`/reviewer/tasks/${pendingTask._id}`)}
+                          className={`w-full text-left rounded-xl p-3 transition-all duration-200 ${
+                            isActive
+                              ? darkMode
+                                ? 'bg-emerald-600/30 border-2 border-emerald-400'
+                                : 'bg-emerald-100 border-2 border-emerald-400'
+                              : darkMode
+                                ? 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
+                                : 'bg-white/40 border border-gray-300/50 hover:bg-white/60'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            {pendingTask.dataItem?.mimeType?.startsWith('image/') && (
+                              <div className="w-20 h-14 rounded-lg overflow-hidden bg-gray-200 flex-shrink-0">
+                                <img
+                                  src={`${API_URL}/${pendingTask.dataItem?.path}`}
+                                  alt="Task thumbnail"
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => { e.target.style.display = 'none'; }}
+                                />
+                              </div>
+                            )}
+                            <div className="min-w-0">
+                              <div className={`text-xs font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                TSK-{pendingTask._id?.substring(0, 8).toUpperCase()}
+                              </div>
+                              <div className={`text-xs truncate ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                                {pendingTask.projectId?.name || 'Project'}
+                              </div>
+                              {timeAgo && (
+                                <div className={`text-xs mt-1 ${darkMode ? 'text-gray-500' : 'text-gray-500'}`}>
+                                  {timeAgo}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
                 </div>
               </div>
 
