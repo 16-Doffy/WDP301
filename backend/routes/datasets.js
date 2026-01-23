@@ -33,10 +33,23 @@ const upload = multer({
 router.get('/', auth, authorize('manager', 'admin'), async (req, res) => {
   try {
     const datasets = await Dataset.find({ managerId: req.user._id })
-      .populate('projectId', 'name')
-      .sort({ createdAt: -1 });
-    res.json(datasets);
+      .populate({
+        path: 'projectId',
+        select: 'name',
+        options: { lean: true }
+      })
+      .sort({ createdAt: -1 })
+      .lean();
+    
+    // Convert to plain objects and handle null projectId
+    const datasetsWithProject = datasets.map(ds => ({
+      ...ds,
+      projectId: ds.projectId || null
+    }));
+    
+    res.json(datasetsWithProject);
   } catch (error) {
+    console.error('Error fetching datasets:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 });

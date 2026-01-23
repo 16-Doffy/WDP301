@@ -45,6 +45,8 @@ const Datasets = () => {
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState(null);
+  const [createSuccess, setCreateSuccess] = useState(false);
+  const [createdDatasetName, setCreatedDatasetName] = useState('');
 
   useEffect(() => {
     fetchDatasets();
@@ -102,18 +104,23 @@ const Datasets = () => {
         datasetFormData.append('files', file);
       });
 
-      await axios.post(`${API_URL}/api/datasets`, datasetFormData, {
+      const response = await axios.post(`${API_URL}/api/datasets`, datasetFormData, {
         headers: { 
           'Content-Type': 'multipart/form-data',
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         },
       });
 
-      alert('Tạo dataset thành công!');
-      setCreateDialogOpen(false);
+      // Đánh dấu thành công và lưu tên dataset
+      setCreatedDatasetName(formData.name.trim());
+      setCreateSuccess(true);
+      
+      // Reset form
       setFormData({ name: '', description: '' });
       setUploadedFiles([]);
-      fetchDatasets();
+      
+      // Fetch lại danh sách datasets
+      await fetchDatasets();
     } catch (error) {
       setError('Lỗi khi tạo dataset: ' + (error.response?.data?.message || error.message));
     } finally {
@@ -273,77 +280,148 @@ const Datasets = () => {
       </Grid>
 
       {/* Create Dataset Dialog */}
-      <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} maxWidth="md" fullWidth>
+      <Dialog 
+        open={createDialogOpen} 
+        onClose={() => {
+          setCreateDialogOpen(false);
+          setCreateSuccess(false);
+          setCreatedDatasetName('');
+          setError(null);
+        }} 
+        maxWidth="md" 
+        fullWidth
+      >
         <DialogTitle>Create New Dataset</DialogTitle>
         <DialogContent>
-          <Alert severity="warning" sx={{ mb: 2 }}>
-            Vui lòng tạo dataset thông qua Create Project để liên kết với project.
-          </Alert>
-          <TextField
-            fullWidth
-            label="Dataset Name"
-            value={formData.name}
-            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            margin="normal"
-          />
-          <TextField
-            fullWidth
-            multiline
-            rows={3}
-            label="Description"
-            value={formData.description}
-            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-            margin="normal"
-          />
-          <Box
-            sx={{
-              border: '2px dashed #ccc',
-              borderRadius: 2,
-              p: 3,
-              textAlign: 'center',
-              mt: 2,
-              cursor: 'pointer',
-              '&:hover': { borderColor: 'primary.main', bgcolor: 'action.hover' },
-            }}
-            onClick={() => document.getElementById('file-upload-dataset').click()}
-          >
-            <CloudUploadIcon sx={{ fontSize: 48, color: 'primary.main', mb: 1 }} />
-            <Typography variant="h6" gutterBottom>
-              Click to upload or drag and drop
-            </Typography>
-            <Typography variant="body2" color="textSecondary">
-              Maximum file size 50MB per file
-            </Typography>
-            <input
-              id="file-upload-dataset"
-              type="file"
-              multiple
-              style={{ display: 'none' }}
-              onChange={handleFileUpload}
-              accept="image/*,.zip,.csv,.json"
-            />
-          </Box>
-          {uploadedFiles.length > 0 && (
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="subtitle2" gutterBottom>
-                Uploaded Files ({uploadedFiles.length})
-              </Typography>
-              {uploadedFiles.map((file, index) => (
-                <Box key={index} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                  <Typography variant="body2">{file.name}</Typography>
-                  <IconButton size="small" onClick={() => handleRemoveFile(index)}>
-                    <DeleteIcon />
-                  </IconButton>
-                </Box>
-              ))}
+          {createSuccess ? (
+            <Box>
+              <Alert severity="success" sx={{ mb: 2 }}>
+                <Typography variant="h6" gutterBottom>
+                  ✅ Tạo bộ dữ liệu thành công!
+                </Typography>
+                <Typography variant="body2">
+                  Dataset <strong>"{createdDatasetName}"</strong> đã được tạo thành công với {uploadedFiles.length} file(s).
+                </Typography>
+              </Alert>
+              <Alert severity="info" sx={{ mb: 2 }}>
+                <Typography variant="body2">
+                  Bây giờ bạn có thể tạo project và chọn dataset này để phân công cho annotator và reviewer.
+                </Typography>
+              </Alert>
             </Box>
+          ) : (
+            <>
+              {error && (
+                <Alert severity="error" sx={{ mb: 2 }}>
+                  {error}
+                </Alert>
+              )}
+              <TextField
+                fullWidth
+                label="Dataset Name *"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                margin="normal"
+                required
+              />
+              <TextField
+                fullWidth
+                multiline
+                rows={3}
+                label="Description"
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                margin="normal"
+              />
+              <Box
+                sx={{
+                  border: '2px dashed #ccc',
+                  borderRadius: 2,
+                  p: 3,
+                  textAlign: 'center',
+                  mt: 2,
+                  cursor: 'pointer',
+                  '&:hover': { borderColor: 'primary.main', bgcolor: 'action.hover' },
+                }}
+                onClick={() => document.getElementById('file-upload-dataset').click()}
+              >
+                <CloudUploadIcon sx={{ fontSize: 48, color: 'primary.main', mb: 1 }} />
+                <Typography variant="h6" gutterBottom>
+                  Click to upload or drag and drop
+                </Typography>
+                <Typography variant="body2" color="textSecondary">
+                  Maximum file size 50MB per file
+                </Typography>
+                <input
+                  id="file-upload-dataset"
+                  type="file"
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={handleFileUpload}
+                  accept="image/*,.zip,.csv,.json"
+                />
+              </Box>
+              {uploadedFiles.length > 0 && (
+                <Box sx={{ mt: 2 }}>
+                  <Typography variant="subtitle2" gutterBottom>
+                    Uploaded Files ({uploadedFiles.length})
+                  </Typography>
+                  {uploadedFiles.map((file, index) => (
+                    <Box key={index} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                      <Typography variant="body2">{file.name}</Typography>
+                      <IconButton size="small" onClick={() => handleRemoveFile(index)}>
+                        <DeleteIcon />
+                      </IconButton>
+                    </Box>
+                  ))}
+                </Box>
+              )}
+            </>
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setCreateDialogOpen(false)}>Cancel</Button>
-          <Button onClick={() => navigate('/manager/projects/create')} variant="contained">
-            Go to Create Project
-          </Button>
+          {createSuccess ? (
+            <>
+              <Button onClick={() => {
+                setCreateDialogOpen(false);
+                setCreateSuccess(false);
+                setCreatedDatasetName('');
+              }}>
+                Đóng
+              </Button>
+              <Button 
+                onClick={() => {
+                  setCreateDialogOpen(false);
+                  setCreateSuccess(false);
+                  setCreatedDatasetName('');
+                  navigate('/manager/projects/create', { state: { refreshDatasets: true } });
+                }} 
+                variant="contained"
+                color="primary"
+              >
+                Tạo Project Ngay
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button 
+                onClick={() => {
+                  setCreateDialogOpen(false);
+                  setError(null);
+                }}
+                disabled={uploading}
+              >
+                Hủy
+              </Button>
+              <Button 
+                onClick={handleCreateDataset} 
+                variant="contained"
+                disabled={uploading || !formData.name.trim() || uploadedFiles.length === 0}
+              >
+                {uploading ? <CircularProgress size={20} /> : 'Tạo Dataset'}
+              </Button>
+            </>
+          )}
         </DialogActions>
       </Dialog>
 

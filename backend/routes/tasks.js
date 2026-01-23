@@ -409,12 +409,19 @@ router.post('/:id/submit', auth, authorize('annotator'), async (req, res) => {
 
     // Reset reviewer states to pending on (re)submit
     if (task.reviewers && task.reviewers.length > 0) {
-      task.reviewers = task.reviewers.map(r => ({
-        ...r.toObject?.() ? r.toObject() : r,
-        status: 'pending',
-        comment: undefined,
-        reviewedAt: undefined
-      }));
+      task.reviewers = task.reviewers.map(r => {
+        const reviewerId = r.reviewerId?._id || r.reviewerId || r.reviewerId?.toString();
+        return {
+          reviewerId: reviewerId, // Ensure reviewerId is preserved
+          status: 'pending',
+          comment: undefined,
+          reviewedAt: undefined
+        };
+      });
+      console.log(`Reset reviewers for task ${task._id}:`, task.reviewers.map(r => ({
+        reviewerId: r.reviewerId?.toString?.() || r.reviewerId,
+        status: r.status
+      })));
     }
     // Clear review notes on resubmit
     task.reviewNotes = [];
@@ -443,6 +450,14 @@ router.post('/:id/submit', auth, authorize('annotator'), async (req, res) => {
     task.submittedAt = new Date();
     task.updatedAt = new Date();
     await task.save();
+    
+    // Log task submission with reviewers info for debugging
+    console.log(`Task ${task._id} submitted with ${task.reviewers?.length || 0} reviewers:`, 
+      task.reviewers?.map(r => ({
+        reviewerId: r.reviewerId?.toString?.() || r.reviewerId?.toString() || r.reviewerId,
+        status: r.status
+      }))
+    );
 
     // Log task submission
     await createActivityLog(

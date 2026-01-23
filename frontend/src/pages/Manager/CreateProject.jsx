@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Box,
   Typography,
@@ -25,6 +25,7 @@ import {
   Search as SearchIcon,
   CheckCircle as CheckCircleIcon,
   Add as AddIcon,
+  Refresh as RefreshIcon,
 } from '@mui/icons-material';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
@@ -33,6 +34,7 @@ import { useAuth } from '../../context/AuthContext';
 const CreateProject = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -59,6 +61,33 @@ const CreateProject = () => {
     fetchDatasets();
   }, []);
 
+  // Refresh datasets when navigating from Datasets page
+  useEffect(() => {
+    if (location.state?.refreshDatasets) {
+      fetchDatasets();
+      // Clear the state to avoid unnecessary refreshes
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state]);
+
+  // Refresh datasets when page becomes visible (user returns from Datasets page)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchDatasets();
+      }
+    };
+    const handleFocus = () => {
+      fetchDatasets();
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, []);
+
   const fetchDatasets = async () => {
     try {
       const response = await axios.get(`${API_URL}/api/datasets`, {
@@ -66,9 +95,15 @@ const CreateProject = () => {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
       });
-      setDatasets(response.data || []);
+      const allDatasets = response.data || [];
+      console.log('All datasets from API:', allDatasets);
+      // Chỉ hiển thị datasets chưa có projectId (chưa được gán cho project nào)
+      const unassignedDatasets = allDatasets.filter(ds => !ds.projectId || ds.projectId === null);
+      console.log('Unassigned datasets:', unassignedDatasets);
+      setDatasets(unassignedDatasets);
     } catch (error) {
       console.error('Error fetching datasets:', error);
+      setError('Không thể tải danh sách datasets: ' + (error.response?.data?.message || error.message));
     }
   };
 
@@ -502,9 +537,19 @@ const CreateProject = () => {
 
             {/* Dataset Selection */}
             <Box>
-              <Typography variant="h5" gutterBottom sx={{ mb: 2 }}>
-                Chọn Dataset *
-              </Typography>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="h5">
+                  Chọn Dataset *
+                </Typography>
+                <Button
+                  size="small"
+                  startIcon={<RefreshIcon />}
+                  onClick={fetchDatasets}
+                  variant="outlined"
+                >
+                  Refresh
+                </Button>
+              </Box>
               <FormControl fullWidth>
                 <InputLabel>Chọn dataset (có thể chọn nhiều)</InputLabel>
                 <Select

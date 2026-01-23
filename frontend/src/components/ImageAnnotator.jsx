@@ -28,7 +28,7 @@ import {
   Add as AddIcon,
 } from '@mui/icons-material';
 
-const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotationsChange, initialAnnotations = [] }) => {
+const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotationsChange, initialAnnotations = [], onSubmit }) => {
   const [annotations, setAnnotations] = useState(initialAnnotations);
   const [zoom, setZoom] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -41,7 +41,6 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
   const [showLabelDialog, setShowLabelDialog] = useState(false);
   const [showAnswerDialog, setShowAnswerDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
-  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [editingAnnotation, setEditingAnnotation] = useState(null);
   const [pendingAnnotation, setPendingAnnotation] = useState(null);
   const [isResizing, setIsResizing] = useState(false);
@@ -206,15 +205,15 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
           Math.max(drawStart.y, coords.y)
         ];
         
-        // Store pending annotation but don't add yet - show confirm dialog first
+        // Store pending annotation and directly show label selection dialog
         setPendingAnnotation({
           bbox: bbox,
           label: null,
           answer: null,
         });
         
-        // Show confirm dialog first
-        setShowConfirmDialog(true);
+        // Directly show label selection dialog (no confirm dialog)
+        setShowLabelDialog(true);
       } else {
         // If box is too small, cancel drawing
         setIsDrawing(false);
@@ -229,16 +228,8 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
     }
   };
 
-  const handleConfirmAnnotation = () => {
-    setShowConfirmDialog(false);
-    // After confirmation, show label selection dialog
-    if (pendingAnnotation) {
-      setShowLabelDialog(true);
-    }
-  };
-
   const handleCancelAnnotation = () => {
-    setShowConfirmDialog(false);
+    setShowLabelDialog(false);
     setPendingAnnotation(null);
     setIsDrawing(false);
     setDrawStart(null);
@@ -579,6 +570,22 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
             <Button size="small" onClick={handleReset}>
               Reset
             </Button>
+            {onSubmit && (
+              <Button 
+                variant="contained" 
+                color="success"
+                onClick={onSubmit}
+                sx={{ 
+                  ml: 2,
+                  px: 3,
+                  py: 1,
+                  fontWeight: 'bold',
+                  fontSize: '0.95rem'
+                }}
+              >
+                Submit
+              </Button>
+            )}
           </Box>
         </Box>
 
@@ -743,51 +750,8 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
           })}
         </Box>
 
-        <Box sx={{ mt: 2 }}>
-          <Typography variant="subtitle2" gutterBottom>
-            Đã khoanh vùng ({annotations.length}):
-          </Typography>
-          {annotations.length === 0 ? (
-            <Typography variant="body2" color="textSecondary">
-              Chưa có annotation. Kéo chuột trên ảnh để khoanh vùng.
-            </Typography>
-          ) : (
-            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 1 }}>
-              {annotations.map((ann) => (
-                <Chip
-                  key={ann.id}
-                  label={`${ann.label}${ann.answer ? ` (${typeof ann.answer === 'object' ? Object.values(ann.answer).join(', ') : ann.answer})` : ''} - [${Math.round(ann.bbox[0])}%, ${Math.round(ann.bbox[1])}%]`}
-                  onDelete={() => handleDeleteAnnotation(ann.id)}
-                  color="primary"
-                  variant="outlined"
-                  sx={{ cursor: 'pointer' }}
-                />
-              ))}
-            </Box>
-          )}
-        </Box>
       </Paper>
 
-      {/* Confirm Annotation Dialog */}
-      <Dialog open={showConfirmDialog} onClose={handleCancelAnnotation} maxWidth="sm" fullWidth>
-        <DialogTitle>Xác nhận khoanh vùng</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" color="textSecondary" gutterBottom>
-            Bạn đã khoanh vùng một khu vực trên ảnh.
-          </Typography>
-          <Typography variant="body2" sx={{ mt: 2 }}>
-            Bạn có muốn tiếp tục chọn label cho vùng này không?
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCancelAnnotation} color="error">
-            Hủy
-          </Button>
-          <Button onClick={handleConfirmAnnotation} variant="contained" color="primary">
-            Xác nhận
-          </Button>
-        </DialogActions>
-      </Dialog>
 
       {/* Label Selection Dialog */}
       <Dialog open={showLabelDialog} onClose={() => {

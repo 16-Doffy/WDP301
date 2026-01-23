@@ -3,6 +3,14 @@ import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
 import ImageAnnotator from '../../components/ImageAnnotator';
+import {
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  Typography,
+} from '@mui/material';
 
 const AnnotatorTask = () => {
   const { id } = useParams();
@@ -21,6 +29,7 @@ const AnnotatorTask = () => {
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [selectedAnnotation, setSelectedAnnotation] = useState(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const canvasRef = useRef(null);
 
   useEffect(() => {
@@ -138,7 +147,7 @@ const AnnotatorTask = () => {
     }
   }, [id, labels]);
 
-  const handleSubmit = useCallback(async () => {
+  const handleSubmit = useCallback(() => {
     if (Object.keys(labels).length === 0 || (labels.objects && labels.objects.length === 0)) {
       alert('Bạn chưa khoanh vùng đối tượng nào. Vui lòng thêm annotations trước khi nộp bài.');
       return;
@@ -165,31 +174,34 @@ const AnnotatorTask = () => {
       }
     }
 
-    if (window.confirm('Bạn có chắc chắn muốn nộp bài để review? Sau khi nộp, bạn sẽ không thể chỉnh sửa nữa cho đến khi được review.')) {
-      setSaving(true);
-      try {
-        await axios.put(`${API_URL}/api/tasks/${id}/label`, {
-          labels,
-          status: 'in_progress',
-        });
-        await axios.post(`${API_URL}/api/tasks/${id}/submit`);
-        alert('Nộp bài thành công! Reviewer sẽ kiểm tra và phản hồi.');
-        
-        // Navigate to next task in batch or back to dashboard
-        if (currentTaskIndex < batchTasks.length - 1) {
-          navigate(`/annotator/tasks/${batchTasks[currentTaskIndex + 1]._id}`);
-        } else {
+    setShowSubmitConfirm(true);
+  }, [labels, task]);
+
+  const handleConfirmSubmit = useCallback(async () => {
+    setShowSubmitConfirm(false);
+    setSaving(true);
+    try {
+      await axios.put(`${API_URL}/api/tasks/${id}/label`, {
+        labels,
+        status: 'in_progress',
+      });
+      await axios.post(`${API_URL}/api/tasks/${id}/submit`);
+      alert('Nộp bài thành công! Reviewer sẽ kiểm tra và phản hồi.');
+      
+      // Navigate to next task in batch or back to dashboard
+      if (currentTaskIndex < batchTasks.length - 1) {
+        navigate(`/annotator/tasks/${batchTasks[currentTaskIndex + 1]._id}`);
+      } else {
         navigate('/annotator/tasks');
-        }
-      } catch (error) {
-        const errorMessage = error.response?.data?.message || error.message;
-        setMessage('Lỗi khi nộp bài: ' + errorMessage);
-        alert('Lỗi khi nộp bài: ' + errorMessage);
-      } finally {
-        setSaving(false);
       }
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || error.message;
+      setMessage('Lỗi khi nộp bài: ' + errorMessage);
+      alert('Lỗi khi nộp bài: ' + errorMessage);
+    } finally {
+      setSaving(false);
     }
-  }, [id, labels, task, currentTaskIndex, batchTasks, navigate]);
+  }, [id, labels, currentTaskIndex, batchTasks, navigate]);
 
   const navigateToTask = (taskId) => {
     navigate(`/annotator/tasks/${taskId}`);
@@ -261,6 +273,7 @@ const AnnotatorTask = () => {
                   questions={task?.projectId?.questions || []}
                   onAnnotationsChange={handleAnnotationsChange}
                   initialAnnotations={annotations}
+                  onSubmit={handleSubmit}
                 />
               </div>
               ) : (
@@ -438,22 +451,38 @@ const AnnotatorTask = () => {
 
                 {rightTab === 'instructions' && (
                   <div>
-                    <h3 className="font-semibold text-gray-900 mb-4">Instructions</h3>
-                    <div className="prose prose-sm max-w-none">
-                      <p className="text-gray-600 whitespace-pre-wrap mb-4 text-sm">
-                        {task?.projectId?.guidelines || 'No instructions provided.'}
-                      </p>
-                      {task?.projectId?.labelSet && task.projectId.labelSet.length > 0 && (
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2 text-sm">
-                            <span className="text-green-600">✓</span>
-                            <span className="text-gray-700">Boxes should include shadow under car.</span>
-                          </div>
-                          <div className="flex items-center gap-2 text-sm">
-                            <span className="text-red-600">✗</span>
-                            <span className="text-gray-700">Do not label occluded parts.</span>
-                          </div>
+                    <h3 className="font-semibold text-gray-900 mb-4">Project Information</h3>
+                    <div className="space-y-4">
+                      {/* Project Name */}
+                      {task?.projectId?.name && (
+                        <div>
+                          <h4 className="font-semibold text-gray-800 mb-2 text-sm">Project Name</h4>
+                          <p className="text-gray-700 text-sm">{task.projectId.name}</p>
                         </div>
+                      )}
+                      
+                      {/* Project Description */}
+                      {task?.projectId?.description && (
+                        <div>
+                          <h4 className="font-semibold text-gray-800 mb-2 text-sm">Description</h4>
+                          <p className="text-gray-600 whitespace-pre-wrap text-sm">
+                            {task.projectId.description}
+                          </p>
+                        </div>
+                      )}
+                      
+                      {/* Guidelines */}
+                      {task?.projectId?.guidelines && (
+                        <div>
+                          <h4 className="font-semibold text-gray-800 mb-2 text-sm">Guidelines</h4>
+                          <p className="text-gray-600 whitespace-pre-wrap text-sm">
+                            {task.projectId.guidelines}
+                          </p>
+                        </div>
+                      )}
+                      
+                      {!task?.projectId?.name && !task?.projectId?.description && !task?.projectId?.guidelines && (
+                        <p className="text-sm text-gray-500">No project information provided.</p>
                       )}
                     </div>
                   </div>
@@ -466,9 +495,6 @@ const AnnotatorTask = () => {
                       <div className="space-y-3">
                         {task.reviewNotes.map((note, idx) => (
                           <div key={idx} className="p-3 bg-red-50 border border-red-200 rounded-lg">
-                            <p className="text-sm font-medium text-red-800 mb-1">
-                              Position: [{Math.round(note.bbox?.[0] || 0)}%, {Math.round(note.bbox?.[1] || 0)}%]
-                            </p>
                             <p className="text-sm text-red-700">{note.comment}</p>
                           </div>
                         ))}
@@ -516,6 +542,27 @@ const AnnotatorTask = () => {
           </div>
         </div>
       </div>
+
+      {/* Submit Confirmation Dialog */}
+      <Dialog open={showSubmitConfirm} onClose={() => setShowSubmitConfirm(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Xác nhận nộp bài</DialogTitle>
+        <DialogContent>
+          <Typography variant="body1" gutterBottom>
+            Bạn có chắc chắn muốn nộp bài để review?
+          </Typography>
+          <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
+            Sau khi nộp, bạn sẽ không thể chỉnh sửa nữa cho đến khi được review.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowSubmitConfirm(false)} color="error">
+            Hủy
+          </Button>
+          <Button onClick={handleConfirmSubmit} variant="contained" color="primary" disabled={saving}>
+            {saving ? 'Đang nộp...' : 'Xác nhận nộp'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </div>
   );
 };

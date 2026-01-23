@@ -9,22 +9,34 @@ const router = express.Router();
 // Get tasks pending review
 router.get('/pending', auth, authorize('reviewer', 'admin'), async (req, res) => {
   try {
-    const reviewerId = req.user._id.toString();
+    const reviewerId = req.user._id;
     const tasks = await Task.find({
       status: 'submitted',
       $or: [
+        // Reviewer is in the reviewers array with status 'pending'
+        { 
+          reviewers: { 
+            $elemMatch: { 
+              reviewerId: reviewerId,
+              status: 'pending' 
+            } 
+          } 
+        },
+        // Fallback: if reviewers array is empty or doesn't exist, show to all reviewers
         { reviewers: { $exists: true, $size: 0 } },
-        { reviewers: { $exists: false } },
-        { reviewers: { $elemMatch: { reviewerId, status: 'pending' } } }
+        { reviewers: { $exists: false } }
       ]
     })
       .populate('projectId', 'name labelSet guidelines questions')
       .populate('datasetId', 'name')
       .populate('annotatorId', 'username fullName')
+      .populate('reviewers.reviewerId', 'username fullName')
       .sort({ submittedAt: 1 });
 
+    console.log(`Found ${tasks.length} pending tasks for reviewer ${reviewerId.toString()}`);
     res.json(tasks);
   } catch (error) {
+    console.error('Error in /api/reviews/pending:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
@@ -51,38 +63,65 @@ router.get('/reviewed', auth, authorize('reviewer', 'admin'), async (req, res) =
 // Get all tasks for reviewer (pending + reviewed)
 router.get('/all', auth, authorize('reviewer', 'admin'), async (req, res) => {
   try {
-    const reviewerId = req.user._id.toString();
+    const reviewerId = req.user._id;
+    const reviewerIdString = reviewerId.toString();
+    
+    // Query for pending tasks: status = 'submitted' AND reviewer is assigned with status 'pending'
     const pendingTasks = await Task.find({
       status: 'submitted',
       $or: [
+        // Reviewer is in the reviewers array with status 'pending'
+        { 
+          reviewers: { 
+            $elemMatch: { 
+              reviewerId: reviewerId,
+              status: 'pending' 
+            } 
+          } 
+        },
+        // Fallback: if reviewers array is empty or doesn't exist, show to all reviewers
         { reviewers: { $exists: true, $size: 0 } },
-        { reviewers: { $exists: false } },
-        { reviewers: { $elemMatch: { reviewerId, status: 'pending' } } }
+        { reviewers: { $exists: false } }
       ]
     })
       .populate('projectId', 'name labelSet guidelines questions')
       .populate('datasetId', 'name')
       .populate('annotatorId', 'username fullName')
+      .populate('reviewers.reviewerId', 'username fullName')
       .sort({ submittedAt: 1 });
 
+    // Query for reviewed tasks: status = 'approved' or 'rejected' AND reviewer reviewed it
     const reviewedTasks = await Task.find({ 
       status: { $in: ['approved', 'rejected'] },
       $or: [
-        { reviewerId: req.user._id },
-        { reviewers: { $elemMatch: { reviewerId, status: { $in: ['approved', 'rejected'] } } } }
+        // Reviewer is the primary reviewer
+        { reviewerId: reviewerId },
+        // Or reviewer is in the reviewers array with status 'approved' or 'rejected'
+        { 
+          reviewers: { 
+            $elemMatch: { 
+              reviewerId: reviewerId,
+              status: { $in: ['approved', 'rejected'] } 
+            } 
+          } 
+        }
       ]
     })
       .populate('projectId', 'name labelSet guidelines questions')
       .populate('datasetId', 'name')
       .populate('annotatorId', 'username fullName')
       .populate('reviewerId', 'username fullName')
+      .populate('reviewers.reviewerId', 'username fullName')
       .sort({ reviewedAt: -1 });
+
+    console.log(`Found ${pendingTasks.length} pending tasks and ${reviewedTasks.length} reviewed tasks for reviewer ${reviewerIdString}`);
 
     res.json({
       pending: pendingTasks,
       reviewed: reviewedTasks
     });
   } catch (error) {
+    console.error('Error in /api/reviews/all:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
