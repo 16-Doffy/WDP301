@@ -17,6 +17,7 @@ const ReviewerTask = () => {
   const [selectedError, setSelectedError] = useState('');
   const [autoNext, setAutoNext] = useState(false);
   const [pendingTasks, setPendingTasks] = useState([]);
+  const [reviewedTasks, setReviewedTasks] = useState([]);
   const [darkMode, setDarkMode] = useState(false);
   const [hoveredObjectIndex, setHoveredObjectIndex] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
@@ -26,15 +27,16 @@ const ReviewerTask = () => {
 
   useEffect(() => {
     fetchTask();
-    fetchPendingTasks();
+    fetchAllTasks();
   }, [id]);
 
-  const fetchPendingTasks = async () => {
+  const fetchAllTasks = async () => {
     try {
       const response = await axios.get(`${API_URL}/api/reviews/all`);
       setPendingTasks(response.data.pending || []);
+      setReviewedTasks(response.data.reviewed || []);
     } catch (error) {
-      console.error('Error fetching pending tasks:', error);
+      console.error('Error fetching tasks:', error);
     }
   };
 
@@ -74,6 +76,8 @@ const ReviewerTask = () => {
           reviewNotes: payloadNotes,
         });
         alert('Đã phê duyệt task thành công!');
+        // Refresh tasks list to update statistics
+        await fetchAllTasks();
         const updatedResponse = await axios.get(`${API_URL}/api/reviews/all`);
         const updatedPendingTasks = updatedResponse.data.pending || [];
         if (autoNext && updatedPendingTasks.length > 0) {
@@ -115,6 +119,8 @@ const ReviewerTask = () => {
           reviewNotes: payloadNotes,
         });
         alert('Đã từ chối task thành công!');
+        // Refresh tasks list to update statistics
+        await fetchAllTasks();
         const updatedResponse = await axios.get(`${API_URL}/api/reviews/all`);
         const updatedPendingTasks = updatedResponse.data.pending || [];
         if (autoNext && updatedPendingTasks.length > 0) {
@@ -183,11 +189,55 @@ const ReviewerTask = () => {
     return Math.round(completeness);
   };
 
+  // Calculate average confidence from all objects in current task
+  const calculateAverageConfidence = () => {
+    if (!task?.labels?.objects || task.labels.objects.length === 0) return 0;
+    const objectsWithConfidence = task.labels.objects.filter(obj => obj.confidence != null);
+    if (objectsWithConfidence.length === 0) return 0;
+    const sumConfidence = objectsWithConfidence.reduce((sum, obj) => sum + (obj.confidence || 0), 0);
+    return (sumConfidence / objectsWithConfidence.length) * 100;
+  };
+
+  // Calculate accuracy and rejection rates from all reviewed tasks
+  const calculateReviewStats = () => {
+    // Calculate based on all reviewed tasks (approved + rejected)
+    const totalReviewed = reviewedTasks.length;
+    
+    if (totalReviewed === 0) {
+      // If no tasks reviewed yet, show 0 for both
+      return {
+        accuracy: 0,
+        rejection: 0
+      };
+    }
+    
+    const approvedCount = reviewedTasks.filter(t => t.status === 'approved').length;
+    const rejectedCount = reviewedTasks.filter(t => t.status === 'rejected').length;
+    
+    // Accuracy = percentage of approved tasks out of all reviewed tasks
+    const accuracy = (approvedCount / totalReviewed) * 100;
+    // Rejection = percentage of rejected tasks out of all reviewed tasks
+    const rejection = (rejectedCount / totalReviewed) * 100;
+    
+    return {
+      accuracy: Math.round(accuracy * 10) / 10,
+      rejection: Math.round(rejection * 10) / 10,
+      totalReviewed,
+      approvedCount,
+      rejectedCount
+    };
+  };
+
   const qualityScore = calculateQualityScore();
   const isReviewed = task?.status === 'approved' || task?.status === 'rejected';
-  const accuracy = 94.2;
-  const rejection = 4.2;
-  const batchProgress = pendingTasks.length > 0 ? ((pendingTasks.length - pendingTasks.findIndex(t => t._id === id)) / pendingTasks.length) * 100 : 0;
+  const averageConfidence = calculateAverageConfidence();
+  const reviewStats = calculateReviewStats();
+  const accuracy = reviewStats.accuracy;
+  const rejection = reviewStats.rejection;
+  const currentTaskIndex = pendingTasks.findIndex(t => t._id === id);
+  const batchProgress = pendingTasks.length > 0 && currentTaskIndex >= 0
+    ? Math.round(((currentTaskIndex + 1) / pendingTasks.length) * 100)
+    : 0;
 
   const getTimeAgo = (date) => {
     const now = new Date();
@@ -326,7 +376,10 @@ const ReviewerTask = () => {
                     <span className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                       {obj.label || `OBJECT_${idx + 1}`}
                     </span>
-                    <span className={`text-xs px-2 py-0.5 rounded ${darkMode ? 'bg-emerald-900/50 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}>
+                    <span 
+                      className={`text-xs px-2 py-0.5 rounded ${darkMode ? 'bg-emerald-900/50 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}
+                      title="Độ tin cậy của nhãn này (confidence score)"
+                    >
                       {obj.confidence ? `${(obj.confidence * 100).toFixed(1)}%` : 'N/A'}
                     </span>
                   </div>
@@ -456,10 +509,16 @@ const ReviewerTask = () => {
                       />
                     </div>
                     <div className="flex items-center gap-4 text-sm">
-                      <span className={`font-semibold ${darkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>
-                        CONFIDENCE {accuracy}%
+                      <span 
+                        className={`font-semibold ${darkMode ? 'text-emerald-400' : 'text-emerald-600'}`}
+                        title="Độ tin cậy trung bình của tất cả các đối tượng được gán nhãn trong ảnh này"
+                      >
+                        AVG CONFIDENCE {averageConfidence.toFixed(1)}%
                       </span>
-                      <span className={darkMode ? 'text-gray-400' : 'text-gray-600'}>
+                      <span 
+                        className={darkMode ? 'text-gray-400' : 'text-gray-600'}
+                        title="Tổng số đối tượng (objects) đã được gán nhãn trong ảnh này"
+                      >
                         CLASSES {task?.labels?.objects?.length || 0} Total
                       </span>
                     </div>
@@ -479,14 +538,37 @@ const ReviewerTask = () => {
           <div className="p-6 space-y-6">
             {/* Quality Metrics - Circular Progress */}
             <div>
-              <h3 className={`font-bold mb-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                QUALITY METRICS
-              </h3>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                  QUALITY METRICS
+                </h3>
+                <button
+                  onClick={() => {
+                    alert(`GIẢI THÍCH CÁC THÔNG SỐ:\n\n` +
+                      `1. AVG CONFIDENCE: Độ tin cậy trung bình của tất cả các đối tượng được gán nhãn trong ảnh hiện tại.\n` +
+                      `2. CLASSES: Tổng số đối tượng (objects) đã được gán nhãn trong ảnh.\n` +
+                      `3. BATCH PROGRESS: Tiến độ xem xét - số task đã xem / tổng số task trong hàng đợi.\n` +
+                      `4. ACCURACY: Tỷ lệ task được phê duyệt = Số task approved / Tổng số task đã review.\n` +
+                      `   Hiện tại: ${reviewStats.approvedCount || 0} approved / ${reviewStats.totalReviewed || 0} reviewed = ${accuracy.toFixed(1)}%\n` +
+                      `5. REJECTION: Tỷ lệ task bị từ chối = Số task rejected / Tổng số task đã review.\n` +
+                      `   Hiện tại: ${reviewStats.rejectedCount || 0} rejected / ${reviewStats.totalReviewed || 0} reviewed = ${rejection.toFixed(1)}%\n\n` +
+                      `Lưu ý: Các thông số này được tính dựa trên TẤT CẢ các task đã được bạn review (approved hoặc rejected), không chỉ các task trong hàng đợi hiện tại.`
+                    );
+                  }}
+                  className={`text-xs px-2 py-1 rounded ${darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+                  title="Click để xem giải thích chi tiết về các thông số"
+                >
+                  ℹ️ Giải thích
+                </button>
+              </div>
               
               {/* Batch Progress */}
               <div className="mb-6">
                 <div className="flex items-center justify-between mb-2">
-                  <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                  <span 
+                    className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}
+                    title="Tiến độ xem xét: số task đã xem / tổng số task trong hàng đợi"
+                  >
                     Batch Progress
                   </span>
                   <span className={`text-sm font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
@@ -496,15 +578,21 @@ const ReviewerTask = () => {
                 <div className={`w-full ${darkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-full h-3 overflow-hidden`}>
                   <div 
                     className="bg-gradient-to-r from-emerald-400 to-teal-500 h-3 rounded-full transition-all duration-500 shadow-lg"
-                    style={{ width: `${batchProgress}%` }}
+                    style={{ width: `${Math.max(0, Math.min(100, batchProgress))}%` }}
                   ></div>
+                </div>
+                <div className={`text-xs mt-1 ${darkMode ? 'text-gray-500' : 'text-gray-500'}`}>
+                  {currentTaskIndex >= 0 ? `${currentTaskIndex + 1} / ${pendingTasks.length} tasks` : '0 / 0 tasks'}
                 </div>
               </div>
 
               {/* Circular Progress Charts */}
               <div className="grid grid-cols-2 gap-4">
                 {/* Accuracy */}
-                <div className="relative w-32 h-32 mx-auto">
+                <div 
+                  className="relative w-32 h-32 mx-auto cursor-help"
+                  title={`Tỷ lệ task được phê duyệt: ${reviewStats.approvedCount || 0} approved / ${reviewStats.totalReviewed || 0} đã review = ${accuracy.toFixed(1)}%`}
+                >
                   <svg className="transform -rotate-90 w-32 h-32">
                     <circle
                       cx="64"
@@ -521,14 +609,14 @@ const ReviewerTask = () => {
                       stroke="#10b981"
                       strokeWidth="12"
                       fill="none"
-                      strokeDasharray={`${(accuracy / 100) * 352} 352`}
+                      strokeDasharray={`${(Math.min(100, Math.max(0, accuracy)) / 100) * 352} 352`}
                       strokeLinecap="round"
                       className="transition-all duration-1000"
                     />
                   </svg>
                   <div className="absolute inset-0 flex flex-col items-center justify-center">
                     <span className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                      {accuracy}
+                      {accuracy.toFixed(1)}
                     </span>
                     <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                       ACCURACY
@@ -537,7 +625,10 @@ const ReviewerTask = () => {
                 </div>
 
                 {/* Rejection */}
-                <div className="relative w-32 h-32 mx-auto">
+                <div 
+                  className="relative w-32 h-32 mx-auto cursor-help"
+                  title={`Tỷ lệ task bị từ chối: ${reviewStats.rejectedCount || 0} rejected / ${reviewStats.totalReviewed || 0} đã review = ${rejection.toFixed(1)}%`}
+                >
                   <svg className="transform -rotate-90 w-32 h-32">
                     <circle
                       cx="64"
@@ -554,20 +645,30 @@ const ReviewerTask = () => {
                       stroke="#ef4444"
                       strokeWidth="12"
                       fill="none"
-                      strokeDasharray={`${(rejection / 100) * 352} 352`}
+                      strokeDasharray={`${(Math.min(100, Math.max(0, rejection)) / 100) * 352} 352`}
                       strokeLinecap="round"
                       className="transition-all duration-1000"
                     />
                   </svg>
                   <div className="absolute inset-0 flex flex-col items-center justify-center">
                     <span className={`text-2xl font-bold ${darkMode ? 'text-red-400' : 'text-red-600'}`}>
-                      {rejection}%
+                      {rejection.toFixed(1)}%
                     </span>
                     <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
                       REJECTION
                     </span>
                   </div>
                 </div>
+              </div>
+              <div className={`text-xs mt-2 text-center ${darkMode ? 'text-gray-500' : 'text-gray-500'}`}>
+                <span className="cursor-help" title="Hover vào các biểu đồ để xem giải thích chi tiết">
+                  💡 Hover để xem giải thích
+                </span>
+                {reviewStats.totalReviewed > 0 && (
+                  <div className={`text-xs mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                    ({reviewStats.approvedCount || 0} approved, {reviewStats.rejectedCount || 0} rejected)
+                  </div>
+                )}
               </div>
             </div>
 

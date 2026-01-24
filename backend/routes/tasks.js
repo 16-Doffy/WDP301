@@ -413,9 +413,9 @@ router.post('/:id/submit', auth, authorize('annotator'), async (req, res) => {
         const reviewerId = r.reviewerId?._id || r.reviewerId || r.reviewerId?.toString();
         return {
           reviewerId: reviewerId, // Ensure reviewerId is preserved
-          status: 'pending',
-          comment: undefined,
-          reviewedAt: undefined
+        status: 'pending',
+        comment: undefined,
+        reviewedAt: undefined
         };
       });
       console.log(`Reset reviewers for task ${task._id}:`, task.reviewers.map(r => ({

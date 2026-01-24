@@ -63,13 +63,34 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
 
   // Sync initialAnnotations with state when imageUrl changes (new task loaded)
   const prevImageUrlRef = useRef(imageUrl);
+  const prevInitialAnnotationsRef = useRef(JSON.stringify(initialAnnotations || []));
+  
   useEffect(() => {
-    if (prevImageUrlRef.current !== imageUrl) {
+    const imageChanged = prevImageUrlRef.current !== imageUrl;
+    const initialChanged = prevInitialAnnotationsRef.current !== JSON.stringify(initialAnnotations || []);
+    
+    if (imageChanged || initialChanged) {
       prevImageUrlRef.current = imageUrl;
-      setAnnotations(initialAnnotations);
-      setAnnotationHistory([initialAnnotations]);
+      prevInitialAnnotationsRef.current = JSON.stringify(initialAnnotations || []);
+      
+      // Reset everything when image or initial annotations change
+      setAnnotations(initialAnnotations || []);
+      setAnnotationHistory([initialAnnotations || []]);
       setHistoryIndex(0);
-      prevAnnotationsRef.current = JSON.stringify(initialAnnotations);
+      setSelectedAnnotation(null);
+      setZoom(1);
+      setPosition({ x: 0, y: 0 });
+      setCurrentBox(null);
+      setPendingAnnotation(null);
+      setShowLabelDialog(false);
+      setShowAnswerDialog(false);
+      setShowEditDialog(false);
+      prevAnnotationsRef.current = JSON.stringify(initialAnnotations || []);
+      
+      // Reset scroll position
+      if (containerRef.current) {
+        containerRef.current.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      }
     }
   }, [imageUrl, initialAnnotations]);
 

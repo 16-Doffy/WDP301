@@ -33,6 +33,11 @@ const AnnotatorTask = () => {
   const canvasRef = useRef(null);
 
   useEffect(() => {
+    // Reset annotations when task ID changes
+    setAnnotations([]);
+    setLabels({});
+    setSelectedAnnotation(null);
+    setLoading(true);
     fetchTask();
   }, [id]);
 
@@ -75,6 +80,11 @@ const AnnotatorTask = () => {
 
   const fetchTask = async () => {
     try {
+      // Reset annotations first to clear previous task's annotations
+      setAnnotations([]);
+      setLabels({});
+      setSelectedAnnotation(null);
+      
       const response = await axios.get(`${API_URL}/api/tasks/${id}`);
       setTask(response.data);
       const initialLabels = response.data.labels || {};
@@ -91,7 +101,8 @@ const AnnotatorTask = () => {
         setCurrentTaskIndex(currentIdx >= 0 ? currentIdx : 0);
       }
       
-      if (initialLabels.objects && Array.isArray(initialLabels.objects)) {
+      // Load annotations from new task
+      if (initialLabels.objects && Array.isArray(initialLabels.objects) && initialLabels.objects.length > 0) {
         const loadedAnnotations = initialLabels.objects.map((obj, idx) => ({
           id: Date.now() + idx,
           label: obj.label,
@@ -111,10 +122,17 @@ const AnnotatorTask = () => {
         } else {
           setProgress(loadedAnnotations.length > 0 ? 50 : 0);
         }
+      } else {
+        // No annotations in this task, reset progress
+        setAnnotations([]);
+        setProgress(0);
       }
     } catch (error) {
       console.error('Error fetching task:', error);
       setMessage(`Lỗi: ${error.response?.data?.message || error.message}`);
+      // Ensure annotations are cleared even on error
+      setAnnotations([]);
+      setLabels({});
     } finally {
       setLoading(false);
     }
@@ -219,7 +237,19 @@ const AnnotatorTask = () => {
     }
   }, [id, labels, currentTaskIndex, batchTasks, navigate, task?.status]);
 
-  const navigateToTask = (taskId) => {
+  const navigateToTask = async (taskId, saveCurrent = true) => {
+    // Auto-save current task before navigating
+    if (saveCurrent && task && task._id !== taskId && task.status !== 'submitted' && task.status !== 'approved') {
+      try {
+        await axios.put(`${API_URL}/api/tasks/${task._id}/label`, {
+          labels,
+          status: 'in_progress',
+        });
+      } catch (error) {
+        console.error('Error auto-saving before navigation:', error);
+        // Continue navigation even if save fails
+      }
+    }
     navigate(`/annotator/tasks/${taskId}`);
   };
 
@@ -235,11 +265,22 @@ const AnnotatorTask = () => {
     }
   };
 
+  const navigateToTaskByIndex = (index) => {
+    if (index >= 0 && index < batchTasks.length) {
+      navigateToTask(batchTasks[index]._id);
+    }
+  };
+
   // Keyboard shortcuts - MUST be before any conditional returns
   useEffect(() => {
     if (loading) return; // Don't set up shortcuts while loading
     
     const handleKeyDown = (e) => {
+      // Prevent shortcuts when typing in input fields
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+        return;
+      }
+
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
         if (!saving && task?.status !== 'submitted' && task?.status !== 'approved') {
@@ -252,10 +293,19 @@ const AnnotatorTask = () => {
           handleSubmit();
         }
       }
+      // Arrow keys for navigation (always allow navigation to view tasks)
+      if (e.key === 'ArrowLeft' && currentTaskIndex > 0) {
+        e.preventDefault();
+        navigateToPrevious();
+      }
+      if (e.key === 'ArrowRight' && currentTaskIndex < batchTasks.length - 1) {
+        e.preventDefault();
+        navigateToNext();
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [loading, saving, task?.status, handleSave, handleSubmit]);
+  }, [loading, saving, task?.status, handleSave, handleSubmit, currentTaskIndex, batchTasks.length, navigateToPrevious, navigateToNext]);
 
   if (loading) {
     return (
@@ -337,6 +387,88 @@ const AnnotatorTask = () => {
           className="flex-1 flex flex-col overflow-hidden bg-gray-100"
           ref={canvasRef}
         >
+          {/* Navigation Bar */}
+          {batchTasks.length > 1 && (
+            <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={navigateToPrevious}
+                  disabled={currentTaskIndex === 0}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
+                    currentTaskIndex === 0
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+                  }`}
+                >
+                  <span>←</span> Previous
+                </button>
+                <div className="text-sm text-gray-600">
+                  <span className="font-semibold">Ảnh {currentTaskIndex + 1} / {batchTasks.length}</span>
+                  {task?.dataItem?.filename && (
+                    <span className="ml-2 text-gray-500">({task.dataItem.filename})</span>
+                  )}
+                </div>
+                <button
+                  onClick={navigateToNext}
+                  disabled={currentTaskIndex >= batchTasks.length - 1}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
+                    currentTaskIndex >= batchTasks.length - 1
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+                  }`}
+                >
+                  Next <span>→</span>
+                </button>
+              </div>
+              
+              {/* Task Thumbnail Grid */}
+              {batchTasks.length > 1 && batchTasks.length <= 20 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500 mr-2">Chọn ảnh:</span>
+                  <div className="flex gap-1 overflow-x-auto max-w-md">
+                    {batchTasks.map((batchTask, idx) => {
+                      const isCurrent = batchTask._id === id;
+                      const isSubmitted = batchTask.status === 'submitted' || batchTask.status === 'approved';
+                      const isRejected = batchTask.status === 'rejected';
+                      return (
+                        <button
+                          key={batchTask._id}
+                          onClick={() => navigateToTaskByIndex(idx)}
+                          className={`w-12 h-12 rounded border-2 flex-shrink-0 overflow-hidden transition-all cursor-pointer ${
+                            isCurrent
+                              ? 'border-blue-500 ring-2 ring-blue-200'
+                              : isSubmitted
+                              ? 'border-green-300 hover:border-green-400'
+                              : isRejected
+                              ? 'border-red-300 hover:border-red-400'
+                              : 'border-gray-300 hover:border-gray-400'
+                          }`}
+                          title={`Task ${idx + 1}: ${batchTask.dataItem?.filename || 'Image'} ${isSubmitted ? '(Approved)' : isRejected ? '(Rejected)' : ''}`}
+                        >
+                          {batchTask.dataItem?.mimeType?.startsWith('image/') ? (
+                            <img
+                              src={`${API_URL}/${batchTask.dataItem.path}`}
+                              alt={`Task ${idx + 1}`}
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                e.target.style.display = 'none';
+                                e.target.parentElement.innerHTML = `<div class="w-full h-full flex items-center justify-center text-xs text-gray-400">${idx + 1}</div>`;
+                              }}
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-xs text-gray-400">
+                              {idx + 1}
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Image Annotation Canvas */}
           <div className="flex-1 overflow-auto bg-gray-50 p-6 flex items-center justify-center">
               {task?.dataItem?.mimeType?.startsWith('image/') ? (

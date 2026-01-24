@@ -65,6 +65,14 @@ const CreateProject = () => {
   useEffect(() => {
     if (location.state?.refreshDatasets) {
       fetchDatasets();
+      // Pre-fill dataset name if provided
+      if (location.state?.datasetName) {
+        setFormData(prev => ({
+          ...prev,
+          name: location.state.datasetName,
+          description: prev.description || '' // Keep existing description if any
+        }));
+      }
       // Clear the state to avoid unnecessary refreshes
       navigate(location.pathname, { replace: true, state: {} });
     }
@@ -310,7 +318,7 @@ const CreateProject = () => {
       )}
 
       {/* Main Form - All in One Page */}
-      <Paper sx={{ p: 4 }}>
+      <Paper sx={{ p: 4, maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
         <Grid container spacing={4}>
           {/* Left Column - Project Details & Dataset */}
           <Grid item xs={12} md={7}>

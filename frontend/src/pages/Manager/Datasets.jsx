@@ -47,6 +47,7 @@ const Datasets = () => {
   const [error, setError] = useState(null);
   const [createSuccess, setCreateSuccess] = useState(false);
   const [createdDatasetName, setCreatedDatasetName] = useState('');
+  const [createdFileCount, setCreatedFileCount] = useState(0);
 
   useEffect(() => {
     fetchDatasets();
@@ -111,8 +112,9 @@ const Datasets = () => {
         },
       });
 
-      // Đánh dấu thành công và lưu tên dataset
+      // Đánh dấu thành công và lưu thông tin dataset
       setCreatedDatasetName(formData.name.trim());
+      setCreatedFileCount(uploadedFiles.length);
       setCreateSuccess(true);
       
       // Reset form
@@ -172,6 +174,10 @@ const Datasets = () => {
           onClick={() => {
             setFormData({ name: '', description: '' });
             setUploadedFiles([]);
+            setCreateSuccess(false);
+            setCreatedDatasetName('');
+            setCreatedFileCount(0);
+            setError(null);
             setCreateDialogOpen(true);
           }}
         >
@@ -286,6 +292,7 @@ const Datasets = () => {
           setCreateDialogOpen(false);
           setCreateSuccess(false);
           setCreatedDatasetName('');
+          setCreatedFileCount(0);
           setError(null);
         }} 
         maxWidth="md" 
@@ -300,7 +307,7 @@ const Datasets = () => {
                   ✅ Tạo bộ dữ liệu thành công!
                 </Typography>
                 <Typography variant="body2">
-                  Dataset <strong>"{createdDatasetName}"</strong> đã được tạo thành công với {uploadedFiles.length} file(s).
+                  Dataset <strong>"{createdDatasetName}"</strong> đã được tạo thành công với {createdFileCount} file(s).
                 </Typography>
               </Alert>
               <Alert severity="info" sx={{ mb: 2 }}>
@@ -386,6 +393,7 @@ const Datasets = () => {
                 setCreateDialogOpen(false);
                 setCreateSuccess(false);
                 setCreatedDatasetName('');
+                setCreatedFileCount(0);
               }}>
                 Đóng
               </Button>
@@ -394,7 +402,13 @@ const Datasets = () => {
                   setCreateDialogOpen(false);
                   setCreateSuccess(false);
                   setCreatedDatasetName('');
-                  navigate('/manager/projects/create', { state: { refreshDatasets: true } });
+                  setCreatedFileCount(0);
+                  navigate('/manager/projects/create', { 
+                    state: { 
+                      refreshDatasets: true,
+                      datasetName: createdDatasetName 
+                    } 
+                  });
                 }} 
                 variant="contained"
                 color="primary"
