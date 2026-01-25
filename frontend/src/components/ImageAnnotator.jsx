@@ -53,6 +53,7 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
   const imageRef = useRef(null);
   const containerRef = useRef(null);
   const animationFrameRef = useRef(null);
+  const isSyncingFromParentRef = useRef(false); // Track if we're syncing from parent props
 
   const saveToHistory = useCallback((newAnnotations) => {
     const base = annotationHistory.slice(0, historyIndex + 1);
@@ -73,6 +74,9 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
       prevImageUrlRef.current = imageUrl;
       prevInitialAnnotationsRef.current = JSON.stringify(initialAnnotations || []);
       
+      // Mark that we're syncing from parent to prevent infinite loop
+      isSyncingFromParentRef.current = true;
+      
       // Reset everything when image or initial annotations change
       setAnnotations(initialAnnotations || []);
       setAnnotationHistory([initialAnnotations || []]);
@@ -91,20 +95,33 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
       if (containerRef.current) {
         containerRef.current.scrollTo({ top: 0, left: 0, behavior: 'auto' });
       }
+      
+      // Reset sync flag after a short delay to allow state to update
+      setTimeout(() => {
+        isSyncingFromParentRef.current = false;
+      }, 0);
     }
   }, [imageUrl, initialAnnotations]);
 
   // Use ref to track previous annotations to avoid unnecessary calls
-  const prevAnnotationsRef = useRef(JSON.stringify(initialAnnotations));
+  const prevAnnotationsRef = useRef(JSON.stringify(initialAnnotations || []));
   
   useEffect(() => {
-    // Only call onAnnotationsChange if annotations actually changed
+    // Only call onAnnotationsChange if annotations actually changed AND we're not syncing from parent
+    if (isSyncingFromParentRef.current) {
+      // Update prevAnnotationsRef even during sync to prevent false positives later
+      prevAnnotationsRef.current = JSON.stringify(annotations);
+      return; // Skip calling onAnnotationsChange during sync from parent
+    }
+    
     const currentAnnotationsStr = JSON.stringify(annotations);
     if (prevAnnotationsRef.current !== currentAnnotationsStr) {
       prevAnnotationsRef.current = currentAnnotationsStr;
-      onAnnotationsChange(annotations);
+      if (onAnnotationsChange) {
+        onAnnotationsChange(annotations);
+      }
     }
-  }, [annotations]); // Remove onAnnotationsChange from dependencies to avoid infinite loop
+  }, [annotations, onAnnotationsChange]);
 
   const getImageCoordinates = (e) => {
     if (!imageRef.current || !containerRef.current) return null;
