@@ -68,7 +68,6 @@ const ManagerProjectDetail = () => {
     description: '',
     guidelines: '',
     labelSet: [],
-    questions: [],
     status: 'draft',
     deadline: '',
     exportFormat: 'JSON',
@@ -96,7 +95,6 @@ const ManagerProjectDetail = () => {
         description: project.description || '',
         guidelines: project.guidelines || '',
         labelSet: project.labelSet || [],
-        questions: project.questions || [],
         status: project.status || 'draft',
         deadline: project.deadline ? new Date(project.deadline).toISOString().slice(0, 16) : '',
         exportFormat: project.exportFormat || 'JSON',
@@ -325,32 +323,105 @@ const ManagerProjectDetail = () => {
 
   const handleExport = async (format = 'json') => {
     try {
+      // Check if all tasks are approved (required for export)
+      const totalTasks = tasks.length;
+      const approvedTasks = tasks.filter(t => t.status === 'approved');
+      const pendingTasks = tasks.filter(t => t.status === 'submitted' || t.status === 'in_progress' || t.status === 'assigned');
+      const rejectedTasks = tasks.filter(t => t.status === 'rejected');
+
+      if (totalTasks === 0) {
+        alert('Không có task nào trong project này.');
+        return;
+      }
+
+      if (approvedTasks.length === 0) {
+        alert('Không có task nào đã được phê duyệt. Vui lòng đợi reviewer đánh giá và phê duyệt các tasks trước khi export.');
+        return;
+      }
+
+      // Check if all tasks are approved (strict requirement)
+      if (pendingTasks.length > 0 || rejectedTasks.length > 0) {
+        const pendingMsg = pendingTasks.length > 0 ? `${pendingTasks.length} task(s) đang chờ đánh giá` : '';
+        const rejectedMsg = rejectedTasks.length > 0 ? `${rejectedTasks.length} task(s) bị từ chối` : '';
+        const messages = [pendingMsg, rejectedMsg].filter(Boolean).join(' và ');
+        
+        alert(`Không thể export: Chưa phê duyệt tất cả tasks.\n\n` +
+              `Tổng số: ${totalTasks} tasks\n` +
+              `Đã phê duyệt: ${approvedTasks.length} tasks\n` +
+              `Còn lại: ${messages}\n\n` +
+              `Vui lòng phê duyệt TẤT CẢ tasks trước khi export.`);
+        return;
+      }
+
       const response = await axios.get(`${API_URL}/api/projects/${id}/export?format=${format}`, {
-        responseType: format === 'csv' ? 'blob' : 'json'
+        responseType: ['csv', 'yolo', 'voc'].includes(format.toLowerCase()) ? 'blob' : 'json'
       });
       
-      if (format === 'csv') {
-        const url = window.URL.createObjectURL(new Blob([response.data]));
+      // Determine file extension and MIME type
+      let fileExtension = 'json';
+      let mimeType = 'application/json';
+      
+      switch (format.toLowerCase()) {
+        case 'csv':
+          fileExtension = 'csv';
+          mimeType = 'text/csv';
+          break;
+        case 'yolo':
+          fileExtension = 'txt';
+          mimeType = 'text/plain';
+          break;
+        case 'voc':
+          fileExtension = 'xml';
+          mimeType = 'application/xml';
+          break;
+        case 'coco':
+          fileExtension = 'json';
+          mimeType = 'application/json';
+          break;
+        default:
+          fileExtension = 'json';
+          mimeType = 'application/json';
+      }
+
+      if (['csv', 'yolo', 'voc'].includes(format.toLowerCase())) {
+        // Handle blob responses
+        const url = window.URL.createObjectURL(new Blob([response.data], { type: mimeType }));
         const link = document.createElement('a');
         link.href = url;
-        link.setAttribute('download', `project_export_${Date.now()}.csv`);
+        link.setAttribute('download', `project_export_${Date.now()}.${fileExtension}`);
         document.body.appendChild(link);
         link.click();
         link.remove();
       } else {
-        const dataStr = JSON.stringify(response.data, null, 2);
-        const dataBlob = new Blob([dataStr], { type: 'application/json' });
+        // Handle JSON responses
+        const dataStr = typeof response.data === 'string' ? response.data : JSON.stringify(response.data, null, 2);
+        const dataBlob = new Blob([dataStr], { type: mimeType });
         const url = window.URL.createObjectURL(dataBlob);
         const link = document.createElement('a');
         link.href = url;
-        link.setAttribute('download', `project_export_${Date.now()}.json`);
+        link.setAttribute('download', `project_export_${Date.now()}.${fileExtension}`);
         document.body.appendChild(link);
         link.click();
         link.remove();
       }
+      
+      alert(`Đã xuất ${approvedTasks.length} tasks đã được phê duyệt thành công!`);
     } catch (error) {
       console.error('Error exporting data:', error);
-      alert('Lỗi khi xuất dữ liệu: ' + (error.response?.data?.message || error.message));
+      const errorMessage = error.response?.data?.message || error.message;
+      const errorStats = error.response?.data?.stats;
+      
+      let fullMessage = 'Lỗi khi xuất dữ liệu: ' + errorMessage;
+      if (errorStats) {
+        fullMessage += `\n\nChi tiết:\n` +
+          `- Tổng số tasks: ${errorStats.total}\n` +
+          `- Đã phê duyệt: ${errorStats.approved}\n` +
+          `- Đang chờ: ${errorStats.pending || 0}\n` +
+          `- Bị từ chối: ${errorStats.rejected || 0}\n` +
+          (errorStats.other > 0 ? `- Trạng thái khác: ${errorStats.other}\n` : '');
+      }
+      
+      alert(fullMessage);
     }
   };
 
@@ -961,7 +1032,21 @@ const ManagerProjectDetail = () => {
         <DialogTitle>Chọn định dạng xuất dữ liệu</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-            Chỉ xuất các tasks đã được phê duyệt (approved)
+            <strong>Yêu cầu:</strong> TẤT CẢ tasks phải được phê duyệt (approved) trước khi export.<br/>
+            Tổng số tasks: {tasks.length}<br/>
+            Đã phê duyệt: {tasks.filter(t => t.status === 'approved').length}<br/>
+            {tasks.filter(t => t.status !== 'approved').length > 0 && (
+              <>
+                <span style={{ color: '#d32f2f' }}>
+                  Còn lại: {tasks.filter(t => t.status !== 'approved').length} task(s) chưa được phê duyệt
+                </span>
+              </>
+            )}
+            {tasks.filter(t => t.status === 'approved').length === tasks.length && tasks.length > 0 && (
+              <span style={{ color: '#2e7d32' }}>
+                ✓ Tất cả tasks đã được phê duyệt, có thể export
+              </span>
+            )}
           </Typography>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
             <Button
@@ -978,11 +1063,21 @@ const ManagerProjectDetail = () => {
               variant="outlined"
               fullWidth
               onClick={() => {
-                handleExport('csv');
+                handleExport('yolo');
                 setExportDialogOpen(false);
               }}
             >
-              CSV Format
+              YOLO Format (for object detection)
+            </Button>
+            <Button
+              variant="outlined"
+              fullWidth
+              onClick={() => {
+                handleExport('voc');
+                setExportDialogOpen(false);
+              }}
+            >
+              VOC Format (Pascal VOC XML)
             </Button>
             <Button
               variant="outlined"
@@ -993,6 +1088,16 @@ const ManagerProjectDetail = () => {
               }}
             >
               COCO Format (for object detection)
+            </Button>
+            <Button
+              variant="outlined"
+              fullWidth
+              onClick={() => {
+                handleExport('csv');
+                setExportDialogOpen(false);
+              }}
+            >
+              CSV Format
             </Button>
           </Box>
         </DialogContent>
@@ -1325,75 +1430,6 @@ const ManagerProjectDetail = () => {
             </Grid>
           </Grid>
 
-          <Accordion sx={{ mt: 2 }}>
-            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-              <Typography>Câu hỏi và Đáp án - Tùy chọn</Typography>
-            </AccordionSummary>
-            <AccordionDetails>
-              <Typography variant="body2" color="textSecondary" gutterBottom>
-                Sau khi Annotator khoanh vùng, họ sẽ trả lời câu hỏi này bằng cách chọn đáp án A hoặc B
-              </Typography>
-              <Button
-                size="small"
-                startIcon={<AddIcon />}
-                onClick={() => {
-                  const newQuestions = [...(editFormData.questions || []), {
-                    question: '',
-                    options: [{ key: 'A', value: '' }, { key: 'B', value: '' }],
-                  }];
-                  setEditFormData({ ...editFormData, questions: newQuestions });
-                }}
-                sx={{ mt: 1 }}
-              >
-                Thêm Câu hỏi
-              </Button>
-              {editFormData.questions && editFormData.questions.map((question, qIdx) => (
-                <Box key={qIdx} sx={{ mt: 2, p: 2, border: '1px solid #ccc', borderRadius: 1 }}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                    <Typography variant="subtitle2">Câu hỏi {qIdx + 1}</Typography>
-                    <IconButton
-                      size="small"
-                      onClick={() => {
-                        const newQuestions = editFormData.questions.filter((_, i) => i !== qIdx);
-                        setEditFormData({ ...editFormData, questions: newQuestions });
-                      }}
-                    >
-                      <DeleteIcon />
-                    </IconButton>
-                  </Box>
-                  <TextField
-                    fullWidth
-                    size="small"
-                    label="Câu hỏi"
-                    value={question.question}
-                    onChange={(e) => {
-                      const newQuestions = [...editFormData.questions];
-                      newQuestions[qIdx].question = e.target.value;
-                      setEditFormData({ ...editFormData, questions: newQuestions });
-                    }}
-                    margin="normal"
-                  />
-                  <Box sx={{ mt: 1 }}>
-                    {question.options && question.options.map((option, optIdx) => (
-                      <TextField
-                        key={optIdx}
-                        fullWidth
-                        size="small"
-                        label={`Đáp án ${option.key}`}
-                        value={option.value}
-                        onChange={(e) => {
-                          const newQuestions = [...editFormData.questions];
-                          newQuestions[qIdx].options[optIdx].value = e.target.value;
-                          setEditFormData({ ...editFormData, questions: newQuestions });
-                        }}
-                        margin="normal"
-                      />
-                    ))}
-                  </Box>
-                </Box>
-              ))}
-            </AccordionDetails>
-          </Accordion>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setEditDialogOpen(false)}>Hủy</Button>
