@@ -81,6 +81,7 @@ const ManagerProjectDetail = () => {
   const [auditDialogOpen, setAuditDialogOpen] = useState(false);
   const [auditTask, setAuditTask] = useState(null);
   const [previewLabelsOpen, setPreviewLabelsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
     fetchData();
@@ -448,13 +449,6 @@ const ManagerProjectDetail = () => {
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-900">Datasets</h2>
-              <button
-                onClick={() => setUploadDialogOpen(true)}
-                className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                <span>⬆️</span>
-                <span>Upload Dataset</span>
-              </button>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -509,80 +503,20 @@ const ManagerProjectDetail = () => {
             </div>
           </div>
 
-          {/* Workflow Policy Card */}
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <span className="text-xl">🔄</span>
-              <h2 className="text-lg font-semibold text-gray-900">Workflow Policy</h2>
-            </div>
-            <div className="space-y-3">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="radio"
-                  name="reviewPolicy"
-                  value="full"
-                  checked={reviewPolicy.mode === 'full'}
-                  onChange={async (e) => {
-                    const newPolicy = { ...reviewPolicy, mode: e.target.value };
-                    setReviewPolicy(newPolicy);
-                    await axios.put(`${API_URL}/api/projects/${id}`, { reviewPolicy: newPolicy });
-                    fetchData();
-                  }}
-                  className="w-4 h-4 text-blue-600"
-                />
-                <span className="text-gray-700">100% Review Required</span>
-              </label>
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="radio"
-                  name="reviewPolicy"
-                  value="sample"
-                  checked={reviewPolicy.mode === 'sample'}
-                  onChange={async (e) => {
-                    const newPolicy = { ...reviewPolicy, mode: e.target.value };
-                    setReviewPolicy(newPolicy);
-                    await axios.put(`${API_URL}/api/projects/${id}`, { reviewPolicy: newPolicy });
-                    fetchData();
-                  }}
-                  className="w-4 h-4 text-blue-600"
-                />
-                <span className="text-gray-700">Sampled Review</span>
-              </label>
-              {reviewPolicy.mode === 'sample' && (
-                <div className="mt-4 pl-7">
-                  <label className="block text-sm text-gray-600 mb-2">
-                    Sample Rate: {(reviewPolicy.sampleRate * 100).toFixed(0)}%
-                  </label>
-                  <input
-                    type="range"
-                    min="1"
-                    max="100"
-                    value={(reviewPolicy.sampleRate || 0) * 100}
-                    onChange={async (e) => {
-                      const rate = parseInt(e.target.value) / 100;
-                      const newPolicy = { ...reviewPolicy, sampleRate: rate };
-                      setReviewPolicy(newPolicy);
-                      await axios.put(`${API_URL}/api/projects/${id}`, { reviewPolicy: newPolicy });
-                      fetchData();
-                    }}
-                    className="w-full"
-                  />
-                </div>
-              )}
-            </div>
-          </div>
         </div>
 
         {/* All Tasks Card */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">All Tasks</h2>
           
-          {/* Search Bar */}
+          {/* Search Bar - Search by Annotator or Reviewer name */}
           <div className="mb-4">
             <div className="relative">
               <input
                 type="text"
-                placeholder="Filter tasks..."
+                placeholder="Tìm kiếm theo tên Annotator hoặc Reviewer..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
               <span className="absolute left-3 top-2.5 text-gray-400">🔍</span>
@@ -603,14 +537,29 @@ const ManagerProjectDetail = () => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {tasks.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
-                      No tasks found
-                    </td>
-                  </tr>
-                ) : (
-                  tasks.map((task) => (
+                {(() => {
+                  // Filter tasks by annotator or reviewer name
+                  const filteredTasks = tasks.filter((task) => {
+                    if (!searchTerm.trim()) return true;
+                    const searchLower = searchTerm.toLowerCase();
+                    const annotatorName = (task.annotatorId?.fullName || task.annotatorId?.username || '').toLowerCase();
+                    const reviewerName = task.reviewers && task.reviewers.length > 0
+                      ? (task.reviewers[0]?.reviewerId?.fullName || task.reviewers[0]?.reviewerId?.username || '').toLowerCase()
+                      : '';
+                    return annotatorName.includes(searchLower) || reviewerName.includes(searchLower);
+                  });
+
+                  if (filteredTasks.length === 0) {
+                    return (
+                      <tr>
+                        <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                          Không tìm thấy task nào
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  return filteredTasks.map((task) => (
                     <tr key={task._id} className="hover:bg-gray-50">
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
@@ -685,8 +634,8 @@ const ManagerProjectDetail = () => {
                         </button>
                       </td>
                     </tr>
-                  ))
-                )}
+                  ));
+                })()}
               </tbody>
             </table>
           </div>
@@ -1483,29 +1432,6 @@ const ManagerProjectDetail = () => {
 
               <Typography variant="subtitle2" sx={{ mt: 1 }}>Review Comments</Typography>
               <Typography variant="body2">{auditTask.reviewComments || 'Không có'}</Typography>
-
-              <Typography variant="subtitle2" sx={{ mt: 1 }}>Review Notes (feedback trên ảnh)</Typography>
-              {auditTask.reviewNotes && auditTask.reviewNotes.length > 0 ? (
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                  {auditTask.reviewNotes.map((n, idx) => (
-                    <Card key={idx} variant="outlined">
-                      <CardContent>
-                        <Typography variant="body2" gutterBottom>
-                          BBox: [{Math.round(n.bbox?.[0] || 0)}%, {Math.round(n.bbox?.[1] || 0)}%] → [{Math.round(n.bbox?.[2] || 0)}%, {Math.round(n.bbox?.[3] || 0)}%]
-                        </Typography>
-                        <Typography variant="body2" gutterBottom>
-                          Label: {n.label || 'N/A'}
-                        </Typography>
-                        <Typography variant="body2">
-                          Comment: {n.comment}
-                        </Typography>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </Box>
-              ) : (
-                <Typography variant="body2" color="textSecondary">Không có ghi chú</Typography>
-              )}
             </Box>
           ) : (
             <Typography>Không có dữ liệu audit.</Typography>
