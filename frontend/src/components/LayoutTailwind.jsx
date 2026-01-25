@@ -21,11 +21,6 @@ const LayoutTailwind = () => {
         path: '/manager/projects',
       });
       baseItems.push({
-        text: 'Team Management',
-        icon: '👥',
-        path: '/manager/team',
-      });
-      baseItems.push({
         text: 'Datasets',
         icon: '💾',
         path: '/manager/datasets',
