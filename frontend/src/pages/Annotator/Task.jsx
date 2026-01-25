@@ -212,14 +212,28 @@ const AnnotatorTask = () => {
       alert('Task đã được nộp. Vui lòng chờ reviewer đánh giá.');
       return;
     }
+
+    // Check deadline if project has one
+    if (task?.projectId?.deadline) {
+      const deadline = new Date(task.projectId.deadline);
+      const now = new Date();
+      if (now > deadline) {
+        alert(`Không thể nộp task. Deadline của project đã hết hạn (${deadline.toLocaleString('vi-VN')}). Vui lòng liên hệ Manager.`);
+        return;
+      }
+    }
+
     setSaving(true);
     try {
       await axios.put(`${API_URL}/api/tasks/${id}/label`, {
         labels,
-        status: 'in_progress',
+        status: task?.status === 'rejected' ? 'in_progress' : 'in_progress',
       });
       await axios.post(`${API_URL}/api/tasks/${id}/submit`);
-      alert('Nộp bài thành công! Reviewer sẽ kiểm tra và phản hồi.');
+      const message = task?.status === 'rejected' 
+        ? 'Nộp lại bài thành công! Reviewer sẽ kiểm tra và phản hồi.'
+        : 'Nộp bài thành công! Reviewer sẽ kiểm tra và phản hồi.';
+      alert(message);
       setTask((prev) => (prev ? { ...prev, status: 'submitted' } : prev));
       
       // Navigate to next task in batch or back to dashboard
@@ -235,10 +249,11 @@ const AnnotatorTask = () => {
     } finally {
       setSaving(false);
     }
-  }, [id, labels, currentTaskIndex, batchTasks, navigate, task?.status]);
+  }, [id, labels, currentTaskIndex, batchTasks, navigate, task]);
 
   const navigateToTask = async (taskId, saveCurrent = true) => {
     // Auto-save current task before navigating
+    // Allow saving rejected tasks (they can be edited and resubmitted)
     if (saveCurrent && task && task._id !== taskId && task.status !== 'submitted' && task.status !== 'approved') {
       try {
         await axios.put(`${API_URL}/api/tasks/${task._id}/label`, {

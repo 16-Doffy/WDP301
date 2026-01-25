@@ -231,10 +231,10 @@ router.post('/:id/reject', auth, authorize('reviewer', 'admin'), [
       return res.status(400).json({ message: 'Review comments are required when rejecting a task' });
     }
 
-    // Require review notes for rejection (feedback on image)
-    if (!Array.isArray(req.body.reviewNotes) || req.body.reviewNotes.length === 0) {
-      return res.status(400).json({ message: 'Please add at least one feedback note on the image before rejecting' });
-    }
+    // Review notes are optional for rejection (can reject with just comments)
+    // if (!Array.isArray(req.body.reviewNotes) || req.body.reviewNotes.length === 0) {
+    //   return res.status(400).json({ message: 'Please add at least one feedback note on the image before rejecting' });
+    // }
 
     // Validate error category if provided
     const validErrorCategories = ['incorrect_label', 'missing_label', 'poor_quality', 'does_not_follow_guidelines', 'other'];
@@ -254,11 +254,16 @@ router.post('/:id/reject', auth, authorize('reviewer', 'admin'), [
       assigned.comment = req.body.reviewComments.trim();
     }
 
-    task.reviewNotes = req.body.reviewNotes.map(n => ({
-      ...n,
-      createdBy: req.user._id,
-      createdAt: new Date()
-    }));
+    // Handle review notes (optional for rejection)
+    if (Array.isArray(req.body.reviewNotes) && req.body.reviewNotes.length > 0) {
+      task.reviewNotes = req.body.reviewNotes.map(n => ({
+        ...n,
+        createdBy: req.user._id,
+        createdAt: new Date()
+      }));
+    } else {
+      task.reviewNotes = [];
+    }
 
     task.status = 'rejected';
     task.reviewedAt = new Date();

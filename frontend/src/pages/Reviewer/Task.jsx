@@ -30,6 +30,53 @@ const ReviewerTask = () => {
     fetchAllTasks();
   }, [id]);
 
+  // Map frontend error types to backend error categories
+  const mapErrorCategoryToBackend = (frontendCategory) => {
+    const mapping = {
+      'tightness': 'poor_quality',      // Tightness issue = poor quality
+      'missed': 'missing_label',         // Missed object = missing label
+      'wrong_class': 'incorrect_label',  // Wrong class = incorrect label
+      'occlusion': 'does_not_follow_guidelines', // Occlusion error = doesn't follow guidelines
+      'other': 'other'
+    };
+    return mapping[frontendCategory] || 'other';
+  };
+
+  const errorTypes = [
+    {
+      id: 'tightness',
+      name: 'Tightness Issue',
+      description: "Bounding box doesn't fit object",
+      icon: '📐',
+      color: 'from-yellow-400 to-orange-500',
+      backendCategory: 'poor_quality'
+    },
+    {
+      id: 'missed',
+      name: 'Missed Object',
+      description: 'Visible object not labeled',
+      icon: '👁️',
+      color: 'from-blue-400 to-cyan-500',
+      backendCategory: 'missing_label'
+    },
+    {
+      id: 'wrong_class',
+      name: 'Wrong Class',
+      description: 'Categorization error',
+      icon: '🏷️',
+      color: 'from-purple-400 to-pink-500',
+      backendCategory: 'incorrect_label'
+    },
+    {
+      id: 'occlusion',
+      name: 'Occlusion Error',
+      description: 'Improper handling of overlap',
+      icon: '🔀',
+      color: 'from-red-400 to-rose-500',
+      backendCategory: 'does_not_follow_guidelines'
+    }
+  ];
+
   const fetchAllTasks = async () => {
     try {
       const response = await axios.get(`${API_URL}/api/reviews/all`);
@@ -63,28 +110,31 @@ const ReviewerTask = () => {
   };
 
   const handleApprove = useCallback(async () => {
-    if (window.confirm('Bạn có chắc muốn phê duyệt task này? Task sẽ được đánh dấu là approved và không thể chỉnh sửa nữa.')) {
+    // Check if task has already been reviewed
+    if (task?.status === 'approved' || task?.status === 'rejected') {
+      alert('Task này đã được đánh giá rồi. Mỗi task chỉ có thể được đánh giá 1 lần.');
+      return;
+    }
+
+    if (window.confirm('Bạn có chắc muốn phê duyệt task này? Task sẽ được đánh dấu là approved và không thể chỉnh sửa nữa. Lưu ý: Mỗi task chỉ có thể được đánh giá 1 lần.')) {
       setProcessing(true);
       try {
-        const payloadNotes = reviewNotes.map(n => ({
-          bbox: n.bbox,
-          label: n.label,
-          comment: n.comment
-        }));
+        const payloadNotes = (reviewNotes && reviewNotes.length > 0)
+          ? reviewNotes.map(n => ({
+              bbox: n.bbox,
+              label: n.label,
+              comment: n.comment
+            }))
+          : [];
         await axios.post(`${API_URL}/api/reviews/${id}/approve`, {
           reviewComments: reviewComments.trim() || undefined,
           reviewNotes: payloadNotes,
         });
         alert('Đã phê duyệt task thành công!');
-        // Refresh tasks list to update statistics
+        // Refresh task data and tasks list to update statistics
+        await fetchTask();
         await fetchAllTasks();
-        const updatedResponse = await axios.get(`${API_URL}/api/reviews/all`);
-        const updatedPendingTasks = updatedResponse.data.pending || [];
-        if (autoNext && updatedPendingTasks.length > 0) {
-          navigate(`/reviewer/tasks/${updatedPendingTasks[0]._id}`);
-        } else {
-          navigate('/reviewer/tasks');
-        }
+        // Stay on current page instead of navigating away
       } catch (error) {
         const errorMessage = error.response?.data?.message || 'Lỗi khi phê duyệt task';
         alert(errorMessage);
@@ -93,41 +143,46 @@ const ReviewerTask = () => {
         setProcessing(false);
       }
     }
-  }, [id, reviewComments, reviewNotes, autoNext, navigate]);
+  }, [id, task, reviewComments, reviewNotes]);
 
   const handleReject = useCallback(async () => {
+    // Check if task has already been reviewed
+    if (task?.status === 'approved' || task?.status === 'rejected') {
+      alert('Task này đã được đánh giá rồi. Mỗi task chỉ có thể được đánh giá 1 lần.');
+      return;
+    }
+
     if (!reviewComments.trim()) {
       alert('Vui lòng nhập nhận xét khi từ chối task');
       return;
     }
-    if (!reviewNotes || reviewNotes.length === 0) {
-      alert('Bạn cần thêm ít nhất một ghi chú trên ảnh trước khi từ chối');
-      return;
-    }
 
-    if (window.confirm('Bạn có chắc muốn từ chối task này? Annotator sẽ nhận được phản hồi và cần chỉnh sửa lại.')) {
+    if (window.confirm('Bạn có chắc muốn từ chối task này? Annotator sẽ nhận được phản hồi và cần chỉnh sửa lại. Lưu ý: Mỗi task chỉ có thể được đánh giá 1 lần.')) {
       setProcessing(true);
       try {
-        const payloadNotes = reviewNotes.map(n => ({
-          bbox: n.bbox,
-          label: n.label,
-          comment: n.comment
-        }));
+        const payloadNotes = (reviewNotes && reviewNotes.length > 0) 
+          ? reviewNotes.map(n => ({
+              bbox: n.bbox,
+              label: n.label,
+              comment: n.comment
+            }))
+          : [];
+        // Map frontend error category to backend format
+        const selectedErrorType = errorTypes.find(et => et.id === (errorCategory || selectedError));
+        const backendErrorCategory = selectedErrorType 
+          ? selectedErrorType.backendCategory 
+          : mapErrorCategoryToBackend(errorCategory || selectedError || 'other');
+        
         await axios.post(`${API_URL}/api/reviews/${id}/reject`, {
           reviewComments: reviewComments.trim(),
-          errorCategory: errorCategory || selectedError || 'other',
+          errorCategory: backendErrorCategory,
           reviewNotes: payloadNotes,
         });
         alert('Đã từ chối task thành công!');
-        // Refresh tasks list to update statistics
+        // Refresh task data and tasks list to update statistics
+        await fetchTask();
         await fetchAllTasks();
-        const updatedResponse = await axios.get(`${API_URL}/api/reviews/all`);
-        const updatedPendingTasks = updatedResponse.data.pending || [];
-        if (autoNext && updatedPendingTasks.length > 0) {
-          navigate(`/reviewer/tasks/${updatedPendingTasks[0]._id}`);
-        } else {
-          navigate('/reviewer/tasks');
-        }
+        // Stay on current page instead of navigating away
       } catch (error) {
         const errorMessage = error.response?.data?.message || error.response?.data?.errors?.[0]?.msg || 'Lỗi khi từ chối task';
         alert(errorMessage);
@@ -136,7 +191,7 @@ const ReviewerTask = () => {
         setProcessing(false);
       }
     }
-  }, [id, reviewComments, reviewNotes, errorCategory, selectedError, autoNext, navigate]);
+  }, [id, task, reviewComments, reviewNotes, errorCategory, selectedError]);
 
   const handleSkip = () => {
     if (pendingTasks.length > 1) {
@@ -250,37 +305,6 @@ const ReviewerTask = () => {
     const diffInDays = Math.floor(diffInHours / 24);
     return `${diffInDays}d ago`;
   };
-
-  const errorTypes = [
-    {
-      id: 'tightness',
-      name: 'Tightness Issue',
-      description: "Bounding box doesn't fit object",
-      icon: '📐',
-      color: 'from-yellow-400 to-orange-500'
-    },
-    {
-      id: 'missed',
-      name: 'Missed Object',
-      description: 'Visible object not labeled',
-      icon: '👁️',
-      color: 'from-blue-400 to-cyan-500'
-    },
-    {
-      id: 'wrong_class',
-      name: 'Wrong Class',
-      description: 'Categorization error',
-      icon: '🏷️',
-      color: 'from-purple-400 to-pink-500'
-    },
-    {
-      id: 'occlusion',
-      name: 'Occlusion Error',
-      description: 'Improper handling of overlap',
-      icon: '🔀',
-      color: 'from-red-400 to-rose-500'
-    }
-  ];
 
   const scrollCarousel = (direction) => {
     if (carouselRef.current) {
@@ -397,6 +421,39 @@ const ReviewerTask = () => {
         {/* Center - Image Viewer with Smart Highlight */}
         <div className="flex-1 flex flex-col overflow-hidden">
           <div className={`flex-1 overflow-y-auto p-6 ${darkMode ? 'bg-gray-900' : ''}`}>
+            {/* Status Banner - Show when task is already reviewed */}
+            {isReviewed && (
+              <div className={`mb-4 p-4 rounded-xl border-2 ${
+                task?.status === 'approved'
+                  ? darkMode 
+                    ? 'bg-emerald-900/30 border-emerald-500 text-emerald-300'
+                    : 'bg-emerald-100 border-emerald-500 text-emerald-800'
+                  : darkMode
+                    ? 'bg-red-900/30 border-red-500 text-red-300'
+                    : 'bg-red-100 border-red-500 text-red-800'
+              }`}>
+                <div className="flex items-center gap-2">
+                  <span className="text-2xl">
+                    {task?.status === 'approved' ? '✓' : '✕'}
+                  </span>
+                  <div className="flex-1">
+                    <h3 className="font-bold text-lg">
+                      {task?.status === 'approved' ? 'ĐÃ PHÊ DUYỆT' : 'ĐÃ TỪ CHỐI'}
+                    </h3>
+                    <p className="text-sm mt-1">
+                      Task này đã được đánh giá bởi bạn vào {task?.reviewedAt ? new Date(task.reviewedAt).toLocaleString('vi-VN') : 'trước đó'}. 
+                      Mỗi task chỉ có thể được đánh giá 1 lần.
+                    </p>
+                    {task?.reviewComments && (
+                      <p className="text-sm mt-2 opacity-90">
+                        <strong>Nhận xét của bạn:</strong> {task.reviewComments}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+            
             <div className="mb-4">
               <h2 className={`text-lg font-bold mb-1 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                 CURRENTLY AUDITING
@@ -786,15 +843,17 @@ const ReviewerTask = () => {
           </button>
           <button
             onClick={handleReject}
-            disabled={processing || !reviewComments.trim() || reviewNotes.length === 0}
+            disabled={processing || !reviewComments.trim() || isReviewed}
             className="px-8 py-3 bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-xl font-bold shadow-lg shadow-red-500/50 transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+            title={isReviewed ? 'Task này đã được đánh giá rồi' : (!reviewComments.trim() ? 'Vui lòng nhập nhận xét trước khi từ chối' : '')}
           >
             <span className="mr-2">✕</span> Request Change
           </button>
           <button
             onClick={handleApprove}
-            disabled={processing}
+            disabled={processing || isReviewed}
             className="px-8 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl font-bold shadow-lg shadow-emerald-500/50 transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+            title={isReviewed ? 'Task này đã được đánh giá rồi' : ''}
           >
             <span className="mr-2">✓</span> Approve Task
           </button>
