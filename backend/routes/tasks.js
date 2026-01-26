@@ -280,7 +280,7 @@ router.post('/assign', auth, authorize('manager', 'admin'), async (req, res) => 
 router.put('/:id/label', auth, authorize('annotator'), async (req, res) => {
   try {
     const task = await Task.findById(req.params.id)
-      .populate('projectId', 'labelSet');
+      .populate('projectId', 'labelSet deadline');
     
     if (!task) {
       return res.status(404).json({ message: 'Task not found' });
@@ -313,6 +313,16 @@ router.put('/:id/label', auth, authorize('annotator'), async (req, res) => {
 
     // Allow editing if task is rejected (for revision)
     if (task.status === 'rejected') {
+      // Check deadline if project has one
+      if (task.projectId?.deadline) {
+        const deadline = new Date(task.projectId.deadline);
+        const now = new Date();
+        if (now > deadline) {
+          return res.status(400).json({ 
+            message: `Không thể chỉnh sửa task. Deadline của project đã hết hạn (${deadline.toLocaleString('vi-VN')}). Vui lòng liên hệ Manager.` 
+          });
+        }
+      }
       task.status = 'in_progress';
       // Clear review info when annotator starts editing rejected task
       task.reviewComments = undefined;
@@ -360,7 +370,7 @@ router.put('/:id/label', auth, authorize('annotator'), async (req, res) => {
 router.post('/:id/submit', auth, authorize('annotator'), async (req, res) => {
   try {
     const task = await Task.findById(req.params.id)
-      .populate('projectId', 'questions');
+      .populate('projectId', 'questions deadline');
     
     if (!task) {
       return res.status(404).json({ message: 'Task not found' });
@@ -393,6 +403,16 @@ router.post('/:id/submit', auth, authorize('annotator'), async (req, res) => {
 
     // Allow resubmission if task was rejected
     if (task.status === 'rejected') {
+      // Check deadline if project has one
+      if (task.projectId?.deadline) {
+        const deadline = new Date(task.projectId.deadline);
+        const now = new Date();
+        if (now > deadline) {
+          return res.status(400).json({ 
+            message: `Không thể nộp lại task. Deadline của project đã hết hạn (${deadline.toLocaleString('vi-VN')}). Vui lòng liên hệ Manager.` 
+          });
+        }
+      }
       // Clear previous review information when resubmitting
       task.reviewComments = undefined;
       task.errorCategory = undefined;
@@ -402,6 +422,17 @@ router.post('/:id/submit', auth, authorize('annotator'), async (req, res) => {
       return res.status(400).json({ message: 'Task can only be submitted from "in_progress" or "assigned" status' });
     }
 
+    // Check deadline for all submissions
+    if (task.projectId?.deadline) {
+      const deadline = new Date(task.projectId.deadline);
+      const now = new Date();
+      if (now > deadline) {
+        return res.status(400).json({ 
+          message: `Không thể nộp task. Deadline của project đã hết hạn (${deadline.toLocaleString('vi-VN')}). Vui lòng liên hệ Manager.` 
+        });
+      }
+    }
+
     // Ensure reviewer assignment exists
     if (!task.reviewers || task.reviewers.length === 0) {
       return res.status(400).json({ message: 'Task must have at least one reviewer assigned before submission' });
@@ -409,12 +440,19 @@ router.post('/:id/submit', auth, authorize('annotator'), async (req, res) => {
 
     // Reset reviewer states to pending on (re)submit
     if (task.reviewers && task.reviewers.length > 0) {
-      task.reviewers = task.reviewers.map(r => ({
-        ...r.toObject?.() ? r.toObject() : r,
+      task.reviewers = task.reviewers.map(r => {
+        const reviewerId = r.reviewerId?._id || r.reviewerId || r.reviewerId?.toString();
+        return {
+          reviewerId: reviewerId, // Ensure reviewerId is preserved
         status: 'pending',
         comment: undefined,
         reviewedAt: undefined
-      }));
+        };
+      });
+      console.log(`Reset reviewers for task ${task._id}:`, task.reviewers.map(r => ({
+        reviewerId: r.reviewerId?.toString?.() || r.reviewerId,
+        status: r.status
+      })));
     }
     // Clear review notes on resubmit
     task.reviewNotes = [];
@@ -443,6 +481,14 @@ router.post('/:id/submit', auth, authorize('annotator'), async (req, res) => {
     task.submittedAt = new Date();
     task.updatedAt = new Date();
     await task.save();
+    
+    // Log task submission with reviewers info for debugging
+    console.log(`Task ${task._id} submitted with ${task.reviewers?.length || 0} reviewers:`, 
+      task.reviewers?.map(r => ({
+        reviewerId: r.reviewerId?.toString?.() || r.reviewerId?.toString() || r.reviewerId,
+        status: r.status
+      }))
+    );
 
     // Log task submission
     await createActivityLog(

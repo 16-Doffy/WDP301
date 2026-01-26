@@ -102,7 +102,9 @@ router.post('/', auth, authorize('manager'), [
         sampleRate: typeof req.body.reviewPolicy?.sampleRate === 'number'
           ? Math.min(1, Math.max(0, req.body.reviewPolicy.sampleRate))
           : 0.1
-      }
+      },
+      deadline: req.body.deadline ? new Date(req.body.deadline) : undefined,
+      exportFormat: req.body.exportFormat || 'JSON'
     });
 
     await project.save();
@@ -203,163 +205,6 @@ router.delete('/:id', auth, authorize('manager', 'admin'), async (req, res) => {
   }
 });
 
-// Export approved tasks data (Manager only)
-router.get('/:id/export', auth, authorize('manager', 'admin'), async (req, res) => {
-  try {
-    const { format = 'json' } = req.query;
-    const project = await Project.findById(req.params.id);
-    
-    if (!project) {
-      return res.status(404).json({ message: 'Project not found' });
-    }
-
-    if (project.managerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
-      return res.status(403).json({ message: 'Not authorized' });
-    }
-
-    const approvedTasks = await Task.find({
-      projectId: project._id,
-      status: 'approved'
-    })
-      .populate('annotatorId', 'username fullName')
-      .populate('datasetId', 'name')
-      .sort({ reviewedAt: 1 });
-
-    if (approvedTasks.length === 0) {
-      return res.status(400).json({ message: 'No approved tasks to export' });
-    }
-
-    if (format === 'json') {
-      const exportData = approvedTasks.map(task => ({
-        id: task._id.toString(),
-        filename: task.dataItem?.filename,
-        path: task.dataItem?.path,
-        labels: task.labels,
-        annotator: task.annotatorId?.fullName || task.annotatorId?.username,
-        reviewedAt: task.reviewedAt,
-        project: project.name
-      }));
-
-      res.setHeader('Content-Type', 'application/json');
-      res.setHeader('Content-Disposition', `attachment; filename="${project.name}_export_${Date.now()}.json"`);
-      
-      // Log data export
-      await createActivityLog(
-        req.user._id,
-        'export_data',
-        'project',
-        project._id,
-        `Exported ${approvedTasks.length} approved tasks from project: ${project.name} (JSON format)`,
-        { 
-          projectId: project._id.toString(),
-          format: 'json',
-          tasksCount: approvedTasks.length
-        },
-        req
-      );
-      
-      res.json(exportData);
-    } else if (format === 'coco') {
-      // COCO format export
-      const cocoData = {
-        info: {
-          description: project.description || project.name,
-          version: "1.0",
-          year: new Date().getFullYear()
-        },
-        images: [],
-        annotations: [],
-        categories: project.labelSet.map((label, idx) => ({
-          id: idx + 1,
-          name: label.name,
-          supercategory: "object"
-        }))
-      };
-
-      approvedTasks.forEach((task, taskIdx) => {
-        const imageId = taskIdx + 1;
-        cocoData.images.push({
-          id: imageId,
-          file_name: task.dataItem?.filename,
-          width: 0, // Would need to extract from image
-          height: 0
-        });
-
-        // Convert labels to COCO format
-        if (task.labels && task.labels.objects && Array.isArray(task.labels.objects)) {
-          task.labels.objects.forEach((obj, annIdx) => {
-            const category = cocoData.categories.find(cat => cat.name === obj.label);
-            if (category && obj.bbox) {
-              const [x, y, width, height] = obj.bbox;
-              cocoData.annotations.push({
-                id: taskIdx * 1000 + annIdx + 1,
-                image_id: imageId,
-                category_id: category.id,
-                bbox: [x, y, width, height],
-                area: width * height,
-                iscrowd: 0
-              });
-            }
-          });
-        }
-      });
-
-      res.setHeader('Content-Type', 'application/json');
-      res.setHeader('Content-Disposition', `attachment; filename="${project.name}_coco_${Date.now()}.json"`);
-      
-      // Log data export
-      await createActivityLog(
-        req.user._id,
-        'export_data',
-        'project',
-        project._id,
-        `Exported ${approvedTasks.length} approved tasks from project: ${project.name} (COCO format)`,
-        { 
-          projectId: project._id.toString(),
-          format: 'coco',
-          tasksCount: approvedTasks.length
-        },
-        req
-      );
-      
-      res.json(cocoData);
-    } else if (format === 'csv') {
-      // CSV format export
-      const csvRows = ['Filename,Annotator,Labels,Reviewed At'];
-      
-      approvedTasks.forEach(task => {
-        const labelsStr = JSON.stringify(task.labels).replace(/"/g, '""');
-        const reviewedAt = task.reviewedAt ? new Date(task.reviewedAt).toISOString() : '';
-        const annotator = task.annotatorId?.fullName || task.annotatorId?.username || '';
-        csvRows.push(`"${task.dataItem?.filename}","${annotator}","${labelsStr}","${reviewedAt}"`);
-      });
-
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', `attachment; filename="${project.name}_export_${Date.now()}.csv"`);
-      
-      // Log data export
-      await createActivityLog(
-        req.user._id,
-        'export_data',
-        'project',
-        project._id,
-        `Exported ${approvedTasks.length} approved tasks from project: ${project.name} (CSV format)`,
-        { 
-          projectId: project._id.toString(),
-          format: 'csv',
-          tasksCount: approvedTasks.length
-        },
-        req
-      );
-      
-      res.send(csvRows.join('\n'));
-    } else {
-      return res.status(400).json({ message: 'Invalid format. Supported: json, csv, coco' });
-    }
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: error.message });
-  }
-});
 
 // Get quality statistics for project (Manager only)
 router.get('/:id/quality', auth, authorize('manager'), async (req, res) => {
@@ -428,6 +273,294 @@ router.get('/:id/quality', auth, authorize('manager'), async (req, res) => {
 
     res.json(stats);
   } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Export project data (Manager only)
+router.get('/:id/export', auth, authorize('manager', 'admin'), async (req, res) => {
+  try {
+    const { format = 'json' } = req.query;
+    const project = await Project.findById(req.params.id).select('name description labelSet managerId');
+    
+    if (!project) {
+      return res.status(404).json({ message: 'Project not found' });
+    }
+
+    // Ensure labelSet exists for YOLO/VOC export
+    if ((format.toUpperCase() === 'YOLO' || format.toUpperCase() === 'VOC') && 
+        (!project.labelSet || !Array.isArray(project.labelSet) || project.labelSet.length === 0)) {
+      return res.status(400).json({ 
+        message: 'Project does not have any labels defined. Please add labels to the project before exporting in YOLO/VOC format.' 
+      });
+    }
+
+    // Authorization check
+    if (req.user.role === 'manager' && project.managerId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    // Get all tasks in the project to check completion status
+    const allTasks = await Task.find({
+      projectId: project._id
+    });
+
+    // Check if all tasks are approved (required for export)
+    const totalTasks = allTasks.length;
+    const approvedTasks = allTasks.filter(t => t.status === 'approved');
+    const pendingTasks = allTasks.filter(t => t.status === 'submitted' || t.status === 'in_progress' || t.status === 'assigned');
+    const rejectedTasks = allTasks.filter(t => t.status === 'rejected');
+
+    if (totalTasks === 0) {
+      return res.status(400).json({ message: 'No tasks found in this project.' });
+    }
+
+    if (approvedTasks.length === 0) {
+      return res.status(400).json({ 
+        message: 'No approved tasks to export. Please wait for reviewer to approve tasks.'
+      });
+    }
+
+    // Check if all tasks are approved (strict requirement)
+    if (pendingTasks.length > 0 || rejectedTasks.length > 0) {
+      return res.status(400).json({ 
+        message: 'Cannot export: Not all tasks have been approved. All tasks must be approved before export.',
+        stats: {
+          total: totalTasks,
+          approved: approvedTasks.length,
+          pending: pendingTasks.length,
+          rejected: rejectedTasks.length
+        }
+      });
+    }
+
+    // Get approved tasks with populated data
+    const tasks = await Task.find({
+      projectId: project._id,
+      status: 'approved'
+    })
+      .populate('annotatorId', 'username fullName');
+
+    let exportData;
+    let contentType;
+    let filename;
+
+    switch (format.toUpperCase()) {
+      case 'YOLO':
+        // YOLO format: class_id center_x center_y width height (normalized)
+        const yoloFiles = tasks.map(task => {
+          if (!task.labels?.objects || !Array.isArray(task.labels.objects) || task.labels.objects.length === 0) {
+            return null;
+          }
+          
+          const imagePath = task.dataItem?.path || '';
+          const annotations = task.labels.objects.map(obj => {
+            const [x1, y1, x2, y2] = obj.bbox || [0, 0, 0, 0];
+            const labelIndex = project.labelSet.findIndex(l => l.name === obj.label);
+            
+            if (labelIndex === -1) {
+              return null;
+            }
+            
+            const centerX = ((x1 + x2) / 2) / 100;
+            const centerY = ((y1 + y2) / 2) / 100;
+            const width = Math.abs(x2 - x1) / 100;
+            const height = Math.abs(y2 - y1) / 100;
+            
+            return `${labelIndex} ${centerX.toFixed(6)} ${centerY.toFixed(6)} ${width.toFixed(6)} ${height.toFixed(6)}`;
+          }).filter(Boolean);
+          
+          if (!annotations || annotations.length === 0) {
+            return null;
+          }
+          
+          return `${imagePath}\n${annotations.join('\n')}`;
+        }).filter(Boolean);
+        
+        if (yoloFiles.length === 0) {
+          return res.status(400).json({ message: 'No valid annotations found in approved tasks for YOLO export.' });
+        }
+        
+        exportData = yoloFiles.join('\n\n');
+        contentType = 'text/plain';
+        filename = `project_${project._id}_yolo_${Date.now()}.txt`;
+        break;
+
+      case 'VOC':
+        // Pascal VOC XML format
+        const vocData = tasks.map(task => {
+          if (!task.labels?.objects || !Array.isArray(task.labels.objects) || task.labels.objects.length === 0) {
+            return null;
+          }
+          
+          const objects = task.labels.objects.map(obj => {
+            const [x1, y1, x2, y2] = obj.bbox || [0, 0, 0, 0];
+            // Escape XML special characters in label name
+            const escapedLabel = (obj.label || 'unknown')
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;')
+              .replace(/'/g, '&apos;');
+            
+            return `    <object>
+      <name>${escapedLabel}</name>
+      <bndbox>
+        <xmin>${Math.round(x1)}</xmin>
+        <ymin>${Math.round(y1)}</ymin>
+        <xmax>${Math.round(x2)}</xmax>
+        <ymax>${Math.round(y2)}</ymax>
+      </bndbox>
+    </object>`;
+          }).join('\n');
+          
+          if (!objects) return null;
+          
+          // Escape XML special characters in filename and path
+          const escapedFilename = (task.dataItem?.filename || 'unknown')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&apos;');
+          const escapedPath = (task.dataItem?.path || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&apos;');
+          
+          return `  <image>
+    <filename>${escapedFilename}</filename>
+    <path>${escapedPath}</path>
+${objects}
+  </image>`;
+        }).filter(Boolean);
+        
+        if (vocData.length === 0) {
+          return res.status(400).json({ message: 'No valid annotations found in approved tasks for VOC export.' });
+        }
+        
+        // Escape XML special characters in project name
+        const escapedProjectName = (project.name || 'Project')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&apos;');
+        
+        exportData = `<?xml version="1.0" encoding="UTF-8"?>
+<annotation>
+  <project>${escapedProjectName}</project>
+${vocData.join('\n')}
+</annotation>`;
+        
+        contentType = 'application/xml';
+        filename = `project_${project._id}_voc_${Date.now()}.xml`;
+        break;
+
+      case 'COCO':
+        // COCO JSON format
+        const cocoData = {
+          info: {
+            description: project.description || '',
+            version: '1.0',
+            year: new Date().getFullYear()
+          },
+          images: tasks.map((task, idx) => ({
+            id: idx + 1,
+            file_name: task.dataItem?.filename || 'unknown',
+            width: 0, // Would need actual image dimensions
+            height: 0
+          })),
+          annotations: [],
+          categories: project.labelSet.map((label, idx) => ({
+            id: idx + 1,
+            name: label.name,
+            supercategory: 'object'
+          }))
+        };
+
+        tasks.forEach((task, taskIdx) => {
+          if (task.labels?.objects && Array.isArray(task.labels.objects)) {
+            task.labels.objects.forEach((obj, objIdx) => {
+              const [x1, y1, x2, y2] = obj.bbox || [0, 0, 0, 0];
+              const labelIndex = project.labelSet.findIndex(l => l.name === obj.label);
+              cocoData.annotations.push({
+                id: (taskIdx + 1) * 1000 + objIdx + 1,
+                image_id: taskIdx + 1,
+                category_id: labelIndex >= 0 ? labelIndex + 1 : 1,
+                bbox: [x1, y1, Math.abs(x2 - x1), Math.abs(y2 - y1)],
+                area: Math.abs(x2 - x1) * Math.abs(y2 - y1),
+                iscrowd: 0
+              });
+            });
+          }
+        });
+
+        exportData = JSON.stringify(cocoData, null, 2);
+        contentType = 'application/json';
+        filename = `project_${project._id}_coco_${Date.now()}.json`;
+        break;
+
+      case 'CSV':
+        // CSV format
+        const csvRows = ['Image,Label,X1,Y1,X2,Y2,Annotator'];
+        tasks.forEach(task => {
+          if (task.labels?.objects && Array.isArray(task.labels.objects)) {
+            task.labels.objects.forEach(obj => {
+              const [x1, y1, x2, y2] = obj.bbox || [0, 0, 0, 0];
+              csvRows.push(`${task.dataItem?.filename || 'unknown'},${obj.label},${x1},${y1},${x2},${y2},${task.annotatorId?.username || 'unknown'}`);
+            });
+          }
+        });
+        exportData = csvRows.join('\n');
+        contentType = 'text/csv';
+        filename = `project_${project._id}_csv_${Date.now()}.csv`;
+        break;
+
+      default: // JSON
+        exportData = JSON.stringify({
+          project: {
+            id: project._id,
+            name: project.name,
+            description: project.description,
+            exportFormat: project.exportFormat || 'JSON'
+          },
+          tasks: tasks.map(task => ({
+            id: task._id,
+            image: task.dataItem?.filename || 'unknown',
+            path: task.dataItem?.path || '',
+            annotations: task.labels?.objects || [],
+            annotator: task.annotatorId?.username || 'unknown',
+            reviewedAt: task.reviewedAt
+          }))
+        }, null, 2);
+        contentType = 'application/json';
+        filename = `project_${project._id}_json_${Date.now()}.json`;
+    }
+
+    // Ensure exportData is not null or undefined
+    if (exportData === null || exportData === undefined) {
+      return res.status(400).json({ message: 'Failed to generate export data. Please check your project data.' });
+    }
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(exportData);
+
+    // Log export activity
+    await createActivityLog(
+      req.user._id,
+      'project_export',
+      'project',
+      project._id,
+      `Exported project data in ${format.toUpperCase()} format`,
+      { format: format.toUpperCase(), tasksCount: tasks.length },
+      req
+    );
+  } catch (error) {
+    console.error('Export error:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 });

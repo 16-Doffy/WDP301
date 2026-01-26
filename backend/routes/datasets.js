@@ -29,6 +29,31 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 } // 50MB
 });
 
+// Get all datasets for current manager (including unassigned ones)
+router.get('/', auth, authorize('manager', 'admin'), async (req, res) => {
+  try {
+    const datasets = await Dataset.find({ managerId: req.user._id })
+      .populate({
+        path: 'projectId',
+        select: 'name',
+        options: { lean: true }
+      })
+      .sort({ createdAt: -1 })
+      .lean();
+    
+    // Convert to plain objects and handle null projectId
+    const datasetsWithProject = datasets.map(ds => ({
+      ...ds,
+      projectId: ds.projectId || null
+    }));
+    
+    res.json(datasetsWithProject);
+  } catch (error) {
+    console.error('Error fetching datasets:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
 // Get all datasets for a project
 router.get('/project/:projectId', auth, async (req, res) => {
   try {
@@ -61,13 +86,25 @@ router.post('/', auth, authorize('manager', 'admin'), upload.array('files', 100)
   try {
     const { projectId, name, description } = req.body;
 
-    const project = await Project.findById(projectId);
-    if (!project) {
-      return res.status(404).json({ message: 'Project not found' });
+    // Validate required fields
+    if (!name || !name.trim()) {
+      return res.status(400).json({ message: 'Dataset name is required' });
     }
 
-    if (project.managerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
-      return res.status(403).json({ message: 'Not authorized' });
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ message: 'At least one file is required' });
+    }
+
+    // If projectId is provided, validate it
+    if (projectId) {
+      const project = await Project.findById(projectId);
+      if (!project) {
+        return res.status(404).json({ message: 'Project not found' });
+      }
+
+      if (project.managerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+        return res.status(403).json({ message: 'Not authorized to create dataset for this project' });
+      }
     }
 
     const files = req.files.map(file => ({
@@ -79,9 +116,10 @@ router.post('/', auth, authorize('manager', 'admin'), upload.array('files', 100)
     }));
 
     const dataset = new Dataset({
-      projectId,
-      name,
-      description,
+      projectId: projectId || null, // Optional
+      managerId: req.user._id, // Required
+      name: name.trim(),
+      description: description?.trim() || '',
       files,
       totalItems: files.length
     });
@@ -98,7 +136,7 @@ router.post('/', auth, authorize('manager', 'admin'), upload.array('files', 100)
       { 
         datasetName: dataset.name,
         filesCount: files.length,
-        projectId: projectId
+        projectId: projectId || null
       },
       req
     );
@@ -109,17 +147,54 @@ router.post('/', auth, authorize('manager', 'admin'), upload.array('files', 100)
   }
 });
 
-// Delete dataset (Manager only)
-router.delete('/:id', auth, authorize('manager', 'admin'), async (req, res) => {
+// Update dataset (Manager only)
+router.put('/:id', auth, authorize('manager', 'admin'), async (req, res) => {
   try {
-    const dataset = await Dataset.findById(req.params.id)
-      .populate('projectId', 'managerId');
+    const { projectId, name, description } = req.body;
+    const dataset = await Dataset.findById(req.params.id);
     
     if (!dataset) {
       return res.status(404).json({ message: 'Dataset not found' });
     }
 
-    if (dataset.projectId.managerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    // Check if user owns the dataset
+    if (dataset.managerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    // If projectId is provided, validate it
+    if (projectId) {
+      const project = await Project.findById(projectId);
+      if (!project) {
+        return res.status(404).json({ message: 'Project not found' });
+      }
+      if (project.managerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+        return res.status(403).json({ message: 'Not authorized to link dataset to this project' });
+      }
+    }
+
+    if (name) dataset.name = name.trim();
+    if (description !== undefined) dataset.description = description?.trim() || '';
+    if (projectId !== undefined) dataset.projectId = projectId || null;
+
+    await dataset.save();
+    res.json(dataset);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Delete dataset (Manager only)
+router.delete('/:id', auth, authorize('manager', 'admin'), async (req, res) => {
+  try {
+    const dataset = await Dataset.findById(req.params.id);
+    
+    if (!dataset) {
+      return res.status(404).json({ message: 'Dataset not found' });
+    }
+
+    // Check if user owns the dataset
+    if (dataset.managerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
