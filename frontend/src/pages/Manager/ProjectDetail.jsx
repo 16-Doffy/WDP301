@@ -81,6 +81,7 @@ const ManagerProjectDetail = () => {
   const [auditTask, setAuditTask] = useState(null);
   const [previewLabelsOpen, setPreviewLabelsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all'); // all | assigned | in_progress | submitted | approved | rejected
 
   useEffect(() => {
     fetchData();
@@ -553,24 +554,72 @@ const ManagerProjectDetail = () => {
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Tasks Overview</h2>
             <div className="flex flex-wrap gap-2">
-              <span className="px-3 py-1 bg-gray-100 text-gray-800 text-sm rounded-full font-medium">
-                Total {tasks.length}
-              </span>
-              <span className="px-3 py-1 bg-gray-100 text-gray-800 text-sm rounded-full font-medium">
+              <button
+                type="button"
+                onClick={() => setStatusFilter('all')}
+                className={`px-3 py-1 text-sm rounded-full font-medium border ${
+                  statusFilter === 'all'
+                    ? 'bg-gray-900 text-white border-gray-900'
+                    : 'bg-gray-100 text-gray-800 border-gray-200'
+                }`}
+              >
+                All {tasks.length}
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter('assigned')}
+                className={`px-3 py-1 text-sm rounded-full font-medium border ${
+                  statusFilter === 'assigned'
+                    ? 'bg-gray-900 text-white border-gray-900'
+                    : 'bg-gray-100 text-gray-800 border-gray-200'
+                }`}
+              >
                 Assigned {tasks.filter(t => t.status === 'assigned').length}
-              </span>
-              <span className="px-3 py-1 bg-blue-100 text-blue-800 text-sm rounded-full font-medium">
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter('in_progress')}
+                className={`px-3 py-1 text-sm rounded-full font-medium border ${
+                  statusFilter === 'in_progress'
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-blue-50 text-blue-800 border-blue-100'
+                }`}
+              >
                 In Progress {tasks.filter(t => t.status === 'in_progress').length}
-              </span>
-              <span className="px-3 py-1 bg-yellow-100 text-yellow-800 text-sm rounded-full font-medium">
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter('submitted')}
+                className={`px-3 py-1 text-sm rounded-full font-medium border ${
+                  statusFilter === 'submitted'
+                    ? 'bg-yellow-500 text-white border-yellow-500'
+                    : 'bg-yellow-50 text-yellow-800 border-yellow-100'
+                }`}
+              >
                 Submitted {tasks.filter(t => t.status === 'submitted').length}
-              </span>
-              <span className="px-3 py-1 bg-green-100 text-green-800 text-sm rounded-full font-medium">
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter('approved')}
+                className={`px-3 py-1 text-sm rounded-full font-medium border ${
+                  statusFilter === 'approved'
+                    ? 'bg-green-600 text-white border-green-600'
+                    : 'bg-green-50 text-green-800 border-green-100'
+                }`}
+              >
                 Approved {tasks.filter(t => t.status === 'approved').length}
-              </span>
-              <span className="px-3 py-1 bg-red-100 text-red-800 text-sm rounded-full font-medium">
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter('rejected')}
+                className={`px-3 py-1 text-sm rounded-full font-medium border ${
+                  statusFilter === 'rejected'
+                    ? 'bg-red-600 text-white border-red-600'
+                    : 'bg-red-50 text-red-800 border-red-100'
+                }`}
+              >
                 Rejected {tasks.filter(t => t.status === 'rejected').length}
-              </span>
+              </button>
             </div>
           </div>
 
@@ -611,13 +660,19 @@ const ManagerProjectDetail = () => {
                 {(() => {
                   // Filter tasks by annotator or reviewer name
                   const filteredTasks = tasks.filter((task) => {
+                    // Filter by status
+                    if (statusFilter !== 'all' && task.status !== statusFilter) {
+                      return false;
+                    }
+
+                    // Filter by search (annotator / reviewer)
                     if (!searchTerm.trim()) return true;
                     const searchLower = searchTerm.toLowerCase();
                     const annotatorName = (task.annotatorId?.fullName || task.annotatorId?.username || '').toLowerCase();
-                    const reviewerName = task.reviewers && task.reviewers.length > 0
-                      ? (task.reviewers[0]?.reviewerId?.fullName || task.reviewers[0]?.reviewerId?.username || '').toLowerCase()
-                      : '';
-                    return annotatorName.includes(searchLower) || reviewerName.includes(searchLower);
+                    const reviewerNames = (task.reviewers || [])
+                      .map(rv => (rv.reviewerId?.fullName || rv.reviewerId?.username || '').toLowerCase())
+                      .join(' ');
+                    return annotatorName.includes(searchLower) || reviewerNames.includes(searchLower);
                   });
 
                   if (filteredTasks.length === 0) {
@@ -662,16 +717,23 @@ const ManagerProjectDetail = () => {
                       </td>
                       <td className="px-4 py-3">
                         {task.reviewers && task.reviewers.length > 0 ? (
-                          <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 bg-purple-100 rounded-full flex items-center justify-center">
-                              <span className="text-xs text-purple-700">
-                                {(task.reviewers[0]?.reviewerId?.fullName || task.reviewers[0]?.reviewerId?.username || 'R')[0].toUpperCase()}
+                          <div className="flex items-center gap-1 flex-wrap">
+                            {task.reviewers.slice(0, 2).map((rv, idx) => (
+                              <span
+                                key={rv.reviewerId?._id || idx}
+                                className="inline-flex items-center px-2 py-0.5 rounded-full bg-purple-50 text-purple-800 text-xs font-medium"
+                              >
+                                {(rv.reviewerId?.fullName || rv.reviewerId?.username || 'Reviewer')}
+                                {rv.status === 'pending' && (
+                                  <span className="ml-1 text-[10px] text-yellow-700">(pending)</span>
+                                )}
                               </span>
-                            </div>
-                            <span className="text-gray-700 text-sm">
-                              {task.reviewers[0]?.reviewerId?.fullName || task.reviewers[0]?.reviewerId?.username || 'Reviewer'}
-                              {task.reviewers[0]?.status === 'pending' && ' (Pending)'}
-                            </span>
+                            ))}
+                            {task.reviewers.length > 2 && (
+                              <span className="text-xs text-gray-500 ml-1">
+                                +{task.reviewers.length - 2} more
+                              </span>
+                            )}
                           </div>
                         ) : (
                           <div className="flex items-center gap-2">

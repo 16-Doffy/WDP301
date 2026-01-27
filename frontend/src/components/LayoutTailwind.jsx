@@ -76,7 +76,7 @@ const LayoutTailwind = () => {
 
   const getRoleDisplay = () => {
     const roleMap = {
-      manager: 'Project Manager',
+      manager: ' Manager',
       annotator: 'Annotator',
       reviewer: 'Reviewer',
       admin: 'Administrator',

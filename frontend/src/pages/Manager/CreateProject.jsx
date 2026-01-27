@@ -152,6 +152,20 @@ const CreateProject = () => {
       return;
     }
 
+    // Validate deadline: nếu nhập thì phải lớn hơn thời gian hiện tại
+    if (formData.deadline) {
+      const deadlineDate = new Date(formData.deadline);
+      const now = new Date();
+      if (Number.isNaN(deadlineDate.getTime())) {
+        alert('Giá trị deadline không hợp lệ. Vui lòng chọn lại.');
+        return;
+      }
+      if (deadlineDate <= now) {
+        alert('Deadline phải lớn hơn thời gian hiện tại. Vui lòng chọn ngày giờ trong tương lai.');
+        return;
+      }
+    }
+
     setSaving(true);
     try {
       await axios.post(`${API_URL}/api/projects`, {
@@ -209,6 +223,20 @@ const CreateProject = () => {
     if (selectedReviewers.length === 0) {
       alert('Vui lòng chọn ít nhất một reviewer');
       return;
+    }
+
+    // Validate deadline: nếu nhập thì phải lớn hơn thời gian hiện tại
+    if (formData.deadline) {
+      const deadlineDate = new Date(formData.deadline);
+      const now = new Date();
+      if (Number.isNaN(deadlineDate.getTime())) {
+        alert('Giá trị deadline không hợp lệ. Vui lòng chọn lại.');
+        return;
+      }
+      if (deadlineDate <= now) {
+        alert('Deadline phải lớn hơn thời gian hiện tại. Vui lòng chọn ngày giờ trong tương lai.');
+        return;
+      }
     }
 
     setSaving(true);
