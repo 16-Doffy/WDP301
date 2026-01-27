@@ -21,6 +21,7 @@ import AdminUsers from './pages/Admin/Users';
 import AdminActivityLogs from './pages/Admin/ActivityLogs';
 import AdminSystemSettings from './pages/Admin/SystemSettings';
 import Layout from './components/LayoutTailwind';
+import { useAuth } from './context/AuthContext';
 
 const theme = createTheme({
   palette: {
@@ -32,6 +33,28 @@ const theme = createTheme({
     },
   },
 });
+
+const RoleDashboard = () => {
+  const { user } = useAuth();
+
+  if (!user) {
+    return null;
+  }
+
+  if (user.role === 'manager' || user.role === 'admin') {
+    return <ManagerDashboard />;
+  }
+
+  if (user.role === 'annotator') {
+    return <AnnotatorDashboard />;
+  }
+
+  if (user.role === 'reviewer') {
+    return <ReviewerDashboard />;
+  }
+
+  return <AdminDashboard />;
+};
 
 function App() {
   return (
@@ -51,7 +74,7 @@ function App() {
               }
             >
               <Route index element={<Navigate to="/dashboard" replace />} />
-              <Route path="dashboard" element={<ManagerDashboard />} />
+              <Route path="dashboard" element={<RoleDashboard />} />
               <Route path="manager/projects" element={<ManagerProjects />} />
               <Route path="manager/projects/create" element={<CreateProject />} />
               <Route path="manager/projects/:id" element={<ManagerProjectDetail />} />

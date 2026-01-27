@@ -48,6 +48,7 @@ const Datasets = () => {
   const [createSuccess, setCreateSuccess] = useState(false);
   const [createdDatasetName, setCreatedDatasetName] = useState('');
   const [createdFileCount, setCreatedFileCount] = useState(0);
+  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
     fetchDatasets();
@@ -165,125 +166,233 @@ const Datasets = () => {
   }
 
   return (
-    <Box sx={{ p: 3 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4">Dataset Management</Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => {
-            setFormData({ name: '', description: '' });
-            setUploadedFiles([]);
-            setCreateSuccess(false);
-            setCreatedDatasetName('');
-            setCreatedFileCount(0);
-            setError(null);
-            setCreateDialogOpen(true);
-          }}
-        >
-          Create Dataset
-        </Button>
-      </Box>
+    <Box sx={{ p: 0 }} className="flex-1 overflow-y-auto bg-gray-50">
+      {/* Header */}
+      <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold text-gray-900">Datasets</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Kho trung tâm chứa tất cả bộ dữ liệu hình ảnh dùng để labeling.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="relative hidden md:block">
+            <span className="absolute left-3 top-2.5 text-gray-400 text-sm">🔍</span>
+            <input
+              type="text"
+              placeholder="Search datasets..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9 pr-3 py-2 rounded-full border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white min-w-[220px]"
+            />
+          </div>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => {
+              setFormData({ name: '', description: '' });
+              setUploadedFiles([]);
+              setCreateSuccess(false);
+              setCreatedDatasetName('');
+              setCreatedFileCount(0);
+              setError(null);
+              setCreateDialogOpen(true);
+            }}
+            sx={{ borderRadius: '999px', textTransform: 'none', px: 3 }}
+          >
+            Create Dataset
+          </Button>
+        </div>
+      </div>
 
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
-          {error}
-        </Alert>
-      )}
+      <div className="p-6 flex gap-6">
+        {/* Main datasets grid */}
+        <div className="flex-1">
+          {error && (
+            <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+              {error}
+            </Alert>
+          )}
 
-      <Alert severity="info" sx={{ mb: 3 }}>
-        <Typography variant="body2">
-          <strong>Lưu ý:</strong> Tạo dataset trước, sau đó khi tạo project bạn có thể chọn dataset này để phân công cho annotator và reviewer.
-        </Typography>
-      </Alert>
+          <Alert severity="info" sx={{ mb: 3 }}>
+            <Typography variant="body2">
+              <strong>Lưu ý:</strong> Tạo dataset trước, sau đó khi tạo project bạn có thể chọn dataset
+              này để phân công cho annotator và reviewer.
+            </Typography>
+          </Alert>
 
-      <Grid container spacing={3}>
-        {datasets.length === 0 ? (
-          <Grid item xs={12}>
-            <Paper sx={{ p: 4, textAlign: 'center' }}>
-              <Typography variant="h6" color="textSecondary" gutterBottom>
-                Chưa có dataset nào
-              </Typography>
-              <Typography variant="body2" color="textSecondary">
-                Tạo project mới để upload dataset
-              </Typography>
-            </Paper>
+          <Grid container spacing={3}>
+            {datasets.length === 0 ? (
+              <Grid item xs={12}>
+                <Paper sx={{ p: 4, textAlign: 'center' }}>
+                  <Typography variant="h6" color="textSecondary" gutterBottom>
+                    Chưa có dataset nào
+                  </Typography>
+                  <Typography variant="body2" color="textSecondary">
+                    Tạo dataset đầu tiên để bắt đầu dự án labeling của bạn.
+                  </Typography>
+                </Paper>
+              </Grid>
+            ) : (
+              datasets
+                .filter((ds) => {
+                  if (!searchTerm.trim()) return true;
+                  const q = searchTerm.toLowerCase();
+                  return (
+                    ds.name.toLowerCase().includes(q) ||
+                    (ds.description || '').toLowerCase().includes(q)
+                  );
+                })
+                .map((dataset) => {
+                  const fileCount = dataset.totalItems || dataset.files?.length || 0;
+                  const totalSizeBytes =
+                    dataset.files?.reduce((sum, f) => sum + (f.size || 0), 0) || 0;
+                  const sizeLabel = formatFileSize(totalSizeBytes);
+
+                  return (
+                    <Grid item xs={12} md={6} lg={4} key={dataset._id}>
+                      <Card
+                        sx={{
+                          borderRadius: 3,
+                          boxShadow: '0 18px 45px rgba(15,23,42,0.04)',
+                          border: '1px solid #e5e7eb',
+                          cursor: 'pointer',
+                          '&:hover': { boxShadow: '0 22px 55px rgba(15,23,42,0.08)' },
+                        }}
+                      >
+                        <CardContent>
+                          <Box
+                            sx={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'flex-start',
+                              mb: 2,
+                            }}
+                          >
+                            <Box>
+                              <Typography variant="subtitle2" color="textSecondary" sx={{ mb: 0.5 }}>
+                                DATASET
+                              </Typography>
+                              <Typography variant="h6" sx={{ mb: 0.5 }}>
+                                {dataset.name}
+                              </Typography>
+                              {dataset.description && (
+                                <Typography
+                                  variant="body2"
+                                  color="textSecondary"
+                                  sx={{ maxWidth: 260 }}
+                                >
+                                  {dataset.description}
+                                </Typography>
+                              )}
+                            </Box>
+                            <IconButton
+                              size="small"
+                              color="error"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedDataset(dataset);
+                                setDeleteDialogOpen(true);
+                              }}
+                            >
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          </Box>
+
+                          <Box sx={{ display: 'flex', gap: 3, mt: 1 }}>
+                            <Box>
+                              <Typography
+                                variant="caption"
+                                color="textSecondary"
+                                sx={{ textTransform: 'uppercase' }}
+                              >
+                                Files
+                              </Typography>
+                              <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                                {fileCount.toLocaleString()}
+                              </Typography>
+                            </Box>
+                            <Box>
+                              <Typography
+                                variant="caption"
+                                color="textSecondary"
+                                sx={{ textTransform: 'uppercase' }}
+                              >
+                                Size
+                              </Typography>
+                              <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                                {sizeLabel}
+                              </Typography>
+                            </Box>
+                          </Box>
+
+                          <Box sx={{ mt: 2 }}>
+                            <Chip
+                              label={dataset.projectName || 'Chưa gán project'}
+                              size="small"
+                              color={dataset.projectId ? 'primary' : 'default'}
+                              variant={dataset.projectId ? 'filled' : 'outlined'}
+                            />
+                          </Box>
+                        </CardContent>
+                        <CardActions sx={{ px: 2.5, pb: 2.5, pt: 0 }}>
+                          <Button
+                            size="small"
+                            onClick={() => navigate(`/manager/projects`)}
+                            sx={{ textTransform: 'none', fontSize: 13 }}
+                          >
+                            View Projects
+                          </Button>
+                        </CardActions>
+                      </Card>
+                    </Grid>
+                  );
+                })
+            )}
           </Grid>
-        ) : (
-          datasets.map((dataset) => (
-            <Grid item xs={12} md={6} lg={4} key={dataset._id}>
-              <Card>
-                <CardContent>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', mb: 2 }}>
-                    <Box>
-                      <Typography variant="h6" gutterBottom>
-                        {dataset.name}
-                      </Typography>
-                      <Chip 
-                        label={dataset.projectName || 'Unknown Project'} 
-                        size="small" 
-                        color="primary" 
-                        sx={{ mb: 1 }}
-                      />
-                    </Box>
-                    <IconButton
-                      size="small"
-                      color="error"
-                      onClick={() => {
-                        setSelectedDataset(dataset);
-                        setDeleteDialogOpen(true);
-                      }}
-                    >
-                      <DeleteIcon />
-                    </IconButton>
-                  </Box>
-                  
-                  {dataset.description && (
-                    <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-                      {dataset.description}
-                    </Typography>
-                  )}
-                  
-                  <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
-                    <Typography variant="body2" color="textSecondary">
-                      <strong>Files:</strong> {dataset.files?.length || 0}
-                    </Typography>
-                    <Typography variant="body2" color="textSecondary">
-                      <strong>Total Items:</strong> {dataset.totalItems || 0}
-                    </Typography>
-                  </Box>
+        </div>
 
-                  {dataset.files && dataset.files.length > 0 && (
-                    <Box sx={{ maxHeight: 150, overflowY: 'auto' }}>
-                      {dataset.files.slice(0, 5).map((file, idx) => (
-                        <Box key={idx} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                          {getFileIcon(file.mimeType)}
-                          <Typography variant="caption" sx={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                            {file.originalName}
-                          </Typography>
-                          <Typography variant="caption" color="textSecondary">
-                            {formatFileSize(file.size)}
-                          </Typography>
-                        </Box>
-                      ))}
-                      {dataset.files.length > 5 && (
-                        <Typography variant="caption" color="textSecondary">
-                          ... và {dataset.files.length - 5} file khác
-                        </Typography>
-                      )}
-                    </Box>
-                  )}
-                </CardContent>
-                <CardActions>
-                  <Button size="small" onClick={() => navigate(`/manager/projects`)}>
-                    View Project
-                  </Button>
-                </CardActions>
-              </Card>
-            </Grid>
-          ))
-        )}
-      </Grid>
+        {/* Right side filters / storage info (simple) */}
+        <div className="w-full lg:w-72 space-y-4">
+          <Paper sx={{ p: 3 }}>
+            <Typography variant="subtitle2" gutterBottom>
+              Type
+            </Typography>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              <Chip label="Images" size="small" color="primary" variant="outlined" />
+              <Chip label="Other" size="small" variant="outlined" />
+            </Box>
+          </Paper>
+
+          <Paper sx={{ p: 3 }}>
+            <Typography variant="subtitle2" gutterBottom>
+              Total Storage
+            </Typography>
+            {/* Simple storage bar (placeholder based on datasets) */}
+            <Box sx={{ mt: 1 }}>
+              <Box
+                sx={{
+                  height: 6,
+                  borderRadius: 999,
+                  bgcolor: '#e5e7eb',
+                  overflow: 'hidden',
+                }}
+              >
+                <Box
+                  sx={{
+                    width: '60%',
+                    height: '100%',
+                    bgcolor: '#2563eb',
+                  }}
+                />
+              </Box>
+              <Typography variant="caption" color="textSecondary" sx={{ mt: 1, display: 'block' }}>
+                Dùng thử ảo để minh họa UI – logic export / upload vẫn hoạt động bình thường.
+              </Typography>
+            </Box>
+          </Paper>
+        </div>
+      </div>
 
       {/* Create Dataset Dialog */}
       <Dialog 
