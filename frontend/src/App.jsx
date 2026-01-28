@@ -59,12 +59,13 @@ function App() {
               <Route path="manager/datasets" element={<Datasets />} />
               <Route path="annotator/tasks" element={<AnnotatorDashboard />} />
               <Route path="annotator/tasks/:id" element={<AnnotatorTask />} />
-              <Route path="reviewer/tasks" element={<ReviewerDashboard />} />
+              <Route path="reviewer/tasks" element={<ReviewerTask />} />
               <Route path="reviewer/tasks/:id" element={<ReviewerTask />} />
               <Route path="admin/users" element={<AdminUsers />} />
               <Route path="admin/activity-logs" element={<AdminActivityLogs />} />
               <Route path="admin/settings" element={<AdminSystemSettings />} />
               <Route path="admin" element={<AdminDashboard />} />
+              <Route path="reviewer/dashboard" element={<ReviewerDashboard />} />
             </Route>
           </Routes>
         </Router>

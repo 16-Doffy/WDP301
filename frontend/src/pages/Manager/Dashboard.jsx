@@ -35,7 +35,7 @@ const ManagerDashboard = () => {
       const approvedTasks = tasks.filter(t => t.status === 'approved').length;
       const rejectedTasks = tasks.filter(t => t.status === 'rejected').length;
       const totalReviewed = approvedTasks + rejectedTasks;
-      const approvalRate = totalReviewed > 0 
+      const approvalRate = totalReviewed > 0
         ? ((approvedTasks / totalReviewed) * 100).toFixed(1)
         : 0;
 
