@@ -32,6 +32,13 @@ const AnnotatorTask = () => {
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const [textContent, setTextContent] = useState('');
   const [annotationNote, setAnnotationNote] = useState('');
+  // Text span labeling (multi-label)
+  const [textSpans, setTextSpans] = useState([]); // [{ id, start, end, label }]
+  const [pendingSelection, setPendingSelection] = useState(null); // { start, end }
+  const [pendingLabel, setPendingLabel] = useState('');
+  const [showSpanPicker, setShowSpanPicker] = useState(false);
+  const [spanPickerPos, setSpanPickerPos] = useState({ x: 0, y: 0 });
+  const textContainerRef = useRef(null);
   const canvasRef = useRef(null);
 
   const getTaskKind = useCallback((t) => {
@@ -51,6 +58,10 @@ const AnnotatorTask = () => {
     setSelectedAnnotation(null);
     setTextContent('');
     setAnnotationNote('');
+    setTextSpans([]);
+    setPendingSelection(null);
+    setPendingLabel('');
+    setShowSpanPicker(false);
     setLoading(true);
     fetchTask();
   }, [id]);
@@ -100,6 +111,10 @@ const AnnotatorTask = () => {
       setSelectedAnnotation(null);
       setTextContent('');
       setAnnotationNote('');
+      setTextSpans([]);
+      setPendingSelection(null);
+      setPendingLabel('');
+      setShowSpanPicker(false);
       
       const response = await axios.get(`${API_URL}/api/tasks/${id}`);
       setTask(response.data);
@@ -117,6 +132,7 @@ const AnnotatorTask = () => {
           setTextContent('Không thể tải nội dung file văn bản.');
         }
         setAnnotationNote(initialLabels?.note || '');
+        setTextSpans(Array.isArray(initialLabels?.spans) ? initialLabels.spans : []);
       }
 
       if (kind === 'audio') {
@@ -202,7 +218,9 @@ const AnnotatorTask = () => {
       if (kind === 'image') {
         labelsPayload = labels;
       } else {
-        labelsPayload = { note: annotationNote?.trim() || '' };
+        labelsPayload = kind === 'text'
+          ? { note: annotationNote?.trim() || '', spans: textSpans }
+          : { note: annotationNote?.trim() || '' };
       }
 
       await axios.put(`${API_URL}/api/tasks/${id}/label`, {
@@ -216,7 +234,7 @@ const AnnotatorTask = () => {
     } finally {
       setSaving(false);
     }
-  }, [id, labels]);
+  }, [id, labels, annotationNote, task, getTaskKind, textSpans]);
 
   const handleSubmit = useCallback(() => {
     const kind = getTaskKind(task);
@@ -225,7 +243,12 @@ const AnnotatorTask = () => {
         alert('Bạn chưa khoanh vùng đối tượng nào. Vui lòng thêm annotations trước khi nộp bài.');
         return;
       }
-    } else {
+    } else if (kind === 'text') {
+      if (!Array.isArray(textSpans) || textSpans.length === 0) {
+        alert('Vui lòng bôi đen đoạn văn và gán nhãn (ít nhất 1 đoạn) trước khi nộp.');
+        return;
+      }
+    } else if (kind === 'audio') {
       if (!annotationNote.trim()) {
         alert('Vui lòng nhập ghi chú/nhãn trước khi nộp.');
         return;
@@ -281,7 +304,9 @@ const AnnotatorTask = () => {
       if (kind === 'image') {
         labelsPayload = labels;
       } else {
-        labelsPayload = { note: annotationNote?.trim() || '' };
+        labelsPayload = kind === 'text'
+          ? { note: annotationNote?.trim() || '', spans: textSpans }
+          : { note: annotationNote?.trim() || '' };
       }
 
       await axios.put(`${API_URL}/api/tasks/${id}/label`, {
@@ -309,6 +334,99 @@ const AnnotatorTask = () => {
       setSaving(false);
     }
   }, [id, labels, currentTaskIndex, batchTasks, navigate, task]);
+
+  const getSpanColor = useCallback((labelName) => {
+    const ls = task?.projectId?.labelSet || [];
+    const found = ls.find(l => (typeof l === 'string' ? l === labelName : l?.name === labelName));
+    const color = (typeof found === 'object' && found?.color) ? found.color : null;
+    // fallback palette
+    if (color) return color;
+    if (labelName?.toLowerCase().includes('tích') || labelName?.toLowerCase().includes('positive')) return '#22C55E';
+    if (labelName?.toLowerCase().includes('tiêu') || labelName?.toLowerCase().includes('negative')) return '#EF4444';
+    return '#3B82F6';
+  }, [task]);
+
+  const getSelectionOffsets = useCallback(() => {
+    const container = textContainerRef.current;
+    if (!container) return null;
+    const sel = window.getSelection?.();
+    if (!sel || sel.rangeCount === 0) return null;
+    const range = sel.getRangeAt(0);
+    if (!container.contains(range.commonAncestorContainer)) return null;
+    const preRange = range.cloneRange();
+    preRange.selectNodeContents(container);
+    preRange.setEnd(range.startContainer, range.startOffset);
+    const start = preRange.toString().length;
+    const selectedText = range.toString();
+    const end = start + selectedText.length;
+    if (!selectedText || start === end) return null;
+    return { start, end };
+  }, []);
+
+  const handleMouseUpOnText = useCallback((e) => {
+    const offsets = getSelectionOffsets();
+    if (!offsets) {
+      setShowSpanPicker(false);
+      setPendingSelection(null);
+      return;
+    }
+    setPendingSelection(offsets);
+    setPendingLabel('');
+    setShowSpanPicker(true);
+    setSpanPickerPos({ x: e.clientX, y: e.clientY });
+  }, [getSelectionOffsets]);
+
+  const addSpan = useCallback(() => {
+    if (!pendingSelection || !pendingLabel) return;
+    const { start, end } = pendingSelection;
+    const text = textContent || '';
+    if (start < 0 || end > text.length || start >= end) return;
+    // avoid duplicates
+    const exists = textSpans.some(s => s.start === start && s.end === end && s.label === pendingLabel);
+    if (exists) {
+      setShowSpanPicker(false);
+      return;
+    }
+    const newSpan = { id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, start, end, label: pendingLabel };
+    setTextSpans(prev => [...prev, newSpan].sort((a, b) => a.start - b.start || a.end - b.end));
+    setShowSpanPicker(false);
+    setPendingSelection(null);
+    setPendingLabel('');
+    window.getSelection?.()?.removeAllRanges?.();
+  }, [pendingSelection, pendingLabel, textContent, textSpans]);
+
+  const removeSpan = useCallback((idToRemove) => {
+    setTextSpans(prev => prev.filter(s => s.id !== idToRemove));
+  }, []);
+
+  const renderTextWithSpans = useCallback(() => {
+    const text = textContent || '';
+    if (!text) return 'Không có nội dung hiển thị.';
+    if (!Array.isArray(textSpans) || textSpans.length === 0) return text;
+    const spansSorted = [...textSpans].filter(s => typeof s.start === 'number' && typeof s.end === 'number' && s.end > s.start).sort((a, b) => a.start - b.start || a.end - b.end);
+    const nodes = [];
+    let cursor = 0;
+    for (const s of spansSorted) {
+      const start = Math.max(0, Math.min(s.start, text.length));
+      const end = Math.max(0, Math.min(s.end, text.length));
+      if (end <= cursor) continue;
+      if (start > cursor) nodes.push(text.slice(cursor, start));
+      const bg = getSpanColor(s.label);
+      nodes.push(
+        <mark
+          key={s.id}
+          style={{ backgroundColor: `${bg}33`, borderBottom: `2px solid ${bg}` }}
+          className="rounded px-1"
+          title={`${s.label}`}
+        >
+          {text.slice(start, end)}
+        </mark>
+      );
+      cursor = end;
+    }
+    if (cursor < text.length) nodes.push(text.slice(cursor));
+    return nodes;
+  }, [textContent, textSpans, getSpanColor]);
 
   const navigateToTask = async (taskId, saveCurrent = true) => {
     // Auto-save current task before navigating
@@ -568,21 +686,115 @@ const AnnotatorTask = () => {
                     </div>
                     <span className="text-xs text-gray-400">{task?.dataItem?.mimeType}</span>
                   </div>
-                  <div className="border rounded-md bg-gray-50 p-3 max-h-72 overflow-auto text-sm text-gray-800 whitespace-pre-wrap">
-                    {textContent || 'Không có nội dung hiển thị.'}
+                  <div className="text-sm text-gray-600">
+                    Bôi đen đoạn văn bạn muốn gán nhãn (multi-label). Mỗi đoạn bôi đen có thể gán 1 nhãn riêng.
                   </div>
+                  <div
+                    ref={textContainerRef}
+                    onMouseUp={task?.status === 'submitted' || task?.status === 'approved' ? undefined : handleMouseUpOnText}
+                    className="border rounded-md bg-gray-50 p-3 max-h-72 overflow-auto text-sm text-gray-800 whitespace-pre-wrap relative select-text"
+                  >
+                    {renderTextWithSpans()}
+                  </div>
+                  {showSpanPicker && (
+                    <div
+                      className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 w-72"
+                      style={{ left: spanPickerPos.x + 8, top: spanPickerPos.y + 8 }}
+                    >
+                      <div className="text-xs text-gray-500 mb-2">Gán nhãn cho đoạn đã bôi đen</div>
+                      <select
+                        className="w-full border rounded-md px-2 py-2 text-sm"
+                        value={pendingLabel}
+                        onChange={(e) => setPendingLabel(e.target.value)}
+                      >
+                        <option value="">-- Chọn nhãn --</option>
+                        {(task?.projectId?.labelSet || []).map((lbl) => {
+                          const name = typeof lbl === 'string' ? lbl : lbl?.name;
+                          if (!name) return null;
+                          return <option key={name} value={name}>{name}</option>;
+                        })}
+                      </select>
+                      <div className="flex items-center justify-end gap-2 mt-3">
+                        <button
+                          className="px-3 py-1.5 text-sm rounded-md border border-gray-300 hover:bg-gray-50"
+                          onClick={() => { setShowSpanPicker(false); setPendingSelection(null); setPendingLabel(''); }}
+                        >
+                          Hủy
+                        </button>
+                        <button
+                          className="px-3 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                          disabled={!pendingLabel}
+                          onClick={addSpan}
+                        >
+                          Thêm nhãn
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {textSpans.length > 0 && (
+                    <div className="border rounded-md p-3 bg-white">
+                      <div className="text-sm font-semibold text-gray-800 mb-2">Các đoạn đã gán nhãn</div>
+                      <div className="space-y-2">
+                        {textSpans.map((s) => (
+                          <div key={s.id} className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="text-xs text-gray-500">
+                                <span
+                                  className="inline-flex items-center gap-2"
+                                >
+                                  <span
+                                    className="inline-block w-2 h-2 rounded-full"
+                                    style={{ backgroundColor: getSpanColor(s.label) }}
+                                  />
+                                  <span className="font-medium text-gray-700">{s.label}</span>
+                                  <span className="text-gray-400">({s.start}–{s.end})</span>
+                                </span>
+                              </div>
+                              <div className="text-sm text-gray-800 line-clamp-2">
+                                “{(textContent || '').slice(s.start, s.end)}”
+                              </div>
+                            </div>
+                            <button
+                              className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+                              onClick={() => removeSpan(s.id)}
+                              disabled={task?.status === 'submitted' || task?.status === 'approved'}
+                            >
+                              Xóa
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-gray-700">
-                      Ghi chú / Nhãn cho văn bản
+                      Ghi chú (optional)
                     </label>
                     <textarea
                       className="w-full border rounded-md p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                       rows={4}
-                      placeholder="Nhập nhận xét hoặc nhãn..."
+                      placeholder="Nhập ghi chú nếu cần..."
                       value={annotationNote}
                       onChange={(e) => setAnnotationNote(e.target.value)}
                       disabled={task?.status === 'submitted' || task?.status === 'approved'}
                     />
+                  </div>
+                  <div className="flex items-center gap-3 pt-1">
+                    <Button
+                      variant="outlined"
+                      onClick={handleSave}
+                      disabled={saving || task?.status === 'submitted' || task?.status === 'approved'}
+                    >
+                      Lưu
+                    </Button>
+                    <Button
+                      variant="contained"
+                      onClick={handleSubmit}
+                      disabled={saving || task?.status === 'submitted' || task?.status === 'approved'}
+                    >
+                      Nộp
+                    </Button>
                   </div>
                 </div>
               ) : getTaskKind(task) === 'audio' ? (
@@ -601,6 +813,33 @@ const AnnotatorTask = () => {
                     className="w-full"
                     src={`${API_URL}/${task?.dataItem?.path}`}
                   />
+                  {task?.projectId?.labelSet?.length > 0 && (
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700">Chọn nhãn</label>
+                      <div className="flex flex-wrap gap-2">
+                        {task.projectId.labelSet.map((lbl) => (
+                          <label
+                            key={lbl.name}
+                            className={`px-3 py-1.5 rounded-full border text-sm cursor-pointer ${
+                              selectedLabel === lbl.name
+                                ? 'bg-blue-100 border-blue-300 text-blue-700'
+                                : 'bg-white border-gray-300 text-gray-700 hover:border-blue-300'
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              className="hidden"
+                              value={lbl.name}
+                              checked={selectedLabel === lbl.name}
+                              onChange={() => setSelectedLabel(lbl.name)}
+                              disabled={task?.status === 'submitted' || task?.status === 'approved'}
+                            />
+                            {lbl.name}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-gray-700">
                       Ghi chú / Nhãn cho audio
@@ -613,6 +852,22 @@ const AnnotatorTask = () => {
                       onChange={(e) => setAnnotationNote(e.target.value)}
                       disabled={task?.status === 'submitted' || task?.status === 'approved'}
                     />
+                  </div>
+                  <div className="flex items-center gap-3 pt-1">
+                    <Button
+                      variant="outlined"
+                      onClick={handleSave}
+                      disabled={saving || task?.status === 'submitted' || task?.status === 'approved'}
+                    >
+                      Lưu
+                    </Button>
+                    <Button
+                      variant="contained"
+                      onClick={handleSubmit}
+                      disabled={saving || task?.status === 'submitted' || task?.status === 'approved'}
+                    >
+                      Nộp
+                    </Button>
                   </div>
                 </div>
               ) : (
