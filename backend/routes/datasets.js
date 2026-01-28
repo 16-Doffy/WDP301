@@ -9,6 +9,37 @@ const { createActivityLog } = require('./activityLogs');
 
 const router = express.Router();
 
+const inferFileKind = (mimeType, originalName = '') => {
+  const name = (originalName || '').toLowerCase();
+  const mt = (mimeType || '').toLowerCase();
+  if (mt.startsWith('image/')) return 'image';
+  if (mt.startsWith('audio/')) return 'audio';
+  if (mt.startsWith('text/')) return 'text';
+  if (mt === 'application/json' || name.endsWith('.json')) return 'text';
+  if (mt === 'application/xml' || name.endsWith('.xml')) return 'text';
+  if (mt === 'text/csv' || name.endsWith('.csv')) return 'text';
+  // common audio extensions when mimeType is unreliable
+  if (name.endsWith('.mp3') || name.endsWith('.wav') || name.endsWith('.m4a') || name.endsWith('.ogg')) return 'audio';
+  return 'other';
+};
+
+const validateFilesForDatasetType = (datasetType, files) => {
+  const errors = [];
+  for (const f of files) {
+    const kind = inferFileKind(f.mimeType, f.originalName);
+    if (datasetType === 'image' && kind !== 'image') {
+      errors.push({ file: f.originalName || f.filename, reason: `Expected image, got ${f.mimeType || 'unknown'}` });
+    }
+    if (datasetType === 'audio' && kind !== 'audio') {
+      errors.push({ file: f.originalName || f.filename, reason: `Expected audio, got ${f.mimeType || 'unknown'}` });
+    }
+    if (datasetType === 'text' && kind !== 'text') {
+      errors.push({ file: f.originalName || f.filename, reason: `Expected text, got ${f.mimeType || 'unknown'}` });
+    }
+  }
+  return errors;
+};
+
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -26,7 +57,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({ 
   storage: storage,
-  limits: { fileSize: 50 * 1024 * 1024 } // 50MB
+  limits: { fileSize: 200 * 1024 * 1024 } // 200MB (audio can be larger)
 });
 
 // Get all datasets for current manager (including unassigned ones)
@@ -84,7 +115,8 @@ router.get('/:id', auth, async (req, res) => {
 // Create dataset and upload files (Manager only)
 router.post('/', auth, authorize('manager', 'admin'), upload.array('files', 100), async (req, res) => {
   try {
-    const { projectId, name, description } = req.body;
+    const { projectId, name, description, type } = req.body;
+    const datasetType = (type || 'image').toString().toLowerCase();
 
     // Validate required fields
     if (!name || !name.trim()) {
@@ -115,7 +147,28 @@ router.post('/', auth, authorize('manager', 'admin'), upload.array('files', 100)
       size: file.size
     }));
 
+    if (!['image', 'text', 'audio'].includes(datasetType)) {
+      // cleanup uploaded files
+      files.forEach(f => {
+        if (f.path && fs.existsSync(f.path)) fs.unlinkSync(f.path);
+      });
+      return res.status(400).json({ message: 'Invalid dataset type. Must be one of: image, text, audio' });
+    }
+
+    const fileErrors = validateFilesForDatasetType(datasetType, files);
+    if (fileErrors.length > 0) {
+      // cleanup uploaded files
+      files.forEach(f => {
+        if (f.path && fs.existsSync(f.path)) fs.unlinkSync(f.path);
+      });
+      return res.status(400).json({ 
+        message: `Uploaded files do not match dataset type "${datasetType}"`,
+        errors: fileErrors
+      });
+    }
+
     const dataset = new Dataset({
+      type: datasetType,
       projectId: projectId || null, // Optional
       managerId: req.user._id, // Required
       name: name.trim(),

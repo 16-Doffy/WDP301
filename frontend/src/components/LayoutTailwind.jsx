@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-
+import dashboardIcon from '../icons/dashboard.png';
+import projectsIcon from '../icons/projects.png';
+import datasetsIcon from '../icons/datasets.png';
 const LayoutTailwind = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -11,18 +13,40 @@ const LayoutTailwind = () => {
     if (!user) return [];
 
     const baseItems = [
-      { text: 'Dashboard', icon: '📊', path: '/dashboard' },
+      {
+        text: 'Dashboard',
+        icon: (
+          <img
+            src={dashboardIcon}
+            alt="Dashboard"
+            className="w-5 h-5"
+          />
+        ),
+        path: '/dashboard',
+      },
     ];
 
     if (user.role === 'manager' || user.role === 'admin') {
       baseItems.push({
         text: 'Projects',
-        icon: '📁',
+        icon: (
+          <img
+            src={projectsIcon}
+            alt="Projects"
+            className="w-5 h-5"
+          />
+        ),
         path: '/manager/projects',
       });
       baseItems.push({
         text: 'Datasets',
-        icon: '💾',
+        icon: (
+          <img
+            src={datasetsIcon}
+            alt="Datasets"
+            className="w-5 h-5"
+          />
+        ),
         path: '/manager/datasets',
       });
     }
@@ -87,7 +111,7 @@ const LayoutTailwind = () => {
   return (
     <div className="flex h-screen bg-gray-50">
       {/* Left Sidebar - Dark Blue */}
-      <div className="w-64 bg-blue-900 text-white flex flex-col">
+      <div className="w-64 bg-gradient-to-b from-blue-600/60 to-white text-white flex flex-col">
         {/* Logo */}
         <div className="p-6 border-b border-blue-800">
           <div className="flex items-center gap-3">
@@ -96,7 +120,7 @@ const LayoutTailwind = () => {
             </div>
             <div>
               <h1 className="text-lg font-bold">LabelFlow</h1>
-              <p className="text-xs text-blue-300 uppercase">
+              <p className="text-xs text-black uppercase font-bold">
                 {user?.role === 'manager' ? 'Manager' : 
                  user?.role === 'annotator' ? 'Annotator' :
                  user?.role === 'reviewer' ? 'Reviewer' : 'Admin'}
@@ -106,7 +130,7 @@ const LayoutTailwind = () => {
         </div>
 
         {/* Navigation Menu */}
-        <nav className="flex-1 p-4 space-y-1">
+        <nav className="flex-1 p-4 space-y-1 ">
           {getMenuItems().map((item) => {
             const isActive = location.pathname === item.path || 
               (item.path !== '/dashboard' && location.pathname.startsWith(item.path));
@@ -117,7 +141,7 @@ const LayoutTailwind = () => {
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
                   isActive
                     ? 'bg-blue-800 text-white'
-                    : 'text-blue-200 hover:bg-blue-800 hover:text-white'
+                    : 'text-black hover:bg-blue-800 hover:text-white text-lg'
                 }`}
               >
                 <span className="text-xl">{item.icon}</span>
@@ -135,14 +159,14 @@ const LayoutTailwind = () => {
                 {user?.fullName?.split(' ').map(n => n[0]).join('').toUpperCase() || 'U'}
               </span>
             </div>
-            <div className="flex-1">
-              <p className="text-sm font-medium">{user?.fullName || 'User'}</p>
-              <p className="text-xs text-blue-300">{getRoleDisplay()}</p>
+            <div className="flex-1 hover:bg-blue-900/10 ">
+              <p className="text-xl text-black font-medium">{user?.fullName || 'User'}</p>
+              <p className="text-lg text-sky-600 flex text-center  ">{getRoleDisplay()}</p>
             </div>
           </div>
           <button
             onClick={handleLogout}
-            className="w-full mt-2 px-4 py-2 text-sm text-blue-200 hover:text-white hover:bg-blue-800 rounded-lg transition-colors"
+            className="w-full mt-2 px-4 py-2 text-sm text-black hover:text-black hover:bg-blue-900/50 rounded-lg transition-colors"
           >
             Logout
           </button>

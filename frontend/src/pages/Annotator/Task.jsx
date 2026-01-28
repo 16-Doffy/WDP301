@@ -30,13 +30,27 @@ const AnnotatorTask = () => {
   const [selectedAnnotation, setSelectedAnnotation] = useState(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
+  const [textContent, setTextContent] = useState('');
+  const [annotationNote, setAnnotationNote] = useState('');
   const canvasRef = useRef(null);
+
+  const getTaskKind = useCallback((t) => {
+    const mt = t?.dataItem?.mimeType || '';
+    if (mt.startsWith('image/')) return 'image';
+    if (mt.startsWith('audio/')) return 'audio';
+    if (mt.startsWith('text/')) return 'text';
+    // common text-ish mime/types
+    if (['application/json', 'application/xml', 'text/csv'].includes(mt)) return 'text';
+    return 'other';
+  }, []);
 
   useEffect(() => {
     // Reset annotations when task ID changes
     setAnnotations([]);
     setLabels({});
     setSelectedAnnotation(null);
+    setTextContent('');
+    setAnnotationNote('');
     setLoading(true);
     fetchTask();
   }, [id]);
@@ -84,11 +98,30 @@ const AnnotatorTask = () => {
       setAnnotations([]);
       setLabels({});
       setSelectedAnnotation(null);
+      setTextContent('');
+      setAnnotationNote('');
       
       const response = await axios.get(`${API_URL}/api/tasks/${id}`);
       setTask(response.data);
       const initialLabels = response.data.labels || {};
       setLabels(initialLabels);
+      const kind = getTaskKind(response.data);
+
+      if (kind === 'text') {
+        try {
+          const textRes = await axios.get(`${API_URL}/${response.data.dataItem.path}`, {
+            responseType: 'text',
+          });
+          setTextContent(textRes.data || '');
+        } catch (err) {
+          setTextContent('Không thể tải nội dung file văn bản.');
+        }
+        setAnnotationNote(initialLabels?.note || '');
+      }
+
+      if (kind === 'audio') {
+        setAnnotationNote(initialLabels?.note || '');
+      }
       
       // Fetch batch tasks (tasks from same dataset)
       if (response.data.datasetId) {
@@ -163,8 +196,17 @@ const AnnotatorTask = () => {
   const handleSave = useCallback(async () => {
     setSaving(true);
     try {
+      const kind = getTaskKind(task);
+      let labelsPayload = labels;
+
+      if (kind === 'image') {
+        labelsPayload = labels;
+      } else {
+        labelsPayload = { note: annotationNote?.trim() || '' };
+      }
+
       await axios.put(`${API_URL}/api/tasks/${id}/label`, {
-        labels,
+        labels: labelsPayload,
         status: 'in_progress',
       });
       setMessage('Đã lưu thành công!');
@@ -177,9 +219,17 @@ const AnnotatorTask = () => {
   }, [id, labels]);
 
   const handleSubmit = useCallback(() => {
-    if (Object.keys(labels).length === 0 || (labels.objects && labels.objects.length === 0)) {
-      alert('Bạn chưa khoanh vùng đối tượng nào. Vui lòng thêm annotations trước khi nộp bài.');
-      return;
+    const kind = getTaskKind(task);
+    if (kind === 'image') {
+      if (Object.keys(labels).length === 0 || (labels.objects && labels.objects.length === 0)) {
+        alert('Bạn chưa khoanh vùng đối tượng nào. Vui lòng thêm annotations trước khi nộp bài.');
+        return;
+      }
+    } else {
+      if (!annotationNote.trim()) {
+        alert('Vui lòng nhập ghi chú/nhãn trước khi nộp.');
+        return;
+      }
     }
 
     if (!task?.reviewers || task.reviewers.length === 0) {
@@ -225,8 +275,17 @@ const AnnotatorTask = () => {
 
     setSaving(true);
     try {
+      const kind = getTaskKind(task);
+      let labelsPayload = labels;
+
+      if (kind === 'image') {
+        labelsPayload = labels;
+      } else {
+        labelsPayload = { note: annotationNote?.trim() || '' };
+      }
+
       await axios.put(`${API_URL}/api/tasks/${id}/label`, {
-        labels,
+        labels: labelsPayload,
         status: task?.status === 'rejected' ? 'in_progress' : 'in_progress',
       });
       await axios.post(`${API_URL}/api/tasks/${id}/submit`);
@@ -486,7 +545,7 @@ const AnnotatorTask = () => {
 
           {/* Image Annotation Canvas */}
           <div className="flex-1 overflow-auto bg-gray-50 p-6 flex items-center justify-center">
-              {task?.dataItem?.mimeType?.startsWith('image/') ? (
+              {getTaskKind(task) === 'image' ? (
               <div className="bg-white rounded-lg shadow-lg p-4 max-w-full">
                 <ImageAnnotator
                   imageUrl={`${API_URL}/${task.dataItem.path}`}
@@ -498,11 +557,69 @@ const AnnotatorTask = () => {
                   readOnly={task?.status === 'submitted' || task?.status === 'approved'}
                 />
               </div>
+              ) : getTaskKind(task) === 'text' ? (
+                <div className="bg-white rounded-lg shadow-lg p-4 max-w-3xl w-full space-y-4">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <p className="text-sm text-gray-500">Text File</p>
+                      <p className="text-base font-semibold text-gray-800">
+                        {task?.dataItem?.filename || 'Unnamed file'}
+                      </p>
+                    </div>
+                    <span className="text-xs text-gray-400">{task?.dataItem?.mimeType}</span>
+                  </div>
+                  <div className="border rounded-md bg-gray-50 p-3 max-h-72 overflow-auto text-sm text-gray-800 whitespace-pre-wrap">
+                    {textContent || 'Không có nội dung hiển thị.'}
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-700">
+                      Ghi chú / Nhãn cho văn bản
+                    </label>
+                    <textarea
+                      className="w-full border rounded-md p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      rows={4}
+                      placeholder="Nhập nhận xét hoặc nhãn..."
+                      value={annotationNote}
+                      onChange={(e) => setAnnotationNote(e.target.value)}
+                      disabled={task?.status === 'submitted' || task?.status === 'approved'}
+                    />
+                  </div>
+                </div>
+              ) : getTaskKind(task) === 'audio' ? (
+                <div className="bg-white rounded-lg shadow-lg p-4 max-w-3xl w-full space-y-4">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <p className="text-sm text-gray-500">Audio File</p>
+                      <p className="text-base font-semibold text-gray-800">
+                        {task?.dataItem?.filename || 'Unnamed audio'}
+                      </p>
+                    </div>
+                    <span className="text-xs text-gray-400">{task?.dataItem?.mimeType}</span>
+                  </div>
+                  <audio
+                    controls
+                    className="w-full"
+                    src={`${API_URL}/${task?.dataItem?.path}`}
+                  />
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-700">
+                      Ghi chú / Nhãn cho audio
+                    </label>
+                    <textarea
+                      className="w-full border rounded-md p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      rows={4}
+                      placeholder="Nhập nhận xét hoặc nhãn..."
+                      value={annotationNote}
+                      onChange={(e) => setAnnotationNote(e.target.value)}
+                      disabled={task?.status === 'submitted' || task?.status === 'approved'}
+                    />
+                  </div>
+                </div>
               ) : (
-              <div className="text-center py-12 text-gray-500">
-                File không phải hình ảnh. Vui lòng sử dụng JSON Editor.
-              </div>
-            )}
+                <div className="text-center py-12 text-gray-500">
+                  Không hỗ trợ loại file này.
+                </div>
+              )}
           </div>
 
         </div>

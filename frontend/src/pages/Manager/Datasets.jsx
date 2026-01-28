@@ -25,6 +25,7 @@ import {
   CloudUpload as CloudUploadIcon,
   Image as ImageIcon,
   Description as DescriptionIcon,
+  Audiotrack as AudiotrackIcon,
 } from '@mui/icons-material';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
@@ -41,6 +42,7 @@ const Datasets = () => {
   const [formData, setFormData] = useState({
     name: '',
     description: '',
+    type: 'image',
   });
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [uploading, setUploading] = useState(false);
@@ -99,6 +101,7 @@ const Datasets = () => {
     try {
       const datasetFormData = new FormData();
       datasetFormData.append('name', formData.name.trim());
+      datasetFormData.append('type', formData.type || 'image');
       if (formData.description) {
         datasetFormData.append('description', formData.description.trim());
       }
@@ -154,7 +157,22 @@ const Datasets = () => {
 
   const getFileIcon = (mimeType) => {
     if (mimeType?.startsWith('image/')) return <ImageIcon />;
+    if (mimeType?.startsWith('audio/')) return <AudiotrackIcon />;
     return <DescriptionIcon />;
+  };
+
+  const getDatasetTypeFromFiles = (dataset) => {
+    if (dataset?.type) return dataset.type;
+    const first = dataset?.files?.[0];
+    if (first?.mimeType?.startsWith('audio/')) return 'audio';
+    if (first?.mimeType?.startsWith('image/')) return 'image';
+    return 'text';
+  };
+
+  const getAcceptForType = (type) => {
+    if (type === 'audio') return 'audio/*,.mp3,.wav,.m4a,.ogg';
+    if (type === 'text') return '.txt,.csv,.json,.xml,text/plain,text/csv,application/json,application/xml';
+    return 'image/*';
   };
 
   if (loading) {
@@ -172,7 +190,7 @@ const Datasets = () => {
         <div>
           <h1 className="text-xl font-semibold text-gray-900">Datasets</h1>
           <p className="text-sm text-gray-500 mt-1">
-            Kho trung tâm chứa tất cả bộ dữ liệu hình ảnh dùng để labeling.
+            Kho trung tâm chứa tất cả bộ dữ liệu (Image / Text / Audio) dùng để labeling.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -190,7 +208,7 @@ const Datasets = () => {
             variant="contained"
             startIcon={<AddIcon />}
             onClick={() => {
-              setFormData({ name: '', description: '' });
+              setFormData({ name: '', description: '', type: 'image' });
               setUploadedFiles([]);
               setCreateSuccess(false);
               setCreatedDatasetName('');
@@ -248,6 +266,7 @@ const Datasets = () => {
                   const totalSizeBytes =
                     dataset.files?.reduce((sum, f) => sum + (f.size || 0), 0) || 0;
                   const sizeLabel = formatFileSize(totalSizeBytes);
+                  const datasetType = getDatasetTypeFromFiles(dataset);
 
                   return (
                     <Grid item xs={12} md={6} lg={4} key={dataset._id}>
@@ -276,6 +295,14 @@ const Datasets = () => {
                               <Typography variant="h6" sx={{ mb: 0.5 }}>
                                 {dataset.name}
                               </Typography>
+                              <Box sx={{ display: 'flex', gap: 1, mt: 0.5, flexWrap: 'wrap' }}>
+                                <Chip
+                                  size="small"
+                                  variant="outlined"
+                                  label={datasetType.toUpperCase()}
+                                  color={datasetType === 'image' ? 'primary' : datasetType === 'audio' ? 'secondary' : 'default'}
+                                />
+                              </Box>
                               {dataset.description && (
                                 <Typography
                                   variant="body2"
@@ -442,6 +469,22 @@ const Datasets = () => {
               />
               <TextField
                 fullWidth
+                select
+                SelectProps={{ native: true }}
+                label="Dataset Type *"
+                value={formData.type}
+                onChange={(e) => {
+                  setFormData({ ...formData, type: e.target.value });
+                  setUploadedFiles([]);
+                }}
+                margin="normal"
+              >
+                <option value="image">Image</option>
+                <option value="text">Text</option>
+                <option value="audio">Audio</option>
+              </TextField>
+              <TextField
+                fullWidth
                 multiline
                 rows={3}
                 label="Description"
@@ -474,7 +517,7 @@ const Datasets = () => {
                   multiple
                   style={{ display: 'none' }}
                   onChange={handleFileUpload}
-                  accept="image/*,.zip,.csv,.json"
+                  accept={getAcceptForType(formData.type)}
                 />
               </Box>
               {uploadedFiles.length > 0 && (
