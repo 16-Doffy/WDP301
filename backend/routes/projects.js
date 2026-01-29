@@ -89,6 +89,21 @@ router.post('/', auth, authorize('manager'), [
       }
     }
 
+    // Validate deadline: if provided, it must be in the future
+    let deadline;
+    if (req.body.deadline) {
+      deadline = new Date(req.body.deadline);
+      if (Number.isNaN(deadline.getTime())) {
+        return res.status(400).json({ message: 'Invalid deadline date' });
+      }
+      const now = new Date();
+      if (deadline <= now) {
+        return res.status(400).json({
+          message: 'Deadline must be in the future. Please choose a date/time later than now.',
+        });
+      }
+    }
+
     const project = new Project({
       name: req.body.name.trim(),
       description: req.body.description?.trim() || '',
@@ -103,7 +118,7 @@ router.post('/', auth, authorize('manager'), [
           ? Math.min(1, Math.max(0, req.body.reviewPolicy.sampleRate))
           : 0.1
       },
-      deadline: req.body.deadline ? new Date(req.body.deadline) : undefined,
+      deadline,
       exportFormat: req.body.exportFormat || 'JSON'
     });
 
@@ -137,6 +152,20 @@ router.put('/:id', auth, authorize('manager', 'admin'), async (req, res) => {
 
     if (project.managerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    // Validate deadline if provided in update
+    if (req.body.deadline) {
+      const deadline = new Date(req.body.deadline);
+      if (Number.isNaN(deadline.getTime())) {
+        return res.status(400).json({ message: 'Invalid deadline date' });
+      }
+      const now = new Date();
+      if (deadline <= now) {
+        return res.status(400).json({
+          message: 'Deadline must be in the future. Please choose a date/time later than now.',
+        });
+      }
     }
 
     const oldName = project.name;

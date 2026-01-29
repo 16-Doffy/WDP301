@@ -1,6 +1,11 @@
 const mongoose = require('mongoose');
 
 const datasetSchema = new mongoose.Schema({
+  type: {
+    type: String,
+    enum: ['image', 'text', 'audio'],
+    default: 'image'
+  },
   projectId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Project',

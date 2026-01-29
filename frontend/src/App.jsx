@@ -2,7 +2,7 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import PrivateRoute from './components/PrivateRoute';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -33,6 +33,28 @@ const theme = createTheme({
   },
 });
 
+const RoleDashboard = () => {
+  const { user } = useAuth();
+
+  if (!user) {
+    return null;
+  }
+
+  if (user.role === 'manager' || user.role === 'admin') {
+    return <ManagerDashboard />;
+  }
+
+  if (user.role === 'annotator') {
+    return <AnnotatorDashboard />;
+  }
+
+  if (user.role === 'reviewer') {
+    return <ReviewerDashboard />;
+  }
+
+  return <AdminDashboard />;
+};
+
 function App() {
   return (
     <ThemeProvider theme={theme}>
@@ -51,7 +73,7 @@ function App() {
               }
             >
               <Route index element={<Navigate to="/dashboard" replace />} />
-              <Route path="dashboard" element={<ManagerDashboard />} />
+              <Route path="dashboard" element={<RoleDashboard />} />
               <Route path="manager/projects" element={<ManagerProjects />} />
               <Route path="manager/projects/create" element={<CreateProject />} />
               <Route path="manager/projects/:id" element={<ManagerProjectDetail />} />

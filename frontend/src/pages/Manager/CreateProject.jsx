@@ -61,24 +61,20 @@ const CreateProject = () => {
     fetchDatasets();
   }, []);
 
-  // Refresh datasets when navigating from Datasets page
   useEffect(() => {
     if (location.state?.refreshDatasets) {
       fetchDatasets();
-      // Pre-fill dataset name if provided
       if (location.state?.datasetName) {
-        setFormData(prev => ({
+        setFormData((prev) => ({
           ...prev,
           name: location.state.datasetName,
-          description: prev.description || '' // Keep existing description if any
+          description: prev.description || '',
         }));
       }
-      // Clear the state to avoid unnecessary refreshes
       navigate(location.pathname, { replace: true, state: {} });
     }
   }, [location.state]);
 
-  // Refresh datasets when page becomes visible (user returns from Datasets page)
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
@@ -100,14 +96,11 @@ const CreateProject = () => {
     try {
       const response = await axios.get(`${API_URL}/api/datasets`, {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
+          Authorization: `Bearer ${localStorage.getItem('token')}`,
+        },
       });
       const allDatasets = response.data || [];
-      console.log('All datasets from API:', allDatasets);
-      // Chỉ hiển thị datasets chưa có projectId (chưa được gán cho project nào)
-      const unassignedDatasets = allDatasets.filter(ds => !ds.projectId || ds.projectId === null);
-      console.log('Unassigned datasets:', unassignedDatasets);
+      const unassignedDatasets = allDatasets.filter((ds) => !ds.projectId || ds.projectId === null);
       setDatasets(unassignedDatasets);
     } catch (error) {
       console.error('Error fetching datasets:', error);
@@ -119,24 +112,25 @@ const CreateProject = () => {
     try {
       const response = await axios.get(`${API_URL}/api/users`);
       const allUsers = Array.isArray(response.data) ? response.data : [];
-      setAnnotators(allUsers.filter(u => u.role === 'annotator' && u.isActive));
-      setReviewers(allUsers.filter(u => u.role === 'reviewer' && u.isActive));
+      setAnnotators(allUsers.filter((u) => u.role === 'annotator' && u.isActive));
+      setReviewers(allUsers.filter((u) => u.role === 'reviewer' && u.isActive));
     } catch (error) {
       console.error('Error fetching users:', error);
       setError('Không thể tải danh sách users. Vui lòng kiểm tra kết nối.');
     }
   };
 
-
-  const filteredAnnotators = annotators.filter(ann => {
-    const matchSearch = annotatorSearch === '' || 
+  const filteredAnnotators = annotators.filter((ann) => {
+    const matchSearch =
+      annotatorSearch === '' ||
       ann.fullName?.toLowerCase().includes(annotatorSearch.toLowerCase()) ||
       ann.username?.toLowerCase().includes(annotatorSearch.toLowerCase());
     return matchSearch;
   });
 
-  const filteredReviewers = reviewers.filter(rev => {
-    const matchSearch = reviewerSearch === '' || 
+  const filteredReviewers = reviewers.filter((rev) => {
+    const matchSearch =
+      reviewerSearch === '' ||
       rev.fullName?.toLowerCase().includes(reviewerSearch.toLowerCase()) ||
       rev.username?.toLowerCase().includes(reviewerSearch.toLowerCase());
     return matchSearch;
@@ -152,23 +146,40 @@ const CreateProject = () => {
       return;
     }
 
+    if (formData.deadline) {
+      const deadlineDate = new Date(formData.deadline);
+      const now = new Date();
+      if (Number.isNaN(deadlineDate.getTime())) {
+        alert('Giá trị deadline không hợp lệ. Vui lòng chọn lại.');
+        return;
+      }
+      if (deadlineDate <= now) {
+        alert('Deadline phải lớn hơn thời gian hiện tại. Vui lòng chọn ngày giờ trong tương lai.');
+        return;
+      }
+    }
+
     setSaving(true);
     try {
-      await axios.post(`${API_URL}/api/projects`, {
-        name: formData.name.trim(),
-        description: formData.description?.trim() || '',
-        guidelines: formData.guidelines.trim(),
-        labelSet: formData.labelSet || [],
-        questions: formData.questions || [],
-        status: 'draft',
-        reviewPolicy: formData.reviewPolicy,
-        deadline: formData.deadline || undefined,
-        exportFormat: formData.exportFormat || 'JSON',
-      }, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+      await axios.post(
+        `${API_URL}/api/projects`,
+        {
+          name: formData.name.trim(),
+          description: formData.description?.trim() || '',
+          guidelines: formData.guidelines.trim(),
+          labelSet: formData.labelSet || [],
+          questions: formData.questions || [],
+          status: 'draft',
+          reviewPolicy: formData.reviewPolicy,
+          deadline: formData.deadline || undefined,
+          exportFormat: formData.exportFormat || 'JSON',
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('token')}`,
+          },
         }
-      });
+      );
       alert('Đã lưu draft thành công!');
       navigate('/manager/projects');
     } catch (error) {
@@ -180,7 +191,6 @@ const CreateProject = () => {
   };
 
   const handleCreateProject = async () => {
-    // Validation
     if (!formData.name.trim()) {
       alert('Vui lòng nhập tên project');
       return;
@@ -193,7 +203,7 @@ const CreateProject = () => {
       alert('Vui lòng thêm ít nhất một label để annotator có thể chọn khi gán nhãn');
       return;
     }
-    const invalidLabels = formData.labelSet.filter(l => !l.name || !l.name.trim());
+    const invalidLabels = formData.labelSet.filter((l) => !l.name || !l.name.trim());
     if (invalidLabels.length > 0) {
       alert('Tất cả labels phải có tên. Vui lòng kiểm tra lại.');
       return;
@@ -211,50 +221,72 @@ const CreateProject = () => {
       return;
     }
 
+    if (formData.deadline) {
+      const deadlineDate = new Date(formData.deadline);
+      const now = new Date();
+      if (Number.isNaN(deadlineDate.getTime())) {
+        alert('Giá trị deadline không hợp lệ. Vui lòng chọn lại.');
+        return;
+      }
+      if (deadlineDate <= now) {
+        alert('Deadline phải lớn hơn thời gian hiện tại. Vui lòng chọn ngày giờ trong tương lai.');
+        return;
+      }
+    }
+
     setSaving(true);
     setError(null);
     try {
-      // Step 1: Create project
-      const projectRes = await axios.post(`${API_URL}/api/projects`, {
-        name: formData.name.trim(),
-        description: formData.description?.trim() || '',
-        guidelines: formData.guidelines.trim(),
-        labelSet: formData.labelSet || [],
-        questions: formData.questions || [],
-        status: 'active',
-        reviewPolicy: formData.reviewPolicy,
-        deadline: formData.deadline || undefined,
-        exportFormat: formData.exportFormat || 'JSON',
-      }, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+      const projectRes = await axios.post(
+        `${API_URL}/api/projects`,
+        {
+          name: formData.name.trim(),
+          description: formData.description?.trim() || '',
+          guidelines: formData.guidelines.trim(),
+          labelSet: formData.labelSet || [],
+          questions: formData.questions || [],
+          status: 'active',
+          reviewPolicy: formData.reviewPolicy,
+          deadline: formData.deadline || undefined,
+          exportFormat: formData.exportFormat || 'JSON',
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('token')}`,
+          },
         }
-      });
+      );
       const projectId = projectRes.data._id;
 
-      // Step 2: Link selected datasets to project
       for (const datasetId of selectedDatasets) {
-        await axios.put(`${API_URL}/api/datasets/${datasetId}`, {
-          projectId: projectId
-        }, {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
+        await axios.put(
+          `${API_URL}/api/datasets/${datasetId}`,
+          {
+            projectId: projectId,
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${localStorage.getItem('token')}`,
+            },
           }
-        });
+        );
       }
 
-      // Step 3: Assign tasks for each selected dataset
       for (const datasetId of selectedDatasets) {
-        await axios.post(`${API_URL}/api/tasks/assign`, {
-          projectId,
-          datasetId: datasetId,
-          annotatorIds: selectedAnnotators,
-          reviewerIds: selectedReviewers,
-        }, {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
+        await axios.post(
+          `${API_URL}/api/tasks/assign`,
+          {
+            projectId,
+            datasetId: datasetId,
+            annotatorIds: selectedAnnotators,
+            reviewerIds: selectedReviewers,
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${localStorage.getItem('token')}`,
+            },
           }
-        });
+        );
       }
 
       alert('Tạo project và phân công thành công!');
@@ -262,10 +294,10 @@ const CreateProject = () => {
     } catch (error) {
       console.error('Error creating project:', error);
       let errorMsg = 'Có lỗi xảy ra';
-      
+
       if (error.response) {
         if (error.response.data?.errors && Array.isArray(error.response.data.errors)) {
-          errorMsg = error.response.data.errors.map(e => e.msg || e.message).join(', ');
+          errorMsg = error.response.data.errors.map((e) => e.msg || e.message).join(', ');
         } else if (error.response.data?.message) {
           errorMsg = error.response.data.message;
         } else {
@@ -276,7 +308,7 @@ const CreateProject = () => {
       } else {
         errorMsg = error.message || 'Có lỗi xảy ra';
       }
-      
+
       setError(`Lỗi: ${errorMsg}`);
       alert(`Lỗi khi tạo project: ${errorMsg}`);
     } finally {
@@ -284,10 +316,8 @@ const CreateProject = () => {
     }
   };
 
-
   return (
     <Box sx={{ p: 3, maxWidth: 1400, mx: 'auto' }}>
-      {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <IconButton onClick={() => navigate('/manager/projects')}>
@@ -310,19 +340,15 @@ const CreateProject = () => {
         </Box>
       </Box>
 
-      {/* Error Message */}
       {error && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
           {error}
         </Alert>
       )}
 
-      {/* Main Form - All in One Page */}
       <Paper sx={{ p: 4, maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
         <Grid container spacing={4}>
-          {/* Left Column - Project Details & Dataset */}
           <Grid item xs={12} md={7}>
-            {/* Project Basic Info */}
             <Box sx={{ mb: 4 }}>
               <Typography variant="h5" gutterBottom sx={{ mb: 3 }}>
                 Project Information
@@ -388,7 +414,11 @@ const CreateProject = () => {
                       <MenuItem value="COCO">COCO</MenuItem>
                       <MenuItem value="CSV">CSV</MenuItem>
                     </Select>
-                    <Typography variant="caption" color="textSecondary" sx={{ mt: 1, display: 'block' }}>
+                    <Typography
+                      variant="caption"
+                      color="textSecondary"
+                      sx={{ mt: 1, display: 'block' }}
+                    >
                       Format for exporting labeled data
                     </Typography>
                   </FormControl>
@@ -396,9 +426,10 @@ const CreateProject = () => {
               </Grid>
             </Box>
 
-            {/* Label Set Management */}
             <Box sx={{ mb: 4 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Box
+                sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}
+              >
                 <Typography variant="h5">Label Set</Typography>
                 <Button
                   variant="outlined"
@@ -407,28 +438,28 @@ const CreateProject = () => {
                   onClick={() => {
                     const newLabel = {
                       name: '',
-                      color: `#${Math.floor(Math.random()*16777215).toString(16)}`,
-                      description: ''
+                      color: `#${Math.floor(Math.random() * 16777215).toString(16)}`,
+                      description: '',
                     };
                     setFormData({
                       ...formData,
-                      labelSet: [...formData.labelSet, newLabel]
+                      labelSet: [...formData.labelSet, newLabel],
                     });
                   }}
                 >
                   Add Label
                 </Button>
               </Box>
-              
+
               {formData.labelSet.length === 0 ? (
                 <Alert severity="info">
                   Chưa có label nào. Vui lòng thêm ít nhất một label để annotator có thể chọn khi gán nhãn.
                 </Alert>
               ) : (
-                <Box 
-                  sx={{ 
-                    display: 'flex', 
-                    flexDirection: 'column', 
+                <Box
+                  sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
                     gap: 2,
                     maxHeight: '500px',
                     overflowY: 'auto',
@@ -488,7 +519,7 @@ const CreateProject = () => {
                                   height: '40px',
                                   border: '1px solid #ccc',
                                   borderRadius: '4px',
-                                  cursor: 'pointer'
+                                  cursor: 'pointer',
                                 }}
                               />
                               <TextField
@@ -535,7 +566,7 @@ const CreateProject = () => {
                   ))}
                 </Box>
               )}
-              
+
               {formData.labelSet.length > 0 && (
                 <Alert severity="success" sx={{ mt: 2 }}>
                   Đã thêm {formData.labelSet.length} label(s). Annotator sẽ có thể chọn các label này khi gán nhãn.
@@ -543,12 +574,11 @@ const CreateProject = () => {
               )}
             </Box>
 
-            {/* Dataset Selection */}
             <Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Typography variant="h5">
-                  Chọn Dataset *
-                </Typography>
+              <Box
+                sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}
+              >
+                <Typography variant="h5">Chọn Dataset *</Typography>
                 <Button
                   size="small"
                   startIcon={<RefreshIcon />}
@@ -565,8 +595,8 @@ const CreateProject = () => {
                   value={selectedDatasets}
                   onChange={(e) => setSelectedDatasets(e.target.value)}
                   renderValue={(selected) => {
-                    const selectedNames = selected.map(id => {
-                      const ds = datasets.find(d => d._id === id);
+                    const selectedNames = selected.map((id) => {
+                      const ds = datasets.find((d) => d._id === id);
                       return ds ? ds.name : id;
                     });
                     return selectedNames.join(', ');
@@ -584,11 +614,7 @@ const CreateProject = () => {
                       <MenuItem key={dataset._id} value={dataset._id}>
                         <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
                           <span>{dataset.name}</span>
-                          <Chip 
-                            label={`${dataset.totalItems || 0} files`} 
-                            size="small" 
-                            sx={{ ml: 1 }}
-                          />
+                          <Chip label={`${dataset.totalItems || 0} files`} size="small" sx={{ ml: 1 }} />
                         </Box>
                       </MenuItem>
                     ))
@@ -603,8 +629,8 @@ const CreateProject = () => {
               {datasets.length === 0 && (
                 <Alert severity="warning" sx={{ mt: 2 }}>
                   Chưa có dataset nào. Vui lòng{' '}
-                  <Button 
-                    size="small" 
+                  <Button
+                    size="small"
                     onClick={() => navigate('/manager/datasets')}
                     sx={{ textTransform: 'none' }}
                   >
@@ -615,18 +641,18 @@ const CreateProject = () => {
             </Box>
           </Grid>
 
-          {/* Right Column - Team Assignment */}
           <Grid item xs={12} md={5}>
             <Typography variant="h5" gutterBottom sx={{ mb: 3 }}>
               Team Assignment
             </Typography>
-            
+
             <Grid container spacing={3}>
-              {/* Annotators */}
               <Grid item xs={12}>
                 <Card>
                   <CardContent>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                    <Box
+                      sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}
+                    >
                       <Typography variant="h6">Annotators</Typography>
                       <Chip label={`${selectedAnnotators.length} Selected`} color="primary" size="small" />
                     </Box>
@@ -641,11 +667,19 @@ const CreateProject = () => {
                       }}
                       sx={{ mb: 2 }}
                     />
-                    <Box sx={{ maxHeight: 300, overflowY: 'auto', border: '1px solid #e0e0e0', borderRadius: 1, p: 1 }}>
+                    <Box
+                      sx={{
+                        maxHeight: 300,
+                        overflowY: 'auto',
+                        border: '1px solid #e0e0e0',
+                        borderRadius: 1,
+                        p: 1,
+                      }}
+                    >
                       {filteredAnnotators.length === 0 ? (
                         <Typography variant="body2" color="textSecondary" sx={{ textAlign: 'center', py: 3 }}>
-                          {annotators.length === 0 
-                            ? 'Chưa có annotator nào. Vui lòng tạo annotator trước.' 
+                          {annotators.length === 0
+                            ? 'Chưa có annotator nào. Vui lòng tạo annotator trước.'
                             : 'Không tìm thấy annotator.'}
                         </Typography>
                       ) : (
@@ -667,7 +701,7 @@ const CreateProject = () => {
                               }}
                               onClick={() => {
                                 if (isSelected) {
-                                  setSelectedAnnotators(selectedAnnotators.filter(id => id !== ann._id));
+                                  setSelectedAnnotators(selectedAnnotators.filter((uid) => uid !== ann._id));
                                 } else {
                                   setSelectedAnnotators([...selectedAnnotators, ann._id]);
                                 }
@@ -675,9 +709,7 @@ const CreateProject = () => {
                             >
                               <Checkbox checked={isSelected} size="small" />
                               <Box sx={{ flex: 1 }}>
-                                <Typography variant="body2">
-                                  {ann.fullName || ann.username}
-                                </Typography>
+                                <Typography variant="body2">{ann.fullName || ann.username}</Typography>
                                 <Typography variant="caption" color="textSecondary">
                                   {ann.email}
                                 </Typography>
@@ -692,11 +724,12 @@ const CreateProject = () => {
                 </Card>
               </Grid>
 
-              {/* Reviewers */}
               <Grid item xs={12}>
                 <Card>
                   <CardContent>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                    <Box
+                      sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}
+                    >
                       <Typography variant="h6">Reviewers</Typography>
                       <Chip label={`${selectedReviewers.length} Selected`} color="success" size="small" />
                     </Box>
@@ -711,11 +744,19 @@ const CreateProject = () => {
                       }}
                       sx={{ mb: 2 }}
                     />
-                    <Box sx={{ maxHeight: 300, overflowY: 'auto', border: '1px solid #e0e0e0', borderRadius: 1, p: 1 }}>
+                    <Box
+                      sx={{
+                        maxHeight: 300,
+                        overflowY: 'auto',
+                        border: '1px solid #e0e0e0',
+                        borderRadius: 1,
+                        p: 1,
+                      }}
+                    >
                       {filteredReviewers.length === 0 ? (
                         <Typography variant="body2" color="textSecondary" sx={{ textAlign: 'center', py: 3 }}>
-                          {reviewers.length === 0 
-                            ? 'Chưa có reviewer nào. Vui lòng tạo reviewer trước.' 
+                          {reviewers.length === 0
+                            ? 'Chưa có reviewer nào. Vui lòng tạo reviewer trước.'
                             : 'Không tìm thấy reviewer.'}
                         </Typography>
                       ) : (
@@ -737,7 +778,7 @@ const CreateProject = () => {
                               }}
                               onClick={() => {
                                 if (isSelected) {
-                                  setSelectedReviewers(selectedReviewers.filter(id => id !== rev._id));
+                                  setSelectedReviewers(selectedReviewers.filter((uid) => uid !== rev._id));
                                 } else {
                                   setSelectedReviewers([...selectedReviewers, rev._id]);
                                 }
@@ -745,9 +786,7 @@ const CreateProject = () => {
                             >
                               <Checkbox checked={isSelected} size="small" />
                               <Box sx={{ flex: 1 }}>
-                                <Typography variant="body2">
-                                  {rev.fullName || rev.username}
-                                </Typography>
+                                <Typography variant="body2">{rev.fullName || rev.username}</Typography>
                                 <Typography variant="caption" color="textSecondary">
                                   {rev.email}
                                 </Typography>
@@ -764,7 +803,7 @@ const CreateProject = () => {
             </Grid>
 
             <Alert severity="info" sx={{ mt: 3 }}>
-              Tasks will be automatically distributed among the selected {selectedAnnotators.length} annotator(s) 
+              Tasks will be automatically distributed among the selected {selectedAnnotators.length} annotator(s)
               and reviewed by {selectedReviewers.length} reviewer(s).
             </Alert>
           </Grid>
