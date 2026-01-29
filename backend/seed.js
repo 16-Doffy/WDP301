@@ -144,6 +144,7 @@ async function seed() {
       // Tạo dataset mẫu (không có file thực tế, chỉ là ví dụ)
       const dataset = new Dataset({
         projectId: project._id,
+        managerId: manager._id,
         name: 'Sample Dataset 1',
         description: 'Dataset mẫu với 5 ảnh',
         files: [
