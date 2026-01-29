@@ -164,18 +164,18 @@ const CreateProject = () => {
       await axios.post(
         `${API_URL}/api/projects`,
         {
-          name: formData.name.trim(),
-          description: formData.description?.trim() || '',
-          guidelines: formData.guidelines.trim(),
-          labelSet: formData.labelSet || [],
-          questions: formData.questions || [],
-          status: 'draft',
-          reviewPolicy: formData.reviewPolicy,
-          deadline: formData.deadline || undefined,
-          exportFormat: formData.exportFormat || 'JSON',
+        name: formData.name.trim(),
+        description: formData.description?.trim() || '',
+        guidelines: formData.guidelines.trim(),
+        labelSet: formData.labelSet || [],
+        questions: formData.questions || [],
+        status: 'draft',
+        reviewPolicy: formData.reviewPolicy,
+        deadline: formData.deadline || undefined,
+        exportFormat: formData.exportFormat || 'JSON',
         },
         {
-          headers: {
+        headers: {
             Authorization: `Bearer ${localStorage.getItem('token')}`,
           },
         }
@@ -240,18 +240,18 @@ const CreateProject = () => {
       const projectRes = await axios.post(
         `${API_URL}/api/projects`,
         {
-          name: formData.name.trim(),
-          description: formData.description?.trim() || '',
-          guidelines: formData.guidelines.trim(),
-          labelSet: formData.labelSet || [],
-          questions: formData.questions || [],
-          status: 'active',
-          reviewPolicy: formData.reviewPolicy,
-          deadline: formData.deadline || undefined,
-          exportFormat: formData.exportFormat || 'JSON',
+        name: formData.name.trim(),
+        description: formData.description?.trim() || '',
+        guidelines: formData.guidelines.trim(),
+        labelSet: formData.labelSet || [],
+        questions: formData.questions || [],
+        status: 'active',
+        reviewPolicy: formData.reviewPolicy,
+        deadline: formData.deadline || undefined,
+        exportFormat: formData.exportFormat || 'JSON',
         },
         {
-          headers: {
+        headers: {
             Authorization: `Bearer ${localStorage.getItem('token')}`,
           },
         }
@@ -265,7 +265,7 @@ const CreateProject = () => {
             projectId: projectId,
           },
           {
-            headers: {
+          headers: {
               Authorization: `Bearer ${localStorage.getItem('token')}`,
             },
           }
@@ -276,13 +276,13 @@ const CreateProject = () => {
         await axios.post(
           `${API_URL}/api/tasks/assign`,
           {
-            projectId,
-            datasetId: datasetId,
-            annotatorIds: selectedAnnotators,
-            reviewerIds: selectedReviewers,
+          projectId,
+          datasetId: datasetId,
+          annotatorIds: selectedAnnotators,
+          reviewerIds: selectedReviewers,
           },
           {
-            headers: {
+          headers: {
               Authorization: `Bearer ${localStorage.getItem('token')}`,
             },
           }
@@ -294,7 +294,7 @@ const CreateProject = () => {
     } catch (error) {
       console.error('Error creating project:', error);
       let errorMsg = 'Có lỗi xảy ra';
-
+      
       if (error.response) {
         if (error.response.data?.errors && Array.isArray(error.response.data.errors)) {
           errorMsg = error.response.data.errors.map((e) => e.msg || e.message).join(', ');
@@ -308,7 +308,7 @@ const CreateProject = () => {
       } else {
         errorMsg = error.message || 'Có lỗi xảy ra';
       }
-
+      
       setError(`Lỗi: ${errorMsg}`);
       alert(`Lỗi khi tạo project: ${errorMsg}`);
     } finally {
@@ -450,16 +450,16 @@ const CreateProject = () => {
                   Add Label
                 </Button>
               </Box>
-
+              
               {formData.labelSet.length === 0 ? (
                 <Alert severity="info">
                   Chưa có label nào. Vui lòng thêm ít nhất một label để annotator có thể chọn khi gán nhãn.
                 </Alert>
               ) : (
-                <Box
-                  sx={{
-                    display: 'flex',
-                    flexDirection: 'column',
+                <Box 
+                  sx={{ 
+                    display: 'flex', 
+                    flexDirection: 'column', 
                     gap: 2,
                     maxHeight: '500px',
                     overflowY: 'auto',
@@ -566,7 +566,7 @@ const CreateProject = () => {
                   ))}
                 </Box>
               )}
-
+              
               {formData.labelSet.length > 0 && (
                 <Alert severity="success" sx={{ mt: 2 }}>
                   Đã thêm {formData.labelSet.length} label(s). Annotator sẽ có thể chọn các label này khi gán nhãn.
@@ -629,8 +629,8 @@ const CreateProject = () => {
               {datasets.length === 0 && (
                 <Alert severity="warning" sx={{ mt: 2 }}>
                   Chưa có dataset nào. Vui lòng{' '}
-                  <Button
-                    size="small"
+                  <Button 
+                    size="small" 
                     onClick={() => navigate('/manager/datasets')}
                     sx={{ textTransform: 'none' }}
                   >
@@ -645,7 +645,7 @@ const CreateProject = () => {
             <Typography variant="h5" gutterBottom sx={{ mb: 3 }}>
               Team Assignment
             </Typography>
-
+            
             <Grid container spacing={3}>
               <Grid item xs={12}>
                 <Card>
@@ -678,8 +678,8 @@ const CreateProject = () => {
                     >
                       {filteredAnnotators.length === 0 ? (
                         <Typography variant="body2" color="textSecondary" sx={{ textAlign: 'center', py: 3 }}>
-                          {annotators.length === 0
-                            ? 'Chưa có annotator nào. Vui lòng tạo annotator trước.'
+                          {annotators.length === 0 
+                            ? 'Chưa có annotator nào. Vui lòng tạo annotator trước.' 
                             : 'Không tìm thấy annotator.'}
                         </Typography>
                       ) : (
@@ -755,8 +755,8 @@ const CreateProject = () => {
                     >
                       {filteredReviewers.length === 0 ? (
                         <Typography variant="body2" color="textSecondary" sx={{ textAlign: 'center', py: 3 }}>
-                          {reviewers.length === 0
-                            ? 'Chưa có reviewer nào. Vui lòng tạo reviewer trước.'
+                          {reviewers.length === 0 
+                            ? 'Chưa có reviewer nào. Vui lòng tạo reviewer trước.' 
                             : 'Không tìm thấy reviewer.'}
                         </Typography>
                       ) : (
@@ -803,7 +803,7 @@ const CreateProject = () => {
             </Grid>
 
             <Alert severity="info" sx={{ mt: 3 }}>
-              Tasks will be automatically distributed among the selected {selectedAnnotators.length} annotator(s)
+              Tasks will be automatically distributed among the selected {selectedAnnotators.length} annotator(s) 
               and reviewed by {selectedReviewers.length} reviewer(s).
             </Alert>
           </Grid>

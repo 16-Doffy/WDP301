@@ -615,6 +615,11 @@ const AnnotatorTask = () => {
                       Assigned: {new Date(task.createdAt).toLocaleString('vi-VN')}
                     </div>
                   )}
+                  {task?.projectId?.deadline && (
+                    <div className="text-xs text-red-600 font-semibold mt-0.5">
+                      Deadline: {new Date(task.projectId.deadline).toLocaleString('vi-VN')}
+                    </div>
+                  )}
                 </div>
                 <button
                   onClick={navigateToNext}

@@ -37,6 +37,7 @@ const AnnotatorDashboard = () => {
             status: 'new',
             assignedDate: task.createdAt || new Date(),
             previewImage: task.dataItem?.path || null,
+            deadline: task.projectId?.deadline || null,
           });
         }
         
@@ -101,17 +102,8 @@ const AnnotatorDashboard = () => {
     return Math.round((batch.completedTasks / batch.totalTasks) * 100);
   };
 
-  const getTimeRemaining = (batch) => {
-    // Calculate estimated time based on average completion rate
-    const remaining = batch.totalTasks - batch.completedTasks;
-    if (remaining === 0) return 'Completed';
-    if (batch.totalTasks === 0) return 'No limit';
-    
-    // Estimate: 2 minutes per image on average
-    const minutes = remaining * 2;
-    if (minutes < 60) return `${minutes}m left`;
-    const hours = Math.floor(minutes / 60);
-    return `${hours}h left`;
+  const getTimeRemaining = () => {
+    return null;
   };
 
   // Separate batches into active and completed
@@ -208,14 +200,20 @@ const AnnotatorDashboard = () => {
               <span>{batch.totalTasks} Images</span>
             </div>
             <div className="flex items-center gap-1">
-              <span>⏰</span>
-              <span>{timeRemaining}</span>
+              <span>{''}</span>
             </div>
           </div>
 
-          {/* Assigned time */}
-          <div className="text-xs text-gray-500 mb-4">
-            Assigned: {batch.assignedDate ? new Date(batch.assignedDate).toLocaleString('vi-VN') : '-'}
+          {/* Assigned time & Deadline */}
+          <div className="text-xs text-gray-500 mb-4 space-y-1">
+            <div>
+              Assigned: {batch.assignedDate ? new Date(batch.assignedDate).toLocaleString('vi-VN') : '-'}
+            </div>
+            {batch.deadline && (
+              <div className="text-red-600 font-semibold">
+                Deadline: {new Date(batch.deadline).toLocaleString('vi-VN')}
+              </div>
+            )}
           </div>
 
           {/* Action Button */}

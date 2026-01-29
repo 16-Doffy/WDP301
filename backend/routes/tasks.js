@@ -42,7 +42,7 @@ router.get('/my-tasks', auth, async (req, res) => {
     }
 
     const tasks = await Task.find(query)
-      .populate('projectId', 'name labelSet guidelines questions')
+      .populate('projectId', 'name labelSet guidelines questions deadline')
       .populate('datasetId', 'name')
       .populate('annotatorId', 'username fullName')
       .populate('reviewerId', 'username fullName')
