@@ -20,6 +20,11 @@ const normalizeId = (id) => {
 router.get('/my-tasks', auth, async (req, res) => {
   try {
     let query = {};
+
+    // Optional filtering by datasetId (used by Annotator batch navigation)
+    if (req.query.datasetId) {
+      query.datasetId = req.query.datasetId;
+    }
     
     if (req.user.role === 'annotator') {
       query.annotatorId = req.user._id;
