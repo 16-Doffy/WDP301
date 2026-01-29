@@ -328,4 +328,39 @@ router.get('/stats', auth, authorize('reviewer', 'manager', 'admin'), async (req
   }
 });
 
+// Handle sentence-level feedback (for text tasks)
+router.post('/:id/sentences', auth, authorize('reviewer', 'admin'), async (req, res) => {
+  try {
+    const { index, action, feedback } = req.body;
+    
+    const task = await Task.findById(req.params.id);
+    if (!task) {
+      return res.status(404).json({ message: 'Task not found' });
+    }
+
+    // Initialize sentenceFeedbacks if it doesn't exist
+    if (!task.sentenceFeedbacks) {
+      task.sentenceFeedbacks = {};
+    }
+
+    // Store feedback for this sentence
+    const feedbackKey = `sentence_${index}`;
+    task.sentenceFeedbacks[feedbackKey] = {
+      action,
+      feedback,
+      reviewerId: req.user._id,
+      reviewedAt: new Date()
+    };
+
+    await task.save();
+
+    res.json({
+      message: `Sentence ${index} marked as ${action}`,
+      sentenceFeedbacks: task.sentenceFeedbacks
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
 module.exports = router;

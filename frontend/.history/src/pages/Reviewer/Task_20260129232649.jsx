@@ -367,25 +367,11 @@ const ReviewerTask = () => {
     }
   }, [pendingTasks]);
 
-  const splitSentences = (text = '') => {
-    // Split by newline first (mỗi dòng là 1 câu)
-    let sentences = text.split('\n').map(s => s.trim()).filter(Boolean);
-    
-    // If no newlines, try splitting by . ? !
-    if (sentences.length <= 1) {
-      sentences = text
-        .split(/(?<=[.?!])\s+/)
-        .map(s => s.trim())
-        .filter(Boolean);
-    }
-    
-    // If still only 1 or empty, return original text as single sentence
-    if (sentences.length === 0) {
-      return text.trim() ? [text.trim()] : [];
-    }
-    
-    return sentences;
-  };
+  const splitSentences = (text = '') =>
+    text
+      .split(/(?<=[.?!])\s+/)
+      .map(s => s.trim())
+      .filter(Boolean);
 
   const handleSentenceAction = async (idx, action) => {
     const key = `${task?._id}-${idx}`;
@@ -1054,7 +1040,7 @@ const ReviewerTask = () => {
                         </div>
                       </div>
                     ))
-                  )};  
+                  )}
                 </div>
                 <div className="flex gap-2">
                   <input

@@ -122,19 +122,6 @@ const ReviewerTask = () => {
       setTask(taskData);
       setReviewNotes(taskData.reviewNotes || []);
       setReviewComments(taskData.reviewComments || '');
-      
-      // Load existing sentence feedbacks
-      if (taskData.sentenceFeedbacks) {
-        const feedbacks = {};
-        const statuses = {};
-        Object.entries(taskData.sentenceFeedbacks).forEach(([key, fb]) => {
-          const sentenceIndex = key.replace('sentence_', '');
-          feedbacks[`${taskData._id}-${sentenceIndex}`] = fb.feedback || '';
-          statuses[`${taskData._id}-${sentenceIndex}`] = fb.action;
-        });
-        setSentenceFeedbacks(feedbacks);
-        setSentenceStatus(statuses);
-      }
     } catch (error) {
       console.error('Error fetching task:', error);
     } finally {
@@ -367,25 +354,11 @@ const ReviewerTask = () => {
     }
   }, [pendingTasks]);
 
-  const splitSentences = (text = '') => {
-    // Split by newline first (mỗi dòng là 1 câu)
-    let sentences = text.split('\n').map(s => s.trim()).filter(Boolean);
-    
-    // If no newlines, try splitting by . ? !
-    if (sentences.length <= 1) {
-      sentences = text
-        .split(/(?<=[.?!])\s+/)
-        .map(s => s.trim())
-        .filter(Boolean);
-    }
-    
-    // If still only 1 or empty, return original text as single sentence
-    if (sentences.length === 0) {
-      return text.trim() ? [text.trim()] : [];
-    }
-    
-    return sentences;
-  };
+  const splitSentences = (text = '') =>
+    text
+      .split(/(?<=[.?!])\s+/)
+      .map(s => s.trim())
+      .filter(Boolean);
 
   const handleSentenceAction = async (idx, action) => {
     const key = `${task?._id}-${idx}`;
@@ -403,7 +376,6 @@ const ReviewerTask = () => {
         feedback: sentenceFeedbacks[key]?.trim() || undefined,
       });
       setSentenceStatus(prev => ({ ...prev, [key]: action === 'approve' ? 'approved' : 'rejected' }));
-      // refresh task data if needed
       await fetchTask();
       await fetchAllTasks();
     } catch (err) {
@@ -412,6 +384,18 @@ const ReviewerTask = () => {
     } finally {
       setProcessingSentences(prev => ({ ...prev, [key]: false }));
     }
+  };
+
+  // Get sentiment label/tag if exists
+  const getSentimentBadge = (sentence) => {
+    // Ví dụ: backend trả về sentiment trong task.labels.sentences[idx].sentiment
+    // Hoặc parse từ annotator output - adjust theo structure backend của bạn
+    const sentimentMap = {
+      positive: { label: '😊 Tích cực', color: 'bg-green-100 text-green-700' },
+      negative: { label: '😞 Tiêu cực', color: 'bg-red-100 text-red-700' },
+      neutral: { label: '😐 Trung lập', color: 'bg-gray-100 text-gray-700' }
+    };
+    return sentimentMap;
   };
 
   if (loading) {
@@ -663,115 +647,27 @@ const ReviewerTask = () => {
                   </>
                 ) : task?.dataItem?.mimeType?.startsWith('text/') || task?.dataItem?.text ? (
                   (() => {
-                    // Check if we have sentence-level labels from annotator
-                    if (task?.labels?.sentences && Array.isArray(task.labels.sentences) && task.labels.sentences.length > 0) {
-                      console.log('Sentence labels from annotator:', task.labels.sentences);
-                      
-                      return (
-                        <div className="space-y-4 max-h-96 overflow-y-auto pr-2">
-                          {task.labels.sentences.map((sentenceLabel, idx) => {
-                            const key = `${task._id}-${idx}`;
-                            const status = sentenceStatus[key];
-                            const processing = !!processingSentences[key];
-                            const feedback = sentenceFeedbacks[key] || '';
-                            
-                            return (
-                              <div 
-                                key={key} 
-                                className={`p-4 rounded-lg border-2 transition-all ${
-                                  status === 'approved'
-                                    ? darkMode ? 'bg-green-900/20 border-green-500/50' : 'bg-green-50 border-green-300'
-                                    : status === 'rejected'
-                                      ? darkMode ? 'bg-red-900/20 border-red-500/50' : 'bg-red-50 border-red-300'
-                                      : darkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-white/60 border-gray-300'
-                                }`}
-                              >
-                                <div className="flex items-start justify-between gap-3 mb-3">
-                                  <div className={`text-sm p-2 rounded flex-1 ${darkMode ? 'bg-gray-800 text-gray-100' : 'bg-gray-100 text-gray-900'} leading-relaxed`}>
-                                    "{sentenceLabel.text || sentenceLabel.sentence || ''}"
-                                  </div>
-                                  <span className={`text-xs px-3 py-1 rounded-full font-semibold whitespace-nowrap flex-shrink-0 ${
-                                    sentenceLabel.label?.toLowerCase().includes('tích cực') || sentenceLabel.label?.toLowerCase().includes('positive')
-                                      ? darkMode ? 'bg-green-900/50 text-green-300' : 'bg-green-100 text-green-700'
-                                      : sentenceLabel.label?.toLowerCase().includes('tiêu cực') || sentenceLabel.label?.toLowerCase().includes('negative')
-                                        ? darkMode ? 'bg-red-900/50 text-red-300' : 'bg-red-100 text-red-700'
-                                        : darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-700'
-                                  }`}>
-                                    📌 {sentenceLabel.label}
-                                  </span>
-                                </div>
-                                
-                                {!status && (
-                                  <>
-                                    <textarea
-                                      value={feedback}
-                                      onChange={(e) => setSentenceFeedbacks(prev => ({ ...prev, [key]: e.target.value }))
-                                      }
-                                      placeholder="Feedback (required to reject)"
-                                      className={`w-full mb-3 p-2 border rounded resize-none text-sm focus:outline-none focus:ring-2 ${
-                                        darkMode
-                                          ? 'bg-gray-800 text-white border-gray-600 focus:ring-emerald-500/50'
-                                          : 'bg-white text-gray-900 border-gray-300 focus:ring-emerald-500/30'
-                                      }`}
-                                      rows={2}
-                                    />
-                                    
-                                    <div className="flex items-center gap-2">
-                                      <button
-                                        onClick={() => handleSentenceAction(idx, 'approve')}
-                                        disabled={processing}
-                                        className="flex-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded font-semibold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                                      >
-                                        {processing ? '⏳ Processing...' : '✓ Approve'}
-                                      </button>
-                                      <button
-                                        onClick={() => handleSentenceAction(idx, 'reject')}
-                                        disabled={processing || !feedback.trim()}
-                                        className="flex-1 px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded font-semibold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                                        title={!feedback.trim() ? 'Feedback is required' : ''}
-                                      >
-                                        {processing ? '⏳ Processing...' : '✕ Reject'}
-                                      </button>
-                                    </div>
-                                  </>
-                                )}
-                                
-                                {status && (
-                                  <div className={`p-2 rounded text-center font-bold text-sm ${
-                                    status === 'approved'
-                                      ? darkMode ? 'bg-green-900/30 text-green-300' : 'bg-green-100 text-green-700'
-                                      : darkMode ? 'bg-red-900/30 text-red-300' : 'bg-red-100 text-red-700'
-                                  }`}>
-                                    {status === 'approved' ? '✓ APPROVED' : '✕ REJECTED'}
-                                    {feedback && (
-                                      <div className={`text-xs mt-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                                        Feedback: {feedback}
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      );
-                    }
-                    
-                    // Fallback to old logic: split text by sentences
                     const rawText = task.dataItem?.text || task.dataItem?.content || '';
                     const sentences = splitSentences(rawText);
-                    
-                    if (!sentences || sentences.length === 0) {
-                      return <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>No text content found.</div>;
-                    }
-
                     return (
                       <div className="space-y-4 max-h-96 overflow-y-auto pr-2">
-                        {sentences.map((sent, idx) => {
+                        {sentences.length === 0 ? (
+                          <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>No text content.</div>
+                        ) : sentences.map((sent, idx) => {
                           const key = `${task._id}-${idx}`;
                           const status = sentenceStatus[key];
                           const processing = !!processingSentences[key];
                           const feedback = sentenceFeedbacks[key] || '';
+                          
+                          // Get sentiment from task data (adjust path based on your backend)
+                          const sentenceData = task?.labels?.sentences?.[idx];
+                          const sentiment = sentenceData?.sentiment || 'neutral';
+                          const sentimentMap = {
+                            positive: { label: '😊 Tích cực', color: darkMode ? 'bg-green-900/30 text-green-300' : 'bg-green-100 text-green-700' },
+                            negative: { label: '😞 Tiêu cực', color: darkMode ? 'bg-red-900/30 text-red-300' : 'bg-red-100 text-red-700' },
+                            neutral: { label: '😐 Trung lập', color: darkMode ? 'bg-gray-700/30 text-gray-300' : 'bg-gray-100 text-gray-700' }
+                          };
+                          const sentimentBadge = sentimentMap[sentiment] || sentimentMap.neutral;
                           
                           return (
                             <div 
@@ -784,8 +680,15 @@ const ReviewerTask = () => {
                                     : darkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-white/60 border-gray-300'
                               }`}
                             >
-                              <div className={`text-sm mb-3 p-2 rounded ${darkMode ? 'bg-gray-800 text-gray-100' : 'bg-gray-100 text-gray-900'} leading-relaxed`}>
-                                📝 Câu {idx + 1}: "{sent}"
+                              <div className="flex items-start justify-between gap-3 mb-3">
+                                <div className={`text-sm p-2 rounded flex-1 ${darkMode ? 'bg-gray-800 text-gray-100' : 'bg-gray-100 text-gray-900'} leading-relaxed`}>
+                                  "{sent}"
+                                </div>
+                                {!status && (
+                                  <span className={`text-xs px-3 py-1 rounded-full font-semibold whitespace-nowrap flex-shrink-0 ${sentimentBadge.color}`}>
+                                    {sentimentBadge.label}
+                                  </span>
+                                )}
                               </div>
                               
                               {!status && (
@@ -1054,7 +957,7 @@ const ReviewerTask = () => {
                         </div>
                       </div>
                     ))
-                  )};  
+                  )}
                 </div>
                 <div className="flex gap-2">
                   <input
