@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CircularProgress } from '@mui/material';
-import { Add as AddIcon, Delete as DeleteIcon } from '@mui/icons-material';
+import { Add as AddIcon, Delete as DeleteIcon, Edit as EditIcon } from '@mui/icons-material';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
 import { useAuth } from '../../context/AuthContext';
@@ -9,6 +9,7 @@ import { useAuth } from '../../context/AuthContext';
 const ManagerProjects = () => {
   const { user } = useAuth();
   const [projects, setProjects] = useState([]);
+  const [projectsWithTasks, setProjectsWithTasks] = useState({}); // projectId -> { annotators: [], reviewers: [] }
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const navigate = useNavigate();
@@ -21,6 +22,44 @@ const ManagerProjects = () => {
     try {
       const response = await axios.get(`${API_URL}/api/projects`);
       setProjects(response.data);
+      
+      // Fetch tasks for each project to get annotators and reviewers
+      const tasksData = {};
+      for (const project of response.data) {
+        try {
+          const tasksRes = await axios.get(`${API_URL}/api/tasks/my-tasks`);
+          const projectTasks = tasksRes.data.filter(t => 
+            (t.projectId?._id || t.projectId) === project._id
+          );
+          
+          const annotatorIds = [...new Set(
+            projectTasks.map(t => t.annotatorId?._id || t.annotatorId).filter(Boolean)
+          )];
+          const annotatorNames = [...new Set(
+            projectTasks.map(t => t.annotatorId?.fullName || t.annotatorId?.username).filter(Boolean)
+          )];
+          
+          const reviewerIds = [...new Set(
+            projectTasks.flatMap(t => 
+              (t.reviewers || []).map(r => r.reviewerId?._id || r.reviewerId).filter(Boolean)
+            )
+          )];
+          const reviewerNames = [...new Set(
+            projectTasks.flatMap(t => 
+              (t.reviewers || []).map(r => r.reviewerId?.fullName || r.reviewerId?.username).filter(Boolean)
+            )
+          )];
+          
+          tasksData[project._id] = {
+            annotators: annotatorNames,
+            reviewers: reviewerNames
+          };
+        } catch (err) {
+          console.error(`Error fetching tasks for project ${project._id}:`, err);
+          tasksData[project._id] = { annotators: [], reviewers: [] };
+        }
+      }
+      setProjectsWithTasks(tasksData);
     } catch (error) {
       console.error('Error fetching projects:', error);
     } finally {
@@ -125,8 +164,8 @@ const ManagerProjects = () => {
           <div className="px-6 py-3 border-b border-gray-100 flex text-xs font-semibold text-gray-500 uppercase tracking-wide">
             <div className="w-3/12">Project Name</div>
             <div className="w-2/12">Status</div>
-            <div className="w-2/12">Health Score</div>
-            <div className="w-2/12">Members</div>
+            <div className="w-2/12">Reviewer</div>
+            <div className="w-2/12">Annotator</div>
             <div className="w-2/12">Last Updated</div>
             <div className="w-1/12 text-right pr-2">Actions</div>
           </div>
@@ -182,30 +221,68 @@ const ManagerProjects = () => {
                       </span>
                     </div>
 
-                    {/* Health score */}
-                    <div className="w-2/12 flex items-center">
+                    {/* Reviewer */}
+                    <div className="w-2/12 flex items-center gap-1">
                       {(() => {
-                        const { label, color } = getHealthInfo(project.status);
+                        const projectData = projectsWithTasks[project._id] || { reviewers: [] };
+                        const reviewers = projectData.reviewers || [];
+                        if (reviewers.length === 0) {
+                          return <span className="text-xs text-gray-400">Unassigned</span>;
+                        }
+                        const firstReviewer = reviewers[0];
+                        const reviewerInitials = firstReviewer
+                          .split(' ')
+                          .map(n => n[0])
+                          .join('')
+                          .toUpperCase()
+                          .slice(0, 3);
                         return (
-                          <span
-                            className={`inline-flex items-center justify-center w-9 h-9 rounded-full border-2 text-xs font-semibold ${color}`}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {label}
-                          </span>
+                          <>
+                            <div
+                              className="w-7 h-7 rounded-full bg-purple-50 text-purple-700 flex items-center justify-center text-[11px] font-semibold"
+                              onClick={(e) => e.stopPropagation()}
+                              title={firstReviewer}
+                            >
+                              {reviewerInitials}
+                            </div>
+                            {reviewers.length > 1 && (
+                              <span className="text-xs text-gray-500 font-medium">+{reviewers.length - 1}</span>
+                            )}
+                          </>
                         );
                       })()}
                     </div>
 
-                    {/* Members */}
+                    {/* Annotator */}
                     <div className="w-2/12 flex items-center gap-1">
-                      <div
-                        className="w-7 h-7 rounded-full bg-blue-50 text-blue-700 flex items-center justify-center text-[11px] font-semibold"
-                        onClick={(e) => e.stopPropagation()}
-                        title={user?.fullName || user?.username || 'Project Manager'}
-                      >
-                        {initials}
-                      </div>
+                      {(() => {
+                        const projectData = projectsWithTasks[project._id] || { annotators: [] };
+                        const annotators = projectData.annotators || [];
+                        if (annotators.length === 0) {
+                          return <span className="text-xs text-gray-400">Unassigned</span>;
+                        }
+                        const firstAnnotator = annotators[0];
+                        const annotatorInitials = firstAnnotator
+                          .split(' ')
+                          .map(n => n[0])
+                          .join('')
+                          .toUpperCase()
+                          .slice(0, 3);
+                        return (
+                          <>
+                            <div
+                              className="w-7 h-7 rounded-full bg-blue-50 text-blue-700 flex items-center justify-center text-[11px] font-semibold"
+                              onClick={(e) => e.stopPropagation()}
+                              title={firstAnnotator}
+                            >
+                              {annotatorInitials}
+                            </div>
+                            {annotators.length > 1 && (
+                              <span className="text-xs text-gray-500 font-medium">+{annotators.length - 1}</span>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
 
                     {/* Last updated */}
@@ -213,13 +290,17 @@ const ManagerProjects = () => {
 
                     {/* Actions */}
                     <div className="w-1/12 flex items-center justify-end gap-2 pr-2">
-                      <div
-                        className="w-7 h-7 rounded-full bg-blue-50 text-blue-700 flex items-center justify-center text-[11px] font-semibold"
-                        onClick={(e) => e.stopPropagation()}
-                        title={user?.fullName || user?.username || 'Project Manager'}
+                      <button
+                        type="button"
+                        className="text-gray-400 hover:text-blue-600 transition-colors"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/manager/projects/${project._id}`);
+                        }}
+                        title="Chỉnh sửa project"
                       >
-                        {initials}
-                      </div>
+                        <EditIcon sx={{ fontSize: 18 }} />
+                      </button>
                       <button
                         type="button"
                         className="text-gray-400 hover:text-red-500 transition-colors"
