@@ -128,26 +128,22 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
   const getImageCoordinates = (e) => {
     if (!imageRef.current || !containerRef.current) return null;
 
-    const containerRect = containerRef.current.getBoundingClientRect();
+    const imageRect = imageRef.current.getBoundingClientRect();
 
-    // Mouse position inside scroll container (content space)
-    const mouseX = e.clientX - containerRect.left + containerRef.current.scrollLeft;
-    const mouseY = e.clientY - containerRect.top + containerRef.current.scrollTop;
+    // Use image bounding rect to avoid scroll/offset drift on very tall images
+    const clientX = e.clientX;
+    const clientY = e.clientY;
 
-    // Remove pan offset + zoom
-    const contentX = (mouseX - position.x) / zoom;
-    const contentY = (mouseY - position.y) / zoom;
+    // Convert to image local (after transform), then invert transform
+    const localX = (clientX - imageRect.left) / zoom;
+    const localY = (clientY - imageRect.top) / zoom;
 
-    // Map to natural image coordinates
-    const naturalWidth = imageRef.current.naturalWidth;
-    const naturalHeight = imageRef.current.naturalHeight;
     const displayWidth = imageRef.current.offsetWidth;
     const displayHeight = imageRef.current.offsetHeight;
+    if (!displayWidth || !displayHeight) return null;
 
-    if (!naturalWidth || !naturalHeight || !displayWidth || !displayHeight) return null;
-
-    const x = (contentX / displayWidth) * 100;
-    const y = (contentY / displayHeight) * 100;
+    const x = (localX / displayWidth) * 100;
+    const y = (localY / displayHeight) * 100;
 
     return {
       x: Math.max(0, Math.min(100, x)),
