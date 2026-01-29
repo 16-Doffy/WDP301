@@ -62,7 +62,6 @@ const AnnotatorTask = () => {
     setShowSpanPicker(false);
     setLoading(true);
     fetchTask();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   useEffect(() => {
