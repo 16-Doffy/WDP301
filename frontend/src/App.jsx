@@ -1,4 +1,4 @@
-import React from 'react';
+
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
@@ -21,6 +21,7 @@ import AdminUsers from './pages/Admin/Users';
 import AdminActivityLogs from './pages/Admin/ActivityLogs';
 import AdminSystemSettings from './pages/Admin/SystemSettings';
 import Layout from './components/LayoutTailwind';
+import { useAuth } from './context/AuthContext';
 
 const theme = createTheme({
   palette: {
@@ -32,6 +33,28 @@ const theme = createTheme({
     },
   },
 });
+
+const RoleDashboard = () => {
+  const { user } = useAuth();
+
+  if (!user) {
+    return null;
+  }
+
+  if (user.role === 'manager' || user.role === 'admin') {
+    return <ManagerDashboard />;
+  }
+
+  if (user.role === 'annotator') {
+    return <AnnotatorDashboard />;
+  }
+
+  if (user.role === 'reviewer') {
+    return <ReviewerDashboard />;
+  }
+
+  return <AdminDashboard />;
+};
 
 function App() {
   return (
@@ -51,7 +74,7 @@ function App() {
               }
             >
               <Route index element={<Navigate to="/dashboard" replace />} />
-              <Route path="dashboard" element={<ManagerDashboard />} />
+              <Route path="dashboard" element={<RoleDashboard />} />
               <Route path="manager/projects" element={<ManagerProjects />} />
               <Route path="manager/projects/create" element={<CreateProject />} />
               <Route path="manager/projects/:id" element={<ManagerProjectDetail />} />
@@ -59,13 +82,12 @@ function App() {
               <Route path="manager/datasets" element={<Datasets />} />
               <Route path="annotator/tasks" element={<AnnotatorDashboard />} />
               <Route path="annotator/tasks/:id" element={<AnnotatorTask />} />
-              <Route path="reviewer/tasks" element={<ReviewerTask />} />
+              <Route path="reviewer/tasks" element={<ReviewerDashboard />} />
               <Route path="reviewer/tasks/:id" element={<ReviewerTask />} />
               <Route path="admin/users" element={<AdminUsers />} />
               <Route path="admin/activity-logs" element={<AdminActivityLogs />} />
               <Route path="admin/settings" element={<AdminSystemSettings />} />
               <Route path="admin" element={<AdminDashboard />} />
-              <Route path="reviewer/dashboard" element={<ReviewerDashboard />} />
             </Route>
           </Routes>
         </Router>
@@ -75,3 +97,4 @@ function App() {
 }
 
 export default App;
+

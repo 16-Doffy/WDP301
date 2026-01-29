@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
@@ -68,15 +69,20 @@ const ManagerProjectDetail = () => {
     description: '',
     guidelines: '',
     labelSet: [],
-    questions: [],
     status: 'draft',
+    deadline: '',
+    exportFormat: 'JSON',
   });
+  const [currentAnnotators, setCurrentAnnotators] = useState([]);
+  const [currentReviewers, setCurrentReviewers] = useState([]);
   const [qualityStats, setQualityStats] = useState(null);
   const [qualityDialogOpen, setQualityDialogOpen] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [auditDialogOpen, setAuditDialogOpen] = useState(false);
   const [auditTask, setAuditTask] = useState(null);
   const [previewLabelsOpen, setPreviewLabelsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all'); // all | assigned | in_progress | submitted | approved | rejected
 
   useEffect(() => {
     fetchData();
@@ -91,8 +97,9 @@ const ManagerProjectDetail = () => {
         description: project.description || '',
         guidelines: project.guidelines || '',
         labelSet: project.labelSet || [],
-        questions: project.questions || [],
         status: project.status || 'draft',
+        deadline: project.deadline ? new Date(project.deadline).toISOString().slice(0, 16) : '',
+        exportFormat: project.exportFormat || 'JSON',
       });
       setReviewPolicy({
         mode: project.reviewPolicy?.mode || 'full',
@@ -100,6 +107,20 @@ const ManagerProjectDetail = () => {
       });
     }
   }, [project]);
+
+  useEffect(() => {
+    // Get current assigned annotators and reviewers from tasks
+    if (tasks.length > 0) {
+      const annotatorIds = [...new Set(tasks.map(t => t.annotatorId?._id || t.annotatorId).filter(Boolean))];
+      const reviewerIds = [...new Set(
+        tasks.flatMap(t => 
+          (t.reviewers || []).map(r => r.reviewerId?._id || r.reviewerId).filter(Boolean)
+        )
+      )];
+      setCurrentAnnotators(annotatorIds);
+      setCurrentReviewers(reviewerIds);
+    }
+  }, [tasks]);
 
   const fetchData = async () => {
     try {
@@ -285,7 +306,14 @@ const ManagerProjectDetail = () => {
 
   const handleUpdateProject = async () => {
     try {
-      await axios.put(`${API_URL}/api/projects/${id}`, editFormData);
+      await axios.put(`${API_URL}/api/projects/${id}`, {
+        ...editFormData,
+        deadline: editFormData.deadline || undefined,
+      }, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
       alert('Cập nhật project thành công!');
       setEditDialogOpen(false);
       fetchData();
@@ -297,32 +325,105 @@ const ManagerProjectDetail = () => {
 
   const handleExport = async (format = 'json') => {
     try {
+      // Check if all tasks are approved (required for export)
+      const totalTasks = tasks.length;
+      const approvedTasks = tasks.filter(t => t.status === 'approved');
+      const pendingTasks = tasks.filter(t => t.status === 'submitted' || t.status === 'in_progress' || t.status === 'assigned');
+      const rejectedTasks = tasks.filter(t => t.status === 'rejected');
+
+      if (totalTasks === 0) {
+        alert('Không có task nào trong project này.');
+        return;
+      }
+
+      if (approvedTasks.length === 0) {
+        alert('Không có task nào đã được phê duyệt. Vui lòng đợi reviewer đánh giá và phê duyệt các tasks trước khi export.');
+        return;
+      }
+
+      // Check if all tasks are approved (strict requirement)
+      if (pendingTasks.length > 0 || rejectedTasks.length > 0) {
+        const pendingMsg = pendingTasks.length > 0 ? `${pendingTasks.length} task(s) đang chờ đánh giá` : '';
+        const rejectedMsg = rejectedTasks.length > 0 ? `${rejectedTasks.length} task(s) bị từ chối` : '';
+        const messages = [pendingMsg, rejectedMsg].filter(Boolean).join(' và ');
+        
+        alert(`Không thể export: Chưa phê duyệt tất cả tasks.\n\n` +
+              `Tổng số: ${totalTasks} tasks\n` +
+              `Đã phê duyệt: ${approvedTasks.length} tasks\n` +
+              `Còn lại: ${messages}\n\n` +
+              `Vui lòng phê duyệt TẤT CẢ tasks trước khi export.`);
+        return;
+      }
+
       const response = await axios.get(`${API_URL}/api/projects/${id}/export?format=${format}`, {
-        responseType: format === 'csv' ? 'blob' : 'json'
+        responseType: ['csv', 'yolo', 'voc'].includes(format.toLowerCase()) ? 'blob' : 'json'
       });
       
-      if (format === 'csv') {
-        const url = window.URL.createObjectURL(new Blob([response.data]));
+      // Determine file extension and MIME type
+      let fileExtension = 'json';
+      let mimeType = 'application/json';
+      
+      switch (format.toLowerCase()) {
+        case 'csv':
+          fileExtension = 'csv';
+          mimeType = 'text/csv';
+          break;
+        case 'yolo':
+          fileExtension = 'txt';
+          mimeType = 'text/plain';
+          break;
+        case 'voc':
+          fileExtension = 'xml';
+          mimeType = 'application/xml';
+          break;
+        case 'coco':
+          fileExtension = 'json';
+          mimeType = 'application/json';
+          break;
+        default:
+          fileExtension = 'json';
+          mimeType = 'application/json';
+      }
+
+      if (['csv', 'yolo', 'voc'].includes(format.toLowerCase())) {
+        // Handle blob responses
+        const url = window.URL.createObjectURL(new Blob([response.data], { type: mimeType }));
         const link = document.createElement('a');
         link.href = url;
-        link.setAttribute('download', `project_export_${Date.now()}.csv`);
+        link.setAttribute('download', `project_export_${Date.now()}.${fileExtension}`);
         document.body.appendChild(link);
         link.click();
         link.remove();
       } else {
-        const dataStr = JSON.stringify(response.data, null, 2);
-        const dataBlob = new Blob([dataStr], { type: 'application/json' });
+        // Handle JSON responses
+        const dataStr = typeof response.data === 'string' ? response.data : JSON.stringify(response.data, null, 2);
+        const dataBlob = new Blob([dataStr], { type: mimeType });
         const url = window.URL.createObjectURL(dataBlob);
         const link = document.createElement('a');
         link.href = url;
-        link.setAttribute('download', `project_export_${Date.now()}.json`);
+        link.setAttribute('download', `project_export_${Date.now()}.${fileExtension}`);
         document.body.appendChild(link);
         link.click();
         link.remove();
       }
+      
+      alert(`Đã xuất ${approvedTasks.length} tasks đã được phê duyệt thành công!`);
     } catch (error) {
       console.error('Error exporting data:', error);
-      alert('Lỗi khi xuất dữ liệu: ' + (error.response?.data?.message || error.message));
+      const errorMessage = error.response?.data?.message || error.message;
+      const errorStats = error.response?.data?.stats;
+      
+      let fullMessage = 'Lỗi khi xuất dữ liệu: ' + errorMessage;
+      if (errorStats) {
+        fullMessage += `\n\nChi tiết:\n` +
+          `- Tổng số tasks: ${errorStats.total}\n` +
+          `- Đã phê duyệt: ${errorStats.approved}\n` +
+          `- Đang chờ: ${errorStats.pending || 0}\n` +
+          `- Bị từ chối: ${errorStats.rejected || 0}\n` +
+          (errorStats.other > 0 ? `- Trạng thái khác: ${errorStats.other}\n` : '');
+      }
+      
+      alert(fullMessage);
     }
   };
 
@@ -421,25 +522,6 @@ const ManagerProjectDetail = () => {
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-900">Datasets</h2>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    setAssignMode('upload');
-                    setAssignDialogOpen(true);
-                  }}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  <span>📋</span>
-                  <span>Assign Tasks</span>
-                </button>
-                <button
-                  onClick={() => setUploadDialogOpen(true)}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-white text-gray-700 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  <span>⬆️</span>
-                  <span>Upload Dataset</span>
-                </button>
-              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -447,13 +529,12 @@ const ManagerProjectDetail = () => {
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">DATASET NAME</th>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">FILES</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">ACTIONS</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {datasets.length === 0 ? (
                     <tr>
-                      <td colSpan={3} className="px-4 py-8 text-center text-gray-500">
+                      <td colSpan={2} className="px-4 py-8 text-center text-gray-500">
                         No datasets found
                       </td>
                     </tr>
@@ -462,18 +543,6 @@ const ManagerProjectDetail = () => {
                       <tr key={dataset._id} className="hover:bg-gray-50">
                         <td className="px-4 py-3 text-gray-900">{dataset.name}</td>
                         <td className="px-4 py-3 text-gray-600">{dataset.totalItems || 0}</td>
-                        <td className="px-4 py-3">
-                          <button
-                            onClick={() => {
-                              setAssignMode('existing');
-                              setSelectedDataset(dataset._id);
-                              setAssignDialogOpen(true);
-                            }}
-                            className="text-blue-600 hover:text-blue-800 font-medium text-sm"
-                          >
-                            ASSIGN
-                          </button>
-                        </td>
                       </tr>
                     ))
                   )}
@@ -486,101 +555,89 @@ const ManagerProjectDetail = () => {
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Tasks Overview</h2>
             <div className="flex flex-wrap gap-2">
-              <span className="px-3 py-1 bg-gray-100 text-gray-800 text-sm rounded-full font-medium">
-                Total {tasks.length}
-              </span>
-              <span className="px-3 py-1 bg-gray-100 text-gray-800 text-sm rounded-full font-medium">
+              <button
+                type="button"
+                onClick={() => setStatusFilter('all')}
+                className={`px-3 py-1 text-sm rounded-full font-medium border ${
+                  statusFilter === 'all'
+                    ? 'bg-gray-900 text-white border-gray-900'
+                    : 'bg-gray-100 text-gray-800 border-gray-200'
+                }`}
+              >
+                All {tasks.length}
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter('assigned')}
+                className={`px-3 py-1 text-sm rounded-full font-medium border ${
+                  statusFilter === 'assigned'
+                    ? 'bg-gray-900 text-white border-gray-900'
+                    : 'bg-gray-100 text-gray-800 border-gray-200'
+                }`}
+              >
                 Assigned {tasks.filter(t => t.status === 'assigned').length}
-              </span>
-              <span className="px-3 py-1 bg-blue-100 text-blue-800 text-sm rounded-full font-medium">
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter('in_progress')}
+                className={`px-3 py-1 text-sm rounded-full font-medium border ${
+                  statusFilter === 'in_progress'
+                    ? 'bg-blue-600 text-white border-blue-600'
+                    : 'bg-blue-50 text-blue-800 border-blue-100'
+                }`}
+              >
                 In Progress {tasks.filter(t => t.status === 'in_progress').length}
-              </span>
-              <span className="px-3 py-1 bg-yellow-100 text-yellow-800 text-sm rounded-full font-medium">
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter('submitted')}
+                className={`px-3 py-1 text-sm rounded-full font-medium border ${
+                  statusFilter === 'submitted'
+                    ? 'bg-yellow-500 text-white border-yellow-500'
+                    : 'bg-yellow-50 text-yellow-800 border-yellow-100'
+                }`}
+              >
                 Submitted {tasks.filter(t => t.status === 'submitted').length}
-              </span>
-              <span className="px-3 py-1 bg-green-100 text-green-800 text-sm rounded-full font-medium">
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter('approved')}
+                className={`px-3 py-1 text-sm rounded-full font-medium border ${
+                  statusFilter === 'approved'
+                    ? 'bg-green-600 text-white border-green-600'
+                    : 'bg-green-50 text-green-800 border-green-100'
+                }`}
+              >
                 Approved {tasks.filter(t => t.status === 'approved').length}
-              </span>
-              <span className="px-3 py-1 bg-red-100 text-red-800 text-sm rounded-full font-medium">
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter('rejected')}
+                className={`px-3 py-1 text-sm rounded-full font-medium border ${
+                  statusFilter === 'rejected'
+                    ? 'bg-red-600 text-white border-red-600'
+                    : 'bg-red-50 text-red-800 border-red-100'
+                }`}
+              >
                 Rejected {tasks.filter(t => t.status === 'rejected').length}
-              </span>
+              </button>
             </div>
           </div>
 
-          {/* Workflow Policy Card */}
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <span className="text-xl">🔄</span>
-              <h2 className="text-lg font-semibold text-gray-900">Workflow Policy</h2>
-            </div>
-            <div className="space-y-3">
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="radio"
-                  name="reviewPolicy"
-                  value="full"
-                  checked={reviewPolicy.mode === 'full'}
-                  onChange={async (e) => {
-                    const newPolicy = { ...reviewPolicy, mode: e.target.value };
-                    setReviewPolicy(newPolicy);
-                    await axios.put(`${API_URL}/api/projects/${id}`, { reviewPolicy: newPolicy });
-                    fetchData();
-                  }}
-                  className="w-4 h-4 text-blue-600"
-                />
-                <span className="text-gray-700">100% Review Required</span>
-              </label>
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="radio"
-                  name="reviewPolicy"
-                  value="sample"
-                  checked={reviewPolicy.mode === 'sample'}
-                  onChange={async (e) => {
-                    const newPolicy = { ...reviewPolicy, mode: e.target.value };
-                    setReviewPolicy(newPolicy);
-                    await axios.put(`${API_URL}/api/projects/${id}`, { reviewPolicy: newPolicy });
-                    fetchData();
-                  }}
-                  className="w-4 h-4 text-blue-600"
-                />
-                <span className="text-gray-700">Sampled Review</span>
-              </label>
-              {reviewPolicy.mode === 'sample' && (
-                <div className="mt-4 pl-7">
-                  <label className="block text-sm text-gray-600 mb-2">
-                    Sample Rate: {(reviewPolicy.sampleRate * 100).toFixed(0)}%
-                  </label>
-                  <input
-                    type="range"
-                    min="1"
-                    max="100"
-                    value={(reviewPolicy.sampleRate || 0) * 100}
-                    onChange={async (e) => {
-                      const rate = parseInt(e.target.value) / 100;
-                      const newPolicy = { ...reviewPolicy, sampleRate: rate };
-                      setReviewPolicy(newPolicy);
-                      await axios.put(`${API_URL}/api/projects/${id}`, { reviewPolicy: newPolicy });
-                      fetchData();
-                    }}
-                    className="w-full"
-                  />
-                </div>
-              )}
-            </div>
-          </div>
         </div>
 
         {/* All Tasks Card */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">All Tasks</h2>
           
-          {/* Search Bar */}
+          {/* Search Bar - Search by Annotator or Reviewer name */}
           <div className="mb-4">
             <div className="relative">
               <input
                 type="text"
-                placeholder="Filter tasks..."
+                placeholder="Tìm kiếm theo tên Annotator hoặc Reviewer..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
               <span className="absolute left-3 top-2.5 text-gray-400">🔍</span>
@@ -601,14 +658,35 @@ const ManagerProjectDetail = () => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {tasks.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
-                      No tasks found
-                    </td>
-                  </tr>
-                ) : (
-                  tasks.map((task) => (
+                {(() => {
+                  // Filter tasks by annotator or reviewer name
+                  const filteredTasks = tasks.filter((task) => {
+                    // Filter by status
+                    if (statusFilter !== 'all' && task.status !== statusFilter) {
+                      return false;
+                    }
+
+                    // Filter by search (annotator / reviewer)
+                    if (!searchTerm.trim()) return true;
+                    const searchLower = searchTerm.toLowerCase();
+                    const annotatorName = (task.annotatorId?.fullName || task.annotatorId?.username || '').toLowerCase();
+                    const reviewerNames = (task.reviewers || [])
+                      .map(rv => (rv.reviewerId?.fullName || rv.reviewerId?.username || '').toLowerCase())
+                      .join(' ');
+                    return annotatorName.includes(searchLower) || reviewerNames.includes(searchLower);
+                  });
+
+                  if (filteredTasks.length === 0) {
+                    return (
+                      <tr>
+                        <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                          Không tìm thấy task nào
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  return filteredTasks.map((task) => (
                     <tr key={task._id} className="hover:bg-gray-50">
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
@@ -640,16 +718,23 @@ const ManagerProjectDetail = () => {
                       </td>
                       <td className="px-4 py-3">
                         {task.reviewers && task.reviewers.length > 0 ? (
-                          <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 bg-purple-100 rounded-full flex items-center justify-center">
-                              <span className="text-xs text-purple-700">
-                                {(task.reviewers[0]?.reviewerId?.fullName || task.reviewers[0]?.reviewerId?.username || 'R')[0].toUpperCase()}
+                          <div className="flex items-center gap-1 flex-wrap">
+                            {task.reviewers.slice(0, 2).map((rv, idx) => (
+                              <span
+                                key={rv.reviewerId?._id || idx}
+                                className="inline-flex items-center px-2 py-0.5 rounded-full bg-purple-50 text-purple-800 text-xs font-medium"
+                              >
+                                {(rv.reviewerId?.fullName || rv.reviewerId?.username || 'Reviewer')}
+                                {rv.status === 'pending' && (
+                                  <span className="ml-1 text-[10px] text-yellow-700">(pending)</span>
+                                )}
                               </span>
-                            </div>
-                            <span className="text-gray-700 text-sm">
-                              {task.reviewers[0]?.reviewerId?.fullName || task.reviewers[0]?.reviewerId?.username || 'Reviewer'}
-                              {task.reviewers[0]?.status === 'pending' && ' (Pending)'}
-                            </span>
+                            ))}
+                            {task.reviewers.length > 2 && (
+                              <span className="text-xs text-gray-500 ml-1">
+                                +{task.reviewers.length - 2} more
+                              </span>
+                            )}
                           </div>
                         ) : (
                           <div className="flex items-center gap-2">
@@ -683,8 +768,8 @@ const ManagerProjectDetail = () => {
                         </button>
                       </td>
                     </tr>
-                  ))
-                )}
+                  ));
+                })()}
               </tbody>
             </table>
           </div>
@@ -1010,7 +1095,21 @@ const ManagerProjectDetail = () => {
         <DialogTitle>Chọn định dạng xuất dữ liệu</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
-            Chỉ xuất các tasks đã được phê duyệt (approved)
+            <strong>Yêu cầu:</strong> TẤT CẢ tasks phải được phê duyệt (approved) trước khi export.<br/>
+            Tổng số tasks: {tasks.length}<br/>
+            Đã phê duyệt: {tasks.filter(t => t.status === 'approved').length}<br/>
+            {tasks.filter(t => t.status !== 'approved').length > 0 && (
+              <>
+                <span style={{ color: '#d32f2f' }}>
+                  Còn lại: {tasks.filter(t => t.status !== 'approved').length} task(s) chưa được phê duyệt
+                </span>
+              </>
+            )}
+            {tasks.filter(t => t.status === 'approved').length === tasks.length && tasks.length > 0 && (
+              <span style={{ color: '#2e7d32' }}>
+                ✓ Tất cả tasks đã được phê duyệt, có thể export
+              </span>
+            )}
           </Typography>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
             <Button
@@ -1027,11 +1126,21 @@ const ManagerProjectDetail = () => {
               variant="outlined"
               fullWidth
               onClick={() => {
-                handleExport('csv');
+                handleExport('yolo');
                 setExportDialogOpen(false);
               }}
             >
-              CSV Format
+              YOLO Format (for object detection)
+            </Button>
+            <Button
+              variant="outlined"
+              fullWidth
+              onClick={() => {
+                handleExport('voc');
+                setExportDialogOpen(false);
+              }}
+            >
+              VOC Format (Pascal VOC XML)
             </Button>
             <Button
               variant="outlined"
@@ -1043,6 +1152,16 @@ const ManagerProjectDetail = () => {
             >
               COCO Format (for object detection)
             </Button>
+            <Button
+              variant="outlined"
+              fullWidth
+              onClick={() => {
+                handleExport('csv');
+                setExportDialogOpen(false);
+              }}
+            >
+              CSV Format
+            </Button>
           </Box>
         </DialogContent>
         <DialogActions>
@@ -1051,187 +1170,329 @@ const ManagerProjectDetail = () => {
       </Dialog>
 
       {/* Edit Project Dialog */}
-      <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)} maxWidth="md" fullWidth>
-        <DialogTitle>Chỉnh sửa Project - Labels & Questions</DialogTitle>
-        <DialogContent>
-          <TextField
-            fullWidth
-            label="Project Name"
-            value={editFormData.name}
-            onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
-            margin="normal"
-            required
-          />
-          <TextField
-            fullWidth
-            label="Description"
-            value={editFormData.description}
-            onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
-            margin="normal"
-            multiline
-            rows={3}
-          />
-          {user?.role === 'manager' && (
-            <FormControl fullWidth margin="normal">
-              <InputLabel>Status</InputLabel>
-              <Select
-                value={editFormData.status || 'draft'}
-                label="Status"
-                onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })}
-              >
-                <MenuItem value="draft">Draft</MenuItem>
-                <MenuItem value="active">Active</MenuItem>
-                <MenuItem value="completed">Completed</MenuItem>
-                <MenuItem value="archived">Archived</MenuItem>
-              </Select>
-            </FormControl>
-          )}
-          <TextField
-            fullWidth
-            label="Guidelines"
-            value={editFormData.guidelines}
-            onChange={(e) => setEditFormData({ ...editFormData, guidelines: e.target.value })}
-            margin="normal"
-            multiline
-            rows={5}
-            required
-            helperText="Hướng dẫn cho Annotator"
-          />
-          
-          <Accordion sx={{ mt: 2 }} defaultExpanded>
-            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-              <Typography fontWeight="bold">Bộ nhãn (Labels) - BẮT BUỘC cho Annotator</Typography>
-            </AccordionSummary>
-            <AccordionDetails>
-              <Alert severity="info" sx={{ mb: 2 }}>
-                Thêm các nhãn mà Annotator có thể chọn khi khoanh vùng (ví dụ: Dog, Cat, Person...). 
-                Nếu không có labels, Annotator sẽ không thể chọn label khi khoanh vùng!
-              </Alert>
-              <Button
-                size="small"
-                startIcon={<AddIcon />}
-                onClick={() => {
-                  const newLabelSet = [...(editFormData.labelSet || []), { name: '', color: '#1976d2' }];
-                  setEditFormData({ ...editFormData, labelSet: newLabelSet });
+      <Dialog 
+        open={editDialogOpen} 
+        onClose={() => setEditDialogOpen(false)} 
+        maxWidth="lg" 
+        fullWidth
+        PaperProps={{
+          sx: { maxHeight: '90vh', display: 'flex', flexDirection: 'column' }
+        }}
+      >
+        <DialogTitle sx={{ flexShrink: 0 }}>Chỉnh sửa Project</DialogTitle>
+        <DialogContent 
+          dividers 
+          sx={{ 
+            overflowY: 'auto', 
+            overflowX: 'hidden',
+            flex: 1,
+            '&::-webkit-scrollbar': {
+              width: '10px',
+            },
+            '&::-webkit-scrollbar-track': {
+              background: '#f1f1f1',
+              borderRadius: '5px',
+            },
+            '&::-webkit-scrollbar-thumb': {
+              background: '#888',
+              borderRadius: '5px',
+              '&:hover': {
+                background: '#555',
+              },
+            },
+          }}
+        >
+          <Grid container spacing={3}>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Project Name *"
+                value={editFormData.name}
+                onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                required
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Description"
+                value={editFormData.description}
+                onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
+                multiline
+                rows={3}
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Guidelines *"
+                value={editFormData.guidelines}
+                onChange={(e) => setEditFormData({ ...editFormData, guidelines: e.target.value })}
+                multiline
+                rows={5}
+                required
+                helperText="Hướng dẫn cho Annotator"
+              />
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <TextField
+                fullWidth
+                label="Deadline"
+                type="datetime-local"
+                value={editFormData.deadline}
+                onChange={(e) => setEditFormData({ ...editFormData, deadline: e.target.value })}
+                InputLabelProps={{
+                  shrink: true,
                 }}
-                sx={{ mt: 1 }}
-              >
-                Thêm Label
-              </Button>
-              {editFormData.labelSet && editFormData.labelSet.length > 0 ? (
-                editFormData.labelSet.map((label, idx) => (
-                  <Box key={idx} sx={{ display: 'flex', gap: 1, mt: 1, alignItems: 'center' }}>
-                    <TextField
-                      size="small"
-                      label="Tên label"
-                      value={label.name}
-                      onChange={(e) => {
-                        const newLabelSet = [...editFormData.labelSet];
-                        newLabelSet[idx].name = e.target.value;
-                        setEditFormData({ ...editFormData, labelSet: newLabelSet });
-                      }}
-                      placeholder="Ví dụ: Dog, Cat, Person..."
-                    />
-                    <TextField
-                      size="small"
-                      type="color"
-                      label="Màu"
-                      value={label.color || '#1976d2'}
-                      onChange={(e) => {
-                        const newLabelSet = [...editFormData.labelSet];
-                        newLabelSet[idx].color = e.target.value;
-                        setEditFormData({ ...editFormData, labelSet: newLabelSet });
-                      }}
-                      sx={{ width: 100 }}
-                    />
-                    <IconButton
-                      size="small"
-                      onClick={() => {
-                        const newLabelSet = editFormData.labelSet.filter((_, i) => i !== idx);
-                        setEditFormData({ ...editFormData, labelSet: newLabelSet });
-                      }}
-                    >
-                      <DeleteIcon />
-                    </IconButton>
-                  </Box>
-                ))
-              ) : (
-                <Alert severity="warning" sx={{ mt: 2 }}>
-                  Chưa có labels nào! Annotator sẽ không thể chọn label khi khoanh vùng.
-                </Alert>
-              )}
-            </AccordionDetails>
-          </Accordion>
-
-          <Accordion sx={{ mt: 2 }}>
-            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-              <Typography>Câu hỏi và Đáp án - Tùy chọn</Typography>
-            </AccordionSummary>
-            <AccordionDetails>
-              <Typography variant="body2" color="textSecondary" gutterBottom>
-                Sau khi Annotator khoanh vùng, họ sẽ trả lời câu hỏi này bằng cách chọn đáp án A hoặc B
-              </Typography>
-              <Button
-                size="small"
-                startIcon={<AddIcon />}
-                onClick={() => {
-                  const newQuestions = [...(editFormData.questions || []), {
-                    question: '',
-                    options: [{ key: 'A', value: '' }, { key: 'B', value: '' }],
-                  }];
-                  setEditFormData({ ...editFormData, questions: newQuestions });
-                }}
-                sx={{ mt: 1 }}
-              >
-                Thêm Câu hỏi
-              </Button>
-              {editFormData.questions && editFormData.questions.map((question, qIdx) => (
-                <Box key={qIdx} sx={{ mt: 2, p: 2, border: '1px solid #ccc', borderRadius: 1 }}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                    <Typography variant="subtitle2">Câu hỏi {qIdx + 1}</Typography>
-                    <IconButton
-                      size="small"
-                      onClick={() => {
-                        const newQuestions = editFormData.questions.filter((_, i) => i !== qIdx);
-                        setEditFormData({ ...editFormData, questions: newQuestions });
-                      }}
-                    >
-                      <DeleteIcon />
-                    </IconButton>
-                  </Box>
-                  <TextField
-                    fullWidth
+                helperText="Set project deadline (optional)"
+              />
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <FormControl fullWidth>
+                <InputLabel>Export Format</InputLabel>
+                <Select
+                  value={editFormData.exportFormat || 'JSON'}
+                  label="Export Format"
+                  onChange={(e) => setEditFormData({ ...editFormData, exportFormat: e.target.value })}
+                >
+                  <MenuItem value="JSON">JSON (Default)</MenuItem>
+                  <MenuItem value="YOLO">YOLO</MenuItem>
+                  <MenuItem value="VOC">VOC (Pascal VOC)</MenuItem>
+                  <MenuItem value="COCO">COCO</MenuItem>
+                  <MenuItem value="CSV">CSV</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            {user?.role === 'manager' && (
+              <Grid item xs={12} md={6}>
+                <FormControl fullWidth>
+                  <InputLabel>Status</InputLabel>
+                  <Select
+                    value={editFormData.status || 'draft'}
+                    label="Status"
+                    onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })}
+                  >
+                    <MenuItem value="draft">Draft</MenuItem>
+                    <MenuItem value="active">Active</MenuItem>
+                    <MenuItem value="completed">Completed</MenuItem>
+                    <MenuItem value="archived">Archived</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+            )}
+            {/* Label Set */}
+            <Grid item xs={12}>
+              <Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                  <Typography variant="h6">Label Set</Typography>
+                  <Button
+                    variant="outlined"
                     size="small"
-                    label="Câu hỏi"
-                    value={question.question}
-                    onChange={(e) => {
-                      const newQuestions = [...editFormData.questions];
-                      newQuestions[qIdx].question = e.target.value;
-                      setEditFormData({ ...editFormData, questions: newQuestions });
+                    startIcon={<AddIcon />}
+                    onClick={() => {
+                      const newLabel = {
+                        name: '',
+                        color: `#${Math.floor(Math.random()*16777215).toString(16)}`,
+                        description: ''
+                      };
+                      setEditFormData({
+                        ...editFormData,
+                        labelSet: [...(editFormData.labelSet || []), newLabel]
+                      });
                     }}
-                    margin="normal"
-                  />
-                  <Box sx={{ mt: 1 }}>
-                    {question.options && question.options.map((option, optIdx) => (
-                      <TextField
-                        key={optIdx}
-                        fullWidth
-                        size="small"
-                        label={`Đáp án ${option.key}`}
-                        value={option.value}
-                        onChange={(e) => {
-                          const newQuestions = [...editFormData.questions];
-                          newQuestions[qIdx].options[optIdx].value = e.target.value;
-                          setEditFormData({ ...editFormData, questions: newQuestions });
-                        }}
-                        margin="normal"
+                  >
+                    Add Label
+                  </Button>
+                </Box>
+                
+                {editFormData.labelSet && editFormData.labelSet.length > 0 ? (
+                  <Box 
+                    sx={{ 
+                      display: 'flex', 
+                      flexDirection: 'column', 
+                      gap: 2,
+                      maxHeight: '500px',
+                      minHeight: '200px',
+                      overflowY: 'auto',
+                      overflowX: 'hidden',
+                      pr: 2,
+                      pb: 2,
+                      border: '2px solid #e0e0e0',
+                      borderRadius: 2,
+                      p: 2,
+                      backgroundColor: '#fafafa',
+                      '&::-webkit-scrollbar': {
+                        width: '12px',
+                      },
+                      '&::-webkit-scrollbar-track': {
+                        background: '#e0e0e0',
+                        borderRadius: '6px',
+                      },
+                      '&::-webkit-scrollbar-thumb': {
+                        background: '#888',
+                        borderRadius: '6px',
+                        border: '2px solid #e0e0e0',
+                        '&:hover': {
+                          background: '#555',
+                        },
+                      },
+                    }}
+                  >
+                    {editFormData.labelSet.map((label, idx) => (
+                      <Card key={idx} variant="outlined" sx={{ flexShrink: 0 }}>
+                        <CardContent>
+                          <Grid container spacing={2} alignItems="center">
+                            <Grid item xs={12} sm={4}>
+                              <TextField
+                                fullWidth
+                                size="small"
+                                label="Label Name *"
+                                value={label.name || ''}
+                                onChange={(e) => {
+                                  const newLabelSet = [...editFormData.labelSet];
+                                  newLabelSet[idx].name = e.target.value;
+                                  setEditFormData({ ...editFormData, labelSet: newLabelSet });
+                                }}
+                                placeholder="e.g., Car, Person, Dog"
+                                required
+                              />
+                            </Grid>
+                            <Grid item xs={12} sm={3}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <input
+                                  type="color"
+                                  value={label.color || '#000000'}
+                                  onChange={(e) => {
+                                    const newLabelSet = [...editFormData.labelSet];
+                                    newLabelSet[idx].color = e.target.value;
+                                    setEditFormData({ ...editFormData, labelSet: newLabelSet });
+                                  }}
+                                  style={{
+                                    width: '50px',
+                                    height: '40px',
+                                    border: '1px solid #ccc',
+                                    borderRadius: '4px',
+                                    cursor: 'pointer'
+                                  }}
+                                />
+                                <TextField
+                                  size="small"
+                                  value={label.color || '#000000'}
+                                  onChange={(e) => {
+                                    const newLabelSet = [...editFormData.labelSet];
+                                    newLabelSet[idx].color = e.target.value;
+                                    setEditFormData({ ...editFormData, labelSet: newLabelSet });
+                                  }}
+                                  placeholder="#000000"
+                                  sx={{ flex: 1 }}
+                                />
+                              </Box>
+                            </Grid>
+                            <Grid item xs={12} sm={4}>
+                              <TextField
+                                fullWidth
+                                size="small"
+                                label="Description (Optional)"
+                                value={label.description || ''}
+                                onChange={(e) => {
+                                  const newLabelSet = [...editFormData.labelSet];
+                                  newLabelSet[idx].description = e.target.value;
+                                  setEditFormData({ ...editFormData, labelSet: newLabelSet });
+                                }}
+                                placeholder="Brief description"
+                              />
+                            </Grid>
+                            <Grid item xs={12} sm={1}>
+                              <IconButton
+                                color="error"
+                                onClick={() => {
+                                  const newLabelSet = editFormData.labelSet.filter((_, i) => i !== idx);
+                                  setEditFormData({ ...editFormData, labelSet: newLabelSet });
+                                }}
+                              >
+                                <DeleteIcon />
+                              </IconButton>
+                            </Grid>
+                          </Grid>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </Box>
+                ) : (
+                  <Alert severity="info">
+                    Chưa có label nào. Vui lòng thêm ít nhất một label để annotator có thể chọn khi gán nhãn.
+                  </Alert>
+                )}
+              </Box>
+            </Grid>
+
+            {/* Datasets Info */}
+            <Grid item xs={12}>
+              <Box>
+                <Typography variant="h6" gutterBottom>Datasets</Typography>
+                {datasets.length === 0 ? (
+                  <Alert severity="info">Chưa có dataset nào</Alert>
+                ) : (
+                  <Box sx={{ maxHeight: 200, overflowY: 'auto' }}>
+                    {datasets.map((dataset) => (
+                      <Card key={dataset._id} sx={{ mb: 1 }}>
+                        <CardContent sx={{ py: 1.5 }}>
+                          <Typography variant="body2" fontWeight="bold">{dataset.name}</Typography>
+                          <Typography variant="caption" color="textSecondary">
+                            {dataset.totalItems || 0} files
+                          </Typography>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </Box>
+                )}
+              </Box>
+            </Grid>
+
+            {/* Team Assignment Info */}
+            <Grid item xs={12} md={6}>
+              <Box>
+                <Typography variant="h6" gutterBottom>Assigned Annotators</Typography>
+                {currentAnnotators.length === 0 ? (
+                  <Alert severity="info">Chưa có annotator nào được gán</Alert>
+                ) : (
+                  <Box sx={{ maxHeight: 200, overflowY: 'auto' }}>
+                    {annotators.filter(a => currentAnnotators.includes(a._id)).map((ann) => (
+                      <Chip
+                        key={ann._id}
+                        label={ann.fullName || ann.username}
+                        sx={{ m: 0.5 }}
+                        color="primary"
+                        variant="outlined"
                       />
                     ))}
                   </Box>
-                </Box>
-              ))}
-            </AccordionDetails>
-          </Accordion>
+                )}
+              </Box>
+            </Grid>
+
+            <Grid item xs={12} md={6}>
+              <Box>
+                <Typography variant="h6" gutterBottom>Assigned Reviewers</Typography>
+                {currentReviewers.length === 0 ? (
+                  <Alert severity="info">Chưa có reviewer nào được gán</Alert>
+                ) : (
+                  <Box sx={{ maxHeight: 200, overflowY: 'auto' }}>
+                    {reviewers.filter(r => currentReviewers.includes(r._id)).map((rev) => (
+                      <Chip
+                        key={rev._id}
+                        label={rev.fullName || rev.username}
+                        sx={{ m: 0.5 }}
+                        color="success"
+                        variant="outlined"
+                      />
+                    ))}
+                  </Box>
+                )}
+              </Box>
+            </Grid>
+          </Grid>
+
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setEditDialogOpen(false)}>Hủy</Button>
@@ -1270,29 +1531,6 @@ const ManagerProjectDetail = () => {
 
               <Typography variant="subtitle2" sx={{ mt: 1 }}>Review Comments</Typography>
               <Typography variant="body2">{auditTask.reviewComments || 'Không có'}</Typography>
-
-              <Typography variant="subtitle2" sx={{ mt: 1 }}>Review Notes (feedback trên ảnh)</Typography>
-              {auditTask.reviewNotes && auditTask.reviewNotes.length > 0 ? (
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                  {auditTask.reviewNotes.map((n, idx) => (
-                    <Card key={idx} variant="outlined">
-                      <CardContent>
-                        <Typography variant="body2" gutterBottom>
-                          BBox: [{Math.round(n.bbox?.[0] || 0)}%, {Math.round(n.bbox?.[1] || 0)}%] → [{Math.round(n.bbox?.[2] || 0)}%, {Math.round(n.bbox?.[3] || 0)}%]
-                        </Typography>
-                        <Typography variant="body2" gutterBottom>
-                          Label: {n.label || 'N/A'}
-                        </Typography>
-                        <Typography variant="body2">
-                          Comment: {n.comment}
-                        </Typography>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </Box>
-              ) : (
-                <Typography variant="body2" color="textSecondary">Không có ghi chú</Typography>
-              )}
             </Box>
           ) : (
             <Typography>Không có dữ liệu audit.</Typography>
@@ -1333,3 +1571,4 @@ const ManagerProjectDetail = () => {
 };
 
 export default ManagerProjectDetail;
+

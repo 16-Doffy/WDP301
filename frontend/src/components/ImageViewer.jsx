@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState } from 'react';
 
 /**
@@ -12,6 +13,7 @@ const ImageViewer = ({
   reviewNotes = [],
   readOnly = false,
   onAnnotationClick,
+  highlightedIndex = null,
   maxHeight = '600px'
 }) => {
   const imageRef = useRef(null);
@@ -40,22 +42,30 @@ const ImageViewer = ({
     const width = Math.abs(x2 - x1);
     const height = Math.abs(y2 - y1);
 
-    const borderColor = isNote ? '#ef4444' : (color || '#3b82f6');
+    const isHighlighted = highlightedIndex === index;
+    const borderColor = isNote ? '#ef4444' : (isHighlighted ? '#10b981' : (color || '#3b82f6'));
     const borderStyle = isNote ? 'dashed' : 'solid';
-    const bgOpacity = isNote ? '20' : '15';
+    const bgOpacity = isNote ? '20' : (isHighlighted ? '30' : '15');
+    const borderWidth = isHighlighted ? '3px' : '2px';
+    const boxShadow = isHighlighted 
+      ? '0 0 20px rgba(16, 185, 129, 0.6), 0 0 40px rgba(16, 185, 129, 0.4)' 
+      : 'none';
 
     return (
       <div
         key={`${isNote ? 'note' : 'bbox'}-${index}`}
         onClick={() => onAnnotationClick && onAnnotationClick({ bbox, label, index })}
-        className={`absolute box-border ${readOnly ? 'pointer-events-none cursor-default' : 'pointer-events-auto cursor-pointer'} hover:border-2 transition-all`}
+        onMouseEnter={() => !readOnly && onAnnotationClick && onAnnotationClick({ bbox, label, index })}
+        className={`absolute box-border ${readOnly ? 'pointer-events-none cursor-default' : 'pointer-events-auto cursor-pointer'} transition-all duration-300 ${isHighlighted ? 'z-50' : ''}`}
         style={{
           left: `${left}%`,
           top: `${top}%`,
           width: `${width}%`,
           height: `${height}%`,
-          border: `2px ${borderStyle} ${borderColor}`,
+          border: `${borderWidth} ${borderStyle} ${borderColor}`,
           backgroundColor: `${borderColor}${bgOpacity}`,
+          boxShadow: boxShadow,
+          transform: isHighlighted ? 'scale(1.02)' : 'scale(1)',
         }}
       >
         {/* Label Chip */}
@@ -123,3 +133,4 @@ const ImageViewer = ({
 };
 
 export default ImageViewer;
+

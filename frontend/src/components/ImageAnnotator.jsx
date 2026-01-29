@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Box,
   Paper,
@@ -26,10 +27,13 @@ import {
   ZoomOut as ZoomOutIcon,
   Delete as DeleteIcon,
   Add as AddIcon,
+  Undo as UndoIcon,
 } from '@mui/icons-material';
 
-const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotationsChange, initialAnnotations = [] }) => {
+const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotationsChange, initialAnnotations = [], onSubmit, readOnly = false }) => {
   const [annotations, setAnnotations] = useState(initialAnnotations);
+  const [annotationHistory, setAnnotationHistory] = useState([initialAnnotations]); // History for undo
+  const [historyIndex, setHistoryIndex] = useState(0); // Current position in history
   const [zoom, setZoom] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -41,7 +45,6 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
   const [showLabelDialog, setShowLabelDialog] = useState(false);
   const [showAnswerDialog, setShowAnswerDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
-  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [editingAnnotation, setEditingAnnotation] = useState(null);
   const [pendingAnnotation, setPendingAnnotation] = useState(null);
   const [isResizing, setIsResizing] = useState(false);
@@ -51,28 +54,75 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
   const imageRef = useRef(null);
   const containerRef = useRef(null);
   const animationFrameRef = useRef(null);
+  const isSyncingFromParentRef = useRef(false); // Track if we're syncing from parent props
+
+  const saveToHistory = useCallback((newAnnotations) => {
+    const base = annotationHistory.slice(0, historyIndex + 1);
+    base.push(JSON.parse(JSON.stringify(newAnnotations || [])));
+    setAnnotationHistory(base);
+    setHistoryIndex(base.length - 1);
+  }, [annotationHistory, historyIndex]);
 
   // Sync initialAnnotations with state when imageUrl changes (new task loaded)
   const prevImageUrlRef = useRef(imageUrl);
+  const prevInitialAnnotationsRef = useRef(JSON.stringify(initialAnnotations || []));
+  
   useEffect(() => {
-    if (prevImageUrlRef.current !== imageUrl) {
+    const imageChanged = prevImageUrlRef.current !== imageUrl;
+    const initialChanged = prevInitialAnnotationsRef.current !== JSON.stringify(initialAnnotations || []);
+    
+    if (imageChanged || initialChanged) {
       prevImageUrlRef.current = imageUrl;
-      setAnnotations(initialAnnotations);
-      prevAnnotationsRef.current = JSON.stringify(initialAnnotations);
+      prevInitialAnnotationsRef.current = JSON.stringify(initialAnnotations || []);
+      
+      // Mark that we're syncing from parent to prevent infinite loop
+      isSyncingFromParentRef.current = true;
+      
+      // Reset everything when image or initial annotations change
+      setAnnotations(initialAnnotations || []);
+      setAnnotationHistory([initialAnnotations || []]);
+      setHistoryIndex(0);
+      setSelectedAnnotation(null);
+      setZoom(1);
+      setPosition({ x: 0, y: 0 });
+      setCurrentBox(null);
+      setPendingAnnotation(null);
+      setShowLabelDialog(false);
+      setShowAnswerDialog(false);
+      setShowEditDialog(false);
+      prevAnnotationsRef.current = JSON.stringify(initialAnnotations || []);
+      
+      // Reset scroll position
+      if (containerRef.current) {
+        containerRef.current.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+      }
+      
+      // Reset sync flag after a short delay to allow state to update
+      setTimeout(() => {
+        isSyncingFromParentRef.current = false;
+      }, 0);
     }
   }, [imageUrl, initialAnnotations]);
 
   // Use ref to track previous annotations to avoid unnecessary calls
-  const prevAnnotationsRef = useRef(JSON.stringify(initialAnnotations));
+  const prevAnnotationsRef = useRef(JSON.stringify(initialAnnotations || []));
   
   useEffect(() => {
-    // Only call onAnnotationsChange if annotations actually changed
+    // Only call onAnnotationsChange if annotations actually changed AND we're not syncing from parent
+    if (isSyncingFromParentRef.current) {
+      // Update prevAnnotationsRef even during sync to prevent false positives later
+      prevAnnotationsRef.current = JSON.stringify(annotations);
+      return; // Skip calling onAnnotationsChange during sync from parent
+    }
+    
     const currentAnnotationsStr = JSON.stringify(annotations);
     if (prevAnnotationsRef.current !== currentAnnotationsStr) {
       prevAnnotationsRef.current = currentAnnotationsStr;
-      onAnnotationsChange(annotations);
+      if (onAnnotationsChange) {
+        onAnnotationsChange(annotations);
+      }
     }
-  }, [annotations]); // Remove onAnnotationsChange from dependencies to avoid infinite loop
+  }, [annotations, onAnnotationsChange]);
 
   const getImageCoordinates = (e) => {
     if (!imageRef.current || !containerRef.current) return null;
@@ -116,6 +166,7 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
   };
 
   const handleMouseDown = (e) => {
+    if (readOnly) return;
     // Prevent default to avoid text selection
     e.preventDefault();
     
@@ -146,6 +197,7 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
   };
 
   const handleMouseMove = (e) => {
+    if (readOnly) return;
     // Cancel previous animation frame
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
@@ -190,6 +242,7 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
   };
 
   const handleMouseUp = (e) => {
+    if (readOnly) return;
     if (isResizing || isMoving) {
       handleAnnotationMouseUp();
       return;
@@ -206,15 +259,15 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
           Math.max(drawStart.y, coords.y)
         ];
         
-        // Store pending annotation but don't add yet - show confirm dialog first
+        // Store pending annotation and directly show label selection dialog
         setPendingAnnotation({
           bbox: bbox,
           label: null,
           answer: null,
         });
         
-        // Show confirm dialog first
-        setShowConfirmDialog(true);
+        // Directly show label selection dialog (no confirm dialog)
+        setShowLabelDialog(true);
       } else {
         // If box is too small, cancel drawing
         setIsDrawing(false);
@@ -229,16 +282,8 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
     }
   };
 
-  const handleConfirmAnnotation = () => {
-    setShowConfirmDialog(false);
-    // After confirmation, show label selection dialog
-    if (pendingAnnotation) {
-      setShowLabelDialog(true);
-    }
-  };
-
   const handleCancelAnnotation = () => {
-    setShowConfirmDialog(false);
+    setShowLabelDialog(false);
     setPendingAnnotation(null);
     setIsDrawing(false);
     setDrawStart(null);
@@ -246,6 +291,7 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
   };
 
   const handleAddAnnotation = (label) => {
+    if (readOnly) return;
     if (!label || !pendingAnnotation) return;
     
     const newAnnotation = {
@@ -265,13 +311,16 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
       setShowAnswerDialog(true);
     } else {
       // No questions, just add the annotation with answer = null
-      setAnnotations([...annotations, newAnnotation]);
+      const updatedAnnotations = [...annotations, newAnnotation];
+      saveToHistory(updatedAnnotations);
+      setAnnotations(updatedAnnotations);
       setShowLabelDialog(false);
       setPendingAnnotation(null);
     }
   };
 
   const handleSelectAnswer = (answer) => {
+    if (readOnly) return;
     if (!pendingAnnotation) return;
     
     const finalAnnotation = {
@@ -279,36 +328,46 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
       answer: answer, // Can be null if no questions, or object if has questions
     };
     
-    setAnnotations([...annotations, finalAnnotation]);
+    const updatedAnnotations = [...annotations, finalAnnotation];
+    saveToHistory(updatedAnnotations);
+    setAnnotations(updatedAnnotations);
     setShowAnswerDialog(false);
     setPendingAnnotation(null);
   };
 
   const handleDeleteAnnotation = (id) => {
-    setAnnotations(annotations.filter(ann => ann.id !== id));
+    if (readOnly) return;
+    const updatedAnnotations = annotations.filter(ann => ann.id !== id);
+    saveToHistory(updatedAnnotations);
+    setAnnotations(updatedAnnotations);
     if (selectedAnnotation?.id === id) {
       setSelectedAnnotation(null);
     }
   };
 
   const handleEditAnnotation = (annotation) => {
+    if (readOnly) return;
     setEditingAnnotation({ ...annotation });
     setShowEditDialog(true);
   };
 
   const handleUpdateAnnotation = () => {
+    if (readOnly) return;
     if (!editingAnnotation) return;
     
-    setAnnotations(annotations.map(ann => 
+    const updatedAnnotations = annotations.map(ann => 
       ann.id === editingAnnotation.id 
         ? { ...ann, label: editingAnnotation.label, answer: editingAnnotation.answer }
         : ann
-    ));
+    );
+    saveToHistory(updatedAnnotations);
+    setAnnotations(updatedAnnotations);
     setShowEditDialog(false);
     setEditingAnnotation(null);
   };
 
   const handleResizeStart = (e, annotationId, handle) => {
+    if (readOnly) return;
     e.stopPropagation();
     const annotation = annotations.find(a => a.id === annotationId);
     if (annotation) {
@@ -328,6 +387,7 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
   };
 
   const handleMoveStart = (e, annotationId) => {
+    if (readOnly) return;
     e.stopPropagation();
     if (e.target.closest('.resize-handle')) return; // Don't move if clicking resize handle
     
@@ -443,6 +503,10 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
   };
 
   const handleAnnotationMouseUp = () => {
+    // Save to history when resize/move is complete
+    if (isResizing || isMoving) {
+      saveToHistory(annotations);
+    }
     setIsResizing(false);
     setIsMoving(false);
     setResizeHandle(null);
@@ -459,10 +523,27 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
   };
 
   const handleReset = () => {
+    if (readOnly) return;
+    // Reset zoom and position
     setZoom(1);
     setPosition({ x: 0, y: 0 });
     if (containerRef.current) {
       containerRef.current.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+    }
+    // Clear all annotations
+    const emptyAnnotations = [];
+    saveToHistory(emptyAnnotations);
+    setAnnotations(emptyAnnotations);
+    setSelectedAnnotation(null);
+  };
+
+  const handleUndo = () => {
+    if (readOnly) return;
+    if (historyIndex > 0) {
+      const newIndex = historyIndex - 1;
+      setHistoryIndex(newIndex);
+      setAnnotations(JSON.parse(JSON.stringify(annotationHistory[newIndex]))); // Deep copy
+      setSelectedAnnotation(null);
     }
   };
 
@@ -573,9 +654,39 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
             <IconButton onClick={handleZoomIn} size="small">
               <ZoomInIcon />
             </IconButton>
-            <Button size="small" onClick={handleReset}>
+            <Button 
+              size="small" 
+              onClick={handleUndo}
+              disabled={readOnly || historyIndex <= 0}
+              startIcon={<UndoIcon />}
+            >
+              Undo
+            </Button>
+            <Button 
+              size="small" 
+              onClick={handleReset}
+              color="error"
+              disabled={readOnly}
+            >
               Reset
             </Button>
+            {onSubmit && (
+              <Button 
+                variant="contained" 
+                color="success"
+                onClick={onSubmit}
+                disabled={readOnly}
+                sx={{ 
+                  ml: 2,
+                  px: 3,
+                  py: 1,
+                  fontWeight: 'bold',
+                  fontSize: '0.95rem'
+                }}
+              >
+                Submit
+              </Button>
+            )}
           </Box>
         </Box>
 
@@ -740,62 +851,8 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
           })}
         </Box>
 
-        <Box sx={{ mt: 2 }}>
-          <Typography variant="subtitle2" gutterBottom>
-            Đã khoanh vùng ({annotations.length}):
-          </Typography>
-          {annotations.length === 0 ? (
-            <Typography variant="body2" color="textSecondary">
-              Chưa có annotation. Kéo chuột trên ảnh để khoanh vùng.
-            </Typography>
-          ) : (
-            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mt: 1 }}>
-              {annotations.map((ann) => (
-                <Chip
-                  key={ann.id}
-                  label={`${ann.label}${ann.answer ? ` (${typeof ann.answer === 'object' ? Object.values(ann.answer).join(', ') : ann.answer})` : ''} - [${Math.round(ann.bbox[0])}%, ${Math.round(ann.bbox[1])}%]`}
-                  onDelete={() => handleDeleteAnnotation(ann.id)}
-                  color="primary"
-                  variant="outlined"
-                  sx={{ cursor: 'pointer' }}
-                />
-              ))}
-            </Box>
-          )}
-        </Box>
       </Paper>
 
-      {/* Confirm Annotation Dialog */}
-      <Dialog open={showConfirmDialog} onClose={handleCancelAnnotation} maxWidth="sm" fullWidth>
-        <DialogTitle>Xác nhận khoanh vùng</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" color="textSecondary" gutterBottom>
-            Bạn đã khoanh vùng một khu vực trên ảnh.
-          </Typography>
-          {pendingAnnotation && (
-            <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
-              <Typography variant="body2" gutterBottom>
-                <strong>Vị trí:</strong> [{Math.round(pendingAnnotation.bbox[0])}%, {Math.round(pendingAnnotation.bbox[1])}%] 
-                đến [{Math.round(pendingAnnotation.bbox[2])}%, {Math.round(pendingAnnotation.bbox[3])}%]
-              </Typography>
-              <Typography variant="body2">
-                <strong>Kích thước:</strong> {Math.round(Math.abs(pendingAnnotation.bbox[2] - pendingAnnotation.bbox[0]))}% × {Math.round(Math.abs(pendingAnnotation.bbox[3] - pendingAnnotation.bbox[1]))}%
-              </Typography>
-            </Box>
-          )}
-          <Typography variant="body2" sx={{ mt: 2 }}>
-            Bạn có muốn tiếp tục chọn label cho vùng này không?
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCancelAnnotation} color="error">
-            Hủy
-          </Button>
-          <Button onClick={handleConfirmAnnotation} variant="contained" color="primary">
-            Xác nhận
-          </Button>
-        </DialogActions>
-      </Dialog>
 
       {/* Label Selection Dialog */}
       <Dialog open={showLabelDialog} onClose={() => {
@@ -804,10 +861,7 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
       }} maxWidth="sm" fullWidth>
         <DialogTitle>Chọn Label cho vùng đã khoanh</DialogTitle>
         <DialogContent>
-          <Typography variant="body2" color="textSecondary" gutterBottom>
-            Bạn đã khoanh vùng từ ({Math.round(pendingAnnotation?.bbox[0] || 0)}%, {Math.round(pendingAnnotation?.bbox[1] || 0)}%) đến ({Math.round(pendingAnnotation?.bbox[2] || 0)}%, {Math.round(pendingAnnotation?.bbox[3] || 0)}%)
-          </Typography>
-          <Typography variant="body2" sx={{ mt: 2, mb: 1 }}>
+          <Typography variant="body2" sx={{ mt: 1, mb: 2 }}>
             Chọn label phù hợp:
           </Typography>
           <FormControl fullWidth sx={{ mt: 1 }}>
@@ -950,10 +1004,6 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
         <DialogContent>
           {editingAnnotation && (
             <>
-              <Typography variant="body2" color="textSecondary" gutterBottom>
-                Vị trí: [{Math.round(editingAnnotation.bbox[0])}%, {Math.round(editingAnnotation.bbox[1])}%] đến [{Math.round(editingAnnotation.bbox[2])}%, {Math.round(editingAnnotation.bbox[3])}%]
-              </Typography>
-              
               <FormControl fullWidth sx={{ mt: 2 }}>
                 <InputLabel>Label *</InputLabel>
                 <Select
@@ -1035,3 +1085,4 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
 };
 
 export default ImageAnnotator;
+
