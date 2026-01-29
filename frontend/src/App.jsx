@@ -2,13 +2,14 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
-import { AuthProvider, useAuth } from './context/AuthContext';
+import { AuthProvider } from './context/AuthContext';
 import PrivateRoute from './components/PrivateRoute';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import ManagerDashboard from './pages/Manager/Dashboard';
 import ManagerProjects from './pages/Manager/Projects';
 import ManagerProjectDetail from './pages/Manager/ProjectDetail';
+import AnnotatorAuditDetail from './pages/Manager/AnnotatorAuditDetail';
 import CreateProject from './pages/Manager/CreateProject';
 import TeamManagement from './pages/Manager/TeamManagement';
 import Datasets from './pages/Manager/Datasets';
@@ -21,6 +22,7 @@ import AdminUsers from './pages/Admin/Users';
 import AdminActivityLogs from './pages/Admin/ActivityLogs';
 import AdminSystemSettings from './pages/Admin/SystemSettings';
 import Layout from './components/LayoutTailwind';
+import { useAuth } from './context/AuthContext';
 
 const theme = createTheme({
   palette: {
@@ -77,6 +79,7 @@ function App() {
               <Route path="manager/projects" element={<ManagerProjects />} />
               <Route path="manager/projects/create" element={<CreateProject />} />
               <Route path="manager/projects/:id" element={<ManagerProjectDetail />} />
+              <Route path="manager/projects/:projectId/annotator/:annotatorId" element={<AnnotatorAuditDetail />} />
               <Route path="manager/team" element={<TeamManagement />} />
               <Route path="manager/datasets" element={<Datasets />} />
               <Route path="annotator/tasks" element={<AnnotatorDashboard />} />
