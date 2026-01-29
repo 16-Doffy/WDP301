@@ -53,6 +53,33 @@ const ensureDir = (dirPath) => {
   if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
 };
 
+// Helper function to normalize path to relative path from backend root
+const normalizePath = (filePath) => {
+  if (!filePath) return '';
+  // Convert backslashes to forward slashes
+  let normalized = filePath.replace(/\\/g, '/');
+  
+  // Extract relative path from 'uploads' onwards
+  const uploadsIndex = normalized.indexOf('uploads/');
+  if (uploadsIndex !== -1) {
+    return normalized.substring(uploadsIndex);
+  }
+  
+  // If already relative and starts with 'uploads/', return as is
+  if (normalized.startsWith('uploads/')) {
+    return normalized;
+  }
+  
+  // Fallback: if path contains 'uploads' anywhere, try to extract
+  const lastUploadsIndex = normalized.lastIndexOf('uploads/');
+  if (lastUploadsIndex !== -1) {
+    return normalized.substring(lastUploadsIndex);
+  }
+  
+  // If no 'uploads' found, assume it's already relative or return empty
+  return normalized;
+};
+
 const extractZipAndCollectFiles = async ({ zipPath, destRoot, datasetType, maxFiles = 2000 }) => {
   ensureDir(destRoot);
 
@@ -119,7 +146,7 @@ const extractZipAndCollectFiles = async ({ zipPath, destRoot, datasetType, maxFi
     extracted.push({
       filename: safeOutName,
       originalName: baseName,
-      path: outPath.replace(/\\/g, '/'),
+      path: normalizePath(outPath),
       mimeType: guessedMime,
       size: stat.size,
     });
@@ -255,7 +282,7 @@ router.post('/', auth, authorize('manager', 'admin'), upload.array('files', 100)
       files = req.files.map(file => ({
         filename: file.filename,
         originalName: file.originalname,
-        path: file.path.replace(/\\/g, '/'),
+        path: normalizePath(file.path),
         mimeType: file.mimetype,
         size: file.size
       }));

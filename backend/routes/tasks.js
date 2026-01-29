@@ -16,6 +16,33 @@ const normalizeId = (id) => {
   return String(id);
 };
 
+// Helper function to normalize path to relative path from backend root
+const normalizePath = (filePath) => {
+  if (!filePath) return '';
+  // Convert backslashes to forward slashes
+  let normalized = filePath.replace(/\\/g, '/');
+  
+  // Extract relative path from 'uploads' onwards
+  const uploadsIndex = normalized.indexOf('uploads/');
+  if (uploadsIndex !== -1) {
+    return normalized.substring(uploadsIndex);
+  }
+  
+  // If already relative and starts with 'uploads/', return as is
+  if (normalized.startsWith('uploads/')) {
+    return normalized;
+  }
+  
+  // Fallback: if path contains 'uploads' anywhere, try to extract
+  const lastUploadsIndex = normalized.lastIndexOf('uploads/');
+  if (lastUploadsIndex !== -1) {
+    return normalized.substring(lastUploadsIndex);
+  }
+  
+  // If no 'uploads' found, assume it's already relative or return empty
+  return normalized;
+};
+
 // Get tasks for current user
 router.get('/my-tasks', auth, async (req, res) => {
   try {
@@ -219,7 +246,7 @@ router.post('/assign', auth, authorize('manager', 'admin'), async (req, res) => 
           dataItem: {
             filename: file.filename,
             originalName: file.originalName || file.filename,
-            path: file.path,
+            path: normalizePath(file.path), // Normalize path to ensure relative path
             mimeType: file.mimeType || 'application/octet-stream'
           },
           status: 'assigned',
