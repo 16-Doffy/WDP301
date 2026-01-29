@@ -283,7 +283,9 @@ router.get('/:id/quality', auth, authorize('manager'), async (req, res) => {
           total: 0,
           approved: 0,
           rejected: 0,
-          approvalRate: 0
+          reviewed: 0,
+          approvalRate: 0,
+          rejectionRate: 0
         };
       }
       stats.annotatorStats[annotatorName].total++;
@@ -295,8 +297,12 @@ router.get('/:id/quality', auth, authorize('manager'), async (req, res) => {
     Object.keys(stats.annotatorStats).forEach(annotator => {
       const annotatorStat = stats.annotatorStats[annotator];
       const reviewed = annotatorStat.approved + annotatorStat.rejected;
-      annotatorStat.approvalRate = reviewed > 0 
+      annotatorStat.reviewed = reviewed;
+      annotatorStat.approvalRate = reviewed > 0
         ? (annotatorStat.approved / reviewed * 100).toFixed(2)
+        : 0;
+      annotatorStat.rejectionRate = reviewed > 0
+        ? (annotatorStat.rejected / reviewed * 100).toFixed(2)
         : 0;
     });
 

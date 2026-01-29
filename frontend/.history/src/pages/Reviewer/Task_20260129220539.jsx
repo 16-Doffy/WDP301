@@ -348,7 +348,7 @@ const ReviewerTask = () => {
       <div className={`${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white/80 backdrop-blur-lg border-gray-200'} border-b px-6 py-4 flex items-center justify-between z-10`}>
         <div className="flex items-center gap-4">
           <h1 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-            {darkMode ? '🔍 Premium Dark Audit Station' : '⚡ Review task'}
+            {darkMode ? '🔍 Premium Dark Audit Station' : '⚡ Dynamic Reviewer Hub'}
           </h1>
           <span className={`px-3 py-1 rounded-full text-xs font-semibold ${darkMode ? 'bg-emerald-900/50 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}>
             {pendingTasks.length} PENDING
@@ -839,7 +839,7 @@ const ReviewerTask = () => {
                 : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
             }`}
           >
-            <span className="mr-2"></span> Skip
+            <span className="mr-2">⏭️</span> Skip
           </button>
           <button
             onClick={handleReject}

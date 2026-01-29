@@ -157,6 +157,12 @@ const ReviewerTask = () => {
       return;
     }
 
+    // NEW: require at least one visual feedback note
+    if (!reviewNotes || reviewNotes.length === 0) {
+      alert('Vui lòng thêm ít nhất một feedback note trên ảnh trước khi từ chối.');
+      return;
+    }
+    
     if (window.confirm('Bạn có chắc muốn từ chối task này? Annotator sẽ nhận được phản hồi và cần chỉnh sửa lại. Lưu ý: Mỗi task chỉ có thể được đánh giá 1 lần.')) {
       setProcessing(true);
       try {
@@ -843,19 +849,15 @@ const ReviewerTask = () => {
           </button>
           <button
             onClick={handleReject}
-            disabled={processing || !reviewComments.trim() || isReviewed}
+            disabled={processing || !reviewComments.trim() || isReviewed || reviewNotes.length === 0}
             className="px-8 py-3 bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-xl font-bold shadow-lg shadow-red-500/50 transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-            title={isReviewed ? 'Task này đã được đánh giá rồi' : (!reviewComments.trim() ? 'Vui lòng nhập nhận xét trước khi từ chối' : '')}
+            title={
+              isReviewed 
+                ? 'Task này đã được đánh giá rồi' 
+                : (!reviewComments.trim() ? 'Vui lòng nhập nhận xét trước khi từ chối' : (reviewNotes.length === 0 ? 'Vui lòng thêm ít nhất một feedback note trên ảnh' : ''))
+            }
           >
             <span className="mr-2">✕</span> Reject
-          </button>
-          <button
-            onClick={handleApprove}
-            disabled={processing || isReviewed}
-            className="px-8 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl font-bold shadow-lg shadow-emerald-500/50 transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-            title={isReviewed ? 'Task này đã được đánh giá rồi' : ''}
-          >
-            <span className="mr-2">✓</span> Approve Task
           </button>
           <div className={`flex items-center gap-2 ml-4 pl-4 border-l ${darkMode ? 'border-gray-700' : 'border-gray-300'}`}>
             <span className={`text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>

@@ -157,6 +157,12 @@ const ReviewerTask = () => {
       return;
     }
 
+    // NEW: require at least one visual feedback note
+    if (!reviewNotes || reviewNotes.length === 0) {
+      alert('Vui lòng thêm ít nhất một feedback note trên ảnh trước khi từ chối.');
+      return;
+    }
+    
     if (window.confirm('Bạn có chắc muốn từ chối task này? Annotator sẽ nhận được phản hồi và cần chỉnh sửa lại. Lưu ý: Mỗi task chỉ có thể được đánh giá 1 lần.')) {
       setProcessing(true);
       try {
