@@ -202,7 +202,7 @@ const AnnotatorDashboard = () => {
           </div>
 
           {/* Stats */}
-          <div className="flex items-center justify-between text-sm text-gray-600 mb-4">
+          <div className="flex items-center justify-between text-sm text-gray-600 mb-3">
             <div className="flex items-center gap-1">
               <span>🖼️</span>
               <span>{batch.totalTasks} Images</span>
@@ -211,6 +211,11 @@ const AnnotatorDashboard = () => {
               <span>⏰</span>
               <span>{timeRemaining}</span>
             </div>
+          </div>
+
+          {/* Assigned time */}
+          <div className="text-xs text-gray-500 mb-4">
+            Assigned: {batch.assignedDate ? new Date(batch.assignedDate).toLocaleString('vi-VN') : '-'}
           </div>
 
           {/* Action Button */}

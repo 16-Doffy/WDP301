@@ -610,6 +610,11 @@ const AnnotatorTask = () => {
                   {task?.dataItem?.filename && (
                     <span className="ml-2 text-gray-500">({task.dataItem.filename})</span>
                   )}
+                  {task?.createdAt && (
+                    <div className="text-xs text-gray-500 mt-0.5">
+                      Assigned: {new Date(task.createdAt).toLocaleString('vi-VN')}
+                    </div>
+                  )}
                 </div>
                 <button
                   onClick={navigateToNext}
