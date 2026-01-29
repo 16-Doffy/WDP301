@@ -335,14 +335,36 @@ router.put('/:id/label', auth, authorize('annotator'), async (req, res) => {
     if (req.body.labels) {
       // If project has labelSet, validate that labels use valid label names
       if (task.projectId?.labelSet && Array.isArray(task.projectId.labelSet) && task.projectId.labelSet.length > 0) {
+        const validLabels = task.projectId.labelSet.map(l => l.name || l);
+
+        // Image object labels
         if (req.body.labels.objects && Array.isArray(req.body.labels.objects)) {
-          const validLabels = task.projectId.labelSet.map(l => l.name || l);
           for (const obj of req.body.labels.objects) {
             if (obj.label && !validLabels.includes(obj.label)) {
-              return res.status(400).json({ 
-                message: `Invalid label "${obj.label}". Valid labels are: ${validLabels.join(', ')}` 
+              return res.status(400).json({
+                message: `Invalid label "${obj.label}". Valid labels are: ${validLabels.join(', ')}`
               });
             }
+          }
+        }
+
+        // Text span labels
+        if (req.body.labels.spans && Array.isArray(req.body.labels.spans)) {
+          for (const span of req.body.labels.spans) {
+            if (span.label && !validLabels.includes(span.label)) {
+              return res.status(400).json({
+                message: `Invalid label "${span.label}". Valid labels are: ${validLabels.join(', ')}`
+              });
+            }
+          }
+        }
+
+        // Audio/simple classification label
+        if (req.body.labels.label && typeof req.body.labels.label === 'string') {
+          if (!validLabels.includes(req.body.labels.label)) {
+            return res.status(400).json({
+              message: `Invalid label "${req.body.labels.label}". Valid labels are: ${validLabels.join(', ')}`
+            });
           }
         }
       }

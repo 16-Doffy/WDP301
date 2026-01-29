@@ -32,13 +32,13 @@ const AnnotatorTask = () => {
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const [textContent, setTextContent] = useState('');
   const [annotationNote, setAnnotationNote] = useState('');
-  // Text span labeling (multi-label)
-  const [textSpans, setTextSpans] = useState([]); // [{ id, start, end, label }]
-  const [pendingSelection, setPendingSelection] = useState(null); // { start, end }
-  const [pendingLabel, setPendingLabel] = useState('');
-  const [showSpanPicker, setShowSpanPicker] = useState(false);
-  const [spanPickerPos, setSpanPickerPos] = useState({ x: 0, y: 0 });
+  const [selectedLabel, setSelectedLabel] = useState('');
+  const [textSpans, setTextSpans] = useState([]); // [{ start, end, label, text, note, id }]
+  const [selectedTextRange, setSelectedTextRange] = useState(null); // { start, end, text }
+  const [showLabelDropdown, setShowLabelDropdown] = useState(false);
+  const [dropdownPosition, setDropdownPosition] = useState({ x: 0, y: 0 });
   const textContainerRef = useRef(null);
+  const dropdownRef = useRef(null);
   const canvasRef = useRef(null);
 
   const getTaskKind = useCallback((t) => {
@@ -51,19 +51,84 @@ const AnnotatorTask = () => {
     return 'other';
   }, []);
 
+  const renderTextWithSpans = () => {
+    if (!textContent) return 'Không có nội dung hiển thị.';
+    if (textSpans.length === 0) return textContent;
+
+    // Sort spans by start position
+    const sortedSpans = [...textSpans].sort((a, b) => a.start - b.start);
+    
+    const parts = [];
+    let lastIndex = 0;
+
+    sortedSpans.forEach((span) => {
+      // Add text before this span
+      if (span.start > lastIndex) {
+        parts.push({
+          text: textContent.substring(lastIndex, span.start),
+          isSpan: false
+        });
+      }
+
+      // Add the span with highlight
+      const labelInfo = task?.projectId?.labelSet?.find(l => l.name === span.label);
+      parts.push({
+        text: textContent.substring(span.start, span.end),
+        isSpan: true,
+        spanId: span.id,
+        label: span.label,
+        color: labelInfo?.color || '#3b82f6'
+      });
+
+      lastIndex = span.end;
+    });
+
+    // Add remaining text after last span
+    if (lastIndex < textContent.length) {
+      parts.push({
+        text: textContent.substring(lastIndex),
+        isSpan: false
+      });
+    }
+
+    return (
+      <>
+        {parts.map((part, idx) => {
+          if (part.isSpan) {
+            return (
+              <mark
+                key={`span-${part.spanId}-${idx}`}
+                className="px-0.5 rounded cursor-pointer hover:opacity-80 transition-opacity"
+                style={{
+                  backgroundColor: part.color + '40', // 40 = 25% opacity
+                  color: 'inherit',
+                  borderBottom: `2px solid ${part.color}`
+                }}
+                title={`Nhãn: ${part.label}`}
+              >
+                {part.text}
+              </mark>
+            );
+          }
+          return <span key={`text-${idx}`}>{part.text}</span>;
+        })}
+      </>
+    );
+  };
+
   useEffect(() => {
     // Reset annotations when task ID changes
     setAnnotations([]);
     setLabels({});
     setSelectedAnnotation(null);
-    setTextContent('');
-    setAnnotationNote('');
-    setTextSpans([]);
-    setPendingSelection(null);
-    setPendingLabel('');
-    setShowSpanPicker(false);
-    setLoading(true);
-    fetchTask();
+      setTextContent('');
+      setAnnotationNote('');
+      setSelectedLabel('');
+      setTextSpans([]);
+      setSelectedTextRange(null);
+      setShowLabelDropdown(false);
+      setLoading(true);
+      fetchTask();
   }, [id]);
 
   // Auto-refresh task every 5 seconds to check for status updates from reviewer
@@ -111,10 +176,10 @@ const AnnotatorTask = () => {
       setSelectedAnnotation(null);
       setTextContent('');
       setAnnotationNote('');
+      setSelectedLabel('');
       setTextSpans([]);
-      setPendingSelection(null);
-      setPendingLabel('');
-      setShowSpanPicker(false);
+      setSelectedTextRange(null);
+      setShowLabelDropdown(false);
       
       const response = await axios.get(`${API_URL}/api/tasks/${id}`);
       setTask(response.data);
@@ -131,12 +196,20 @@ const AnnotatorTask = () => {
         } catch (err) {
           setTextContent('Không thể tải nội dung file văn bản.');
         }
+        // Load text spans if they exist
+        if (initialLabels?.spans && Array.isArray(initialLabels.spans)) {
+          setTextSpans(initialLabels.spans.map((span, idx) => ({
+            ...span,
+            id: span.id || `span-${idx}`
+          })));
+        }
         setAnnotationNote(initialLabels?.note || '');
-        setTextSpans(Array.isArray(initialLabels?.spans) ? initialLabels.spans : []);
+        setSelectedLabel(initialLabels?.label || '');
       }
 
       if (kind === 'audio') {
         setAnnotationNote(initialLabels?.note || '');
+        setSelectedLabel(initialLabels?.label || '');
       }
       
       // Fetch batch tasks (tasks from same dataset)
@@ -217,10 +290,16 @@ const AnnotatorTask = () => {
 
       if (kind === 'image') {
         labelsPayload = labels;
+      } else if (kind === 'text') {
+        labelsPayload = {
+          spans: textSpans.map(({ id, ...rest }) => rest), // Remove id before saving
+          note: annotationNote?.trim() || '',
+        };
       } else {
-        labelsPayload = kind === 'text'
-          ? { note: annotationNote?.trim() || '', spans: textSpans }
-          : { note: annotationNote?.trim() || '' };
+        labelsPayload = {
+          note: annotationNote?.trim() || '',
+          label: selectedLabel || '',
+        };
       }
 
       await axios.put(`${API_URL}/api/tasks/${id}/label`, {
@@ -234,7 +313,7 @@ const AnnotatorTask = () => {
     } finally {
       setSaving(false);
     }
-  }, [id, labels, annotationNote, task, getTaskKind, textSpans]);
+  }, [id, labels, annotationNote, selectedLabel, textSpans, task]);
 
   const handleSubmit = useCallback(() => {
     const kind = getTaskKind(task);
@@ -244,11 +323,15 @@ const AnnotatorTask = () => {
         return;
       }
     } else if (kind === 'text') {
-      if (!Array.isArray(textSpans) || textSpans.length === 0) {
-        alert('Vui lòng bôi đen đoạn văn và gán nhãn (ít nhất 1 đoạn) trước khi nộp.');
+      if (!textSpans || textSpans.length === 0) {
+        alert('Vui lòng bôi đen và gán nhãn cho ít nhất một phần văn bản trước khi nộp.');
         return;
       }
-    } else if (kind === 'audio') {
+    } else {
+      if (!selectedLabel) {
+        alert('Vui lòng chọn nhãn cho đoạn audio trước khi nộp.');
+        return;
+      }
       if (!annotationNote.trim()) {
         alert('Vui lòng nhập ghi chú/nhãn trước khi nộp.');
         return;
@@ -277,7 +360,7 @@ const AnnotatorTask = () => {
     }
 
     setShowSubmitConfirm(true);
-  }, [labels, task]);
+  }, [labels, task, textSpans, selectedLabel, annotationNote]);
 
   const handleConfirmSubmit = useCallback(async () => {
     setShowSubmitConfirm(false);
@@ -303,10 +386,16 @@ const AnnotatorTask = () => {
 
       if (kind === 'image') {
         labelsPayload = labels;
+      } else if (kind === 'text') {
+        labelsPayload = {
+          spans: textSpans.map(({ id, ...rest }) => rest), // Remove id before saving
+          note: annotationNote?.trim() || '',
+        };
       } else {
-        labelsPayload = kind === 'text'
-          ? { note: annotationNote?.trim() || '', spans: textSpans }
-          : { note: annotationNote?.trim() || '' };
+        labelsPayload = {
+          note: annotationNote?.trim() || '',
+          label: selectedLabel || '',
+        };
       }
 
       await axios.put(`${API_URL}/api/tasks/${id}/label`, {
@@ -333,100 +422,7 @@ const AnnotatorTask = () => {
     } finally {
       setSaving(false);
     }
-  }, [id, labels, currentTaskIndex, batchTasks, navigate, task]);
-
-  const getSpanColor = useCallback((labelName) => {
-    const ls = task?.projectId?.labelSet || [];
-    const found = ls.find(l => (typeof l === 'string' ? l === labelName : l?.name === labelName));
-    const color = (typeof found === 'object' && found?.color) ? found.color : null;
-    // fallback palette
-    if (color) return color;
-    if (labelName?.toLowerCase().includes('tích') || labelName?.toLowerCase().includes('positive')) return '#22C55E';
-    if (labelName?.toLowerCase().includes('tiêu') || labelName?.toLowerCase().includes('negative')) return '#EF4444';
-    return '#3B82F6';
-  }, [task]);
-
-  const getSelectionOffsets = useCallback(() => {
-    const container = textContainerRef.current;
-    if (!container) return null;
-    const sel = window.getSelection?.();
-    if (!sel || sel.rangeCount === 0) return null;
-    const range = sel.getRangeAt(0);
-    if (!container.contains(range.commonAncestorContainer)) return null;
-    const preRange = range.cloneRange();
-    preRange.selectNodeContents(container);
-    preRange.setEnd(range.startContainer, range.startOffset);
-    const start = preRange.toString().length;
-    const selectedText = range.toString();
-    const end = start + selectedText.length;
-    if (!selectedText || start === end) return null;
-    return { start, end };
-  }, []);
-
-  const handleMouseUpOnText = useCallback((e) => {
-    const offsets = getSelectionOffsets();
-    if (!offsets) {
-      setShowSpanPicker(false);
-      setPendingSelection(null);
-      return;
-    }
-    setPendingSelection(offsets);
-    setPendingLabel('');
-    setShowSpanPicker(true);
-    setSpanPickerPos({ x: e.clientX, y: e.clientY });
-  }, [getSelectionOffsets]);
-
-  const addSpan = useCallback(() => {
-    if (!pendingSelection || !pendingLabel) return;
-    const { start, end } = pendingSelection;
-    const text = textContent || '';
-    if (start < 0 || end > text.length || start >= end) return;
-    // avoid duplicates
-    const exists = textSpans.some(s => s.start === start && s.end === end && s.label === pendingLabel);
-    if (exists) {
-      setShowSpanPicker(false);
-      return;
-    }
-    const newSpan = { id: `${Date.now()}-${Math.random().toString(16).slice(2)}`, start, end, label: pendingLabel };
-    setTextSpans(prev => [...prev, newSpan].sort((a, b) => a.start - b.start || a.end - b.end));
-    setShowSpanPicker(false);
-    setPendingSelection(null);
-    setPendingLabel('');
-    window.getSelection?.()?.removeAllRanges?.();
-  }, [pendingSelection, pendingLabel, textContent, textSpans]);
-
-  const removeSpan = useCallback((idToRemove) => {
-    setTextSpans(prev => prev.filter(s => s.id !== idToRemove));
-  }, []);
-
-  const renderTextWithSpans = useCallback(() => {
-    const text = textContent || '';
-    if (!text) return 'Không có nội dung hiển thị.';
-    if (!Array.isArray(textSpans) || textSpans.length === 0) return text;
-    const spansSorted = [...textSpans].filter(s => typeof s.start === 'number' && typeof s.end === 'number' && s.end > s.start).sort((a, b) => a.start - b.start || a.end - b.end);
-    const nodes = [];
-    let cursor = 0;
-    for (const s of spansSorted) {
-      const start = Math.max(0, Math.min(s.start, text.length));
-      const end = Math.max(0, Math.min(s.end, text.length));
-      if (end <= cursor) continue;
-      if (start > cursor) nodes.push(text.slice(cursor, start));
-      const bg = getSpanColor(s.label);
-      nodes.push(
-        <mark
-          key={s.id}
-          style={{ backgroundColor: `${bg}33`, borderBottom: `2px solid ${bg}` }}
-          className="rounded px-1"
-          title={`${s.label}`}
-        >
-          {text.slice(start, end)}
-        </mark>
-      );
-      cursor = end;
-    }
-    if (cursor < text.length) nodes.push(text.slice(cursor));
-    return nodes;
-  }, [textContent, textSpans, getSpanColor]);
+  }, [id, labels, currentTaskIndex, batchTasks, navigate, task, textSpans, annotationNote, selectedLabel]);
 
   const navigateToTask = async (taskId, saveCurrent = true) => {
     // Auto-save current task before navigating
@@ -462,6 +458,21 @@ const AnnotatorTask = () => {
       navigateToTask(batchTasks[index]._id);
     }
   };
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (!showLabelDropdown) return;
+      const inText = !!textContainerRef.current?.contains(e.target);
+      const inDropdown = !!dropdownRef.current?.contains(e.target);
+      if (!inText && !inDropdown) {
+        setShowLabelDropdown(false);
+        setSelectedTextRange(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showLabelDropdown]);
 
   // Keyboard shortcuts - MUST be before any conditional returns
   useEffect(() => {
@@ -676,7 +687,7 @@ const AnnotatorTask = () => {
                 />
               </div>
               ) : getTaskKind(task) === 'text' ? (
-                <div className="bg-white rounded-lg shadow-lg p-4 max-w-3xl w-full space-y-4">
+                <div className="bg-white rounded-lg shadow-lg p-4 max-w-4xl w-full space-y-4 relative">
                   <div className="flex justify-between items-center">
                     <div>
                       <p className="text-sm text-gray-500">Text File</p>
@@ -686,100 +697,194 @@ const AnnotatorTask = () => {
                     </div>
                     <span className="text-xs text-gray-400">{task?.dataItem?.mimeType}</span>
                   </div>
-                  <div className="text-sm text-gray-600">
-                    Bôi đen đoạn văn bạn muốn gán nhãn (multi-label). Mỗi đoạn bôi đen có thể gán 1 nhãn riêng.
+                  
+                  {/* Instructions */}
+                  <div className="bg-blue-50 border border-blue-200 rounded-md p-3 text-sm text-blue-800">
+                    <strong>Hướng dẫn:</strong> Bôi đen phần văn bản bạn muốn gán nhãn, sau đó chọn nhãn từ dropdown.
                   </div>
-                  <div
-                    ref={textContainerRef}
-                    onMouseUp={task?.status === 'submitted' || task?.status === 'approved' ? undefined : handleMouseUpOnText}
-                    className="border rounded-md bg-gray-50 p-3 max-h-72 overflow-auto text-sm text-gray-800 whitespace-pre-wrap relative select-text"
-                  >
-                    {renderTextWithSpans()}
-                  </div>
-                  {showSpanPicker && (
+
+                  {/* Text Content with Span Highlighting */}
+                  <div className="relative">
                     <div
-                      className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-3 w-72"
-                      style={{ left: spanPickerPos.x + 8, top: spanPickerPos.y + 8 }}
+                      ref={textContainerRef}
+                      className="border rounded-md bg-gray-50 p-4 max-h-96 overflow-auto text-sm text-gray-800 whitespace-pre-wrap relative select-text"
+                      onMouseUp={(e) => {
+                        if (task?.status === 'submitted' || task?.status === 'approved') return;
+                        
+                        const selection = window.getSelection();
+                        if (selection.rangeCount === 0) return;
+                        
+                        const range = selection.getRangeAt(0);
+                        const selectedText = selection.toString().trim();
+                        
+                        if (selectedText.length === 0) {
+                          setSelectedTextRange(null);
+                          setShowLabelDropdown(false);
+                          return;
+                        }
+                        
+                        // Get start and end positions relative to textContent
+                        // We need to calculate based on the actual text content, ignoring HTML tags
+                        if (!textContainerRef.current) return;
+                        
+                        // Clone the container and get plain text version
+                        const clone = textContainerRef.current.cloneNode(true);
+                        const plainText = clone.textContent || clone.innerText || '';
+                        
+                        // Get the selected text from the original container
+                        const selectedPlainText = selection.toString();
+                        
+                        // Find the start position by getting text before selection
+                        const preRange = document.createRange();
+                        preRange.selectNodeContents(textContainerRef.current);
+                        preRange.setEnd(range.startContainer, range.startOffset);
+                        const start = preRange.toString().length;
+                        
+                        // End position
+                        const end = start + selectedPlainText.length;
+                        
+                        // Check if this range overlaps with existing spans
+                        const overlaps = textSpans.some(span => 
+                          (start >= span.start && start < span.end) ||
+                          (end > span.start && end <= span.end) ||
+                          (start <= span.start && end >= span.end)
+                        );
+                        
+                        if (overlaps) {
+                          alert('Phần văn bản này đã được gán nhãn. Vui lòng chọn phần khác hoặc xóa nhãn cũ trước.');
+                          selection.removeAllRanges();
+                          return;
+                        }
+                        
+                        setSelectedTextRange({ start, end, text: selectedText });
+                        
+                        // Position dropdown near selection
+                        const rect = range.getBoundingClientRect();
+                        const containerRect = textContainerRef.current.getBoundingClientRect();
+                        setDropdownPosition({
+                          x: rect.left - containerRect.left + rect.width / 2,
+                          y: rect.top - containerRect.top - 10
+                        });
+                        setShowLabelDropdown(true);
+                      }}
+                      style={{ userSelect: 'text' }}
                     >
-                      <div className="text-xs text-gray-500 mb-2">Gán nhãn cho đoạn đã bôi đen</div>
-                      <select
-                        className="w-full border rounded-md px-2 py-2 text-sm"
-                        value={pendingLabel}
-                        onChange={(e) => setPendingLabel(e.target.value)}
+                      {renderTextWithSpans()}
+                    </div>
+                    
+                    {/* Label Dropdown */}
+                    {showLabelDropdown && selectedTextRange && task?.projectId?.labelSet?.length > 0 && (
+                      <div
+                        ref={dropdownRef}
+                        className="absolute z-50 bg-white border border-gray-300 rounded-lg shadow-lg p-2 min-w-[200px]"
+                        style={{
+                          left: `${dropdownPosition.x}px`,
+                          top: `${dropdownPosition.y}px`,
+                          transform: 'translateX(-50%) translateY(-100%)'
+                        }}
                       >
-                        <option value="">-- Chọn nhãn --</option>
-                        {(task?.projectId?.labelSet || []).map((lbl) => {
-                          const name = typeof lbl === 'string' ? lbl : lbl?.name;
-                          if (!name) return null;
-                          return <option key={name} value={name}>{name}</option>;
-                        })}
-                      </select>
-                      <div className="flex items-center justify-end gap-2 mt-3">
+                        <div className="text-xs font-semibold text-gray-700 mb-2">Chọn nhãn:</div>
+                        <div className="space-y-1">
+                          {task.projectId.labelSet.map((lbl) => (
+                            <button
+                              key={lbl.name}
+                              onClick={() => {
+                                const newSpan = {
+                                  id: `span-${Date.now()}`,
+                                  start: selectedTextRange.start,
+                                  end: selectedTextRange.end,
+                                  text: selectedTextRange.text,
+                                  label: lbl.name,
+                                  note: ''
+                                };
+                                setTextSpans([...textSpans, newSpan].sort((a, b) => a.start - b.start));
+                                setSelectedTextRange(null);
+                                setShowLabelDropdown(false);
+                                window.getSelection().removeAllRanges();
+                              }}
+                              className="w-full text-left px-3 py-2 text-sm rounded hover:bg-blue-50 border border-transparent hover:border-blue-200 transition-colors"
+                              style={{ borderLeftColor: lbl.color || '#3b82f6', borderLeftWidth: '3px' }}
+                            >
+                              {lbl.name}
+                            </button>
+                          ))}
+                        </div>
                         <button
-                          className="px-3 py-1.5 text-sm rounded-md border border-gray-300 hover:bg-gray-50"
-                          onClick={() => { setShowSpanPicker(false); setPendingSelection(null); setPendingLabel(''); }}
+                          onClick={() => {
+                            setSelectedTextRange(null);
+                            setShowLabelDropdown(false);
+                            window.getSelection().removeAllRanges();
+                          }}
+                          className="mt-2 w-full text-xs text-gray-500 hover:text-gray-700 text-center"
                         >
                           Hủy
                         </button>
-                        <button
-                          className="px-3 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
-                          disabled={!pendingLabel}
-                          onClick={addSpan}
-                        >
-                          Thêm nhãn
-                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Annotated Spans List */}
+                  {textSpans.length > 0 && (
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700">
+                        Các phần đã gán nhãn ({textSpans.length}):
+                      </label>
+                      <div className="border rounded-md p-3 max-h-48 overflow-auto space-y-2">
+                        {textSpans.map((span, idx) => {
+                          const labelInfo = task?.projectId?.labelSet?.find(l => l.name === span.label);
+                          return (
+                            <div
+                              key={span.id}
+                              className="flex items-start gap-2 p-2 bg-gray-50 rounded border border-gray-200"
+                            >
+                              <div
+                                className="w-4 h-4 rounded mt-1 flex-shrink-0"
+                                style={{ backgroundColor: labelInfo?.color || '#3b82f6' }}
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="text-xs font-semibold text-gray-700">{span.label}</span>
+                                  <span className="text-xs text-gray-500">
+                                    ({span.start}-{span.end})
+                                  </span>
+                                </div>
+                                <div className="text-xs text-gray-600 bg-white p-1 rounded border border-gray-200 truncate">
+                                  "{span.text}"
+                                </div>
+                              </div>
+                              {task?.status !== 'submitted' && task?.status !== 'approved' && (
+                                <button
+                                  onClick={() => {
+                                    setTextSpans(textSpans.filter(s => s.id !== span.id));
+                                  }}
+                                  className="text-red-500 hover:text-red-700 text-sm font-bold px-2"
+                                  title="Xóa nhãn này"
+                                >
+                                  ×
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
 
-                  {textSpans.length > 0 && (
-                    <div className="border rounded-md p-3 bg-white">
-                      <div className="text-sm font-semibold text-gray-800 mb-2">Các đoạn đã gán nhãn</div>
-                      <div className="space-y-2">
-                        {textSpans.map((s) => (
-                          <div key={s.id} className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <div className="text-xs text-gray-500">
-                                <span
-                                  className="inline-flex items-center gap-2"
-                                >
-                                  <span
-                                    className="inline-block w-2 h-2 rounded-full"
-                                    style={{ backgroundColor: getSpanColor(s.label) }}
-                                  />
-                                  <span className="font-medium text-gray-700">{s.label}</span>
-                                  <span className="text-gray-400">({s.start}–{s.end})</span>
-                                </span>
-                              </div>
-                              <div className="text-sm text-gray-800 line-clamp-2">
-                                “{(textContent || '').slice(s.start, s.end)}”
-                              </div>
-                            </div>
-                            <button
-                              className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
-                              onClick={() => removeSpan(s.id)}
-                              disabled={task?.status === 'submitted' || task?.status === 'approved'}
-                            >
-                              Xóa
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                  {/* General Note */}
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-gray-700">
-                      Ghi chú (optional)
+                      Ghi chú tổng thể (tùy chọn)
                     </label>
                     <textarea
                       className="w-full border rounded-md p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      rows={4}
-                      placeholder="Nhập ghi chú nếu cần..."
+                      rows={3}
+                      placeholder="Nhập ghi chú tổng thể cho toàn bộ văn bản..."
                       value={annotationNote}
                       onChange={(e) => setAnnotationNote(e.target.value)}
                       disabled={task?.status === 'submitted' || task?.status === 'approved'}
                     />
                   </div>
+
                   <div className="flex items-center gap-3 pt-1">
                     <Button
                       variant="outlined"
@@ -793,7 +898,7 @@ const AnnotatorTask = () => {
                       onClick={handleSubmit}
                       disabled={saving || task?.status === 'submitted' || task?.status === 'approved'}
                     >
-                      Nộp
+                      Nộp ({textSpans.length} nhãn)
                     </Button>
                   </div>
                 </div>
