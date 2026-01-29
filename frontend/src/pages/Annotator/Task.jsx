@@ -585,6 +585,85 @@ const AnnotatorTask = () => {
 
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-1 flex flex-col overflow-hidden bg-gray-100" ref={canvasRef}>
+          {batchTasks.length > 1 && (
+            <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={navigateToPrevious}
+                  disabled={currentTaskIndex === 0}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
+                    currentTaskIndex === 0
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+                  }`}
+                >
+                  <span>←</span> Previous
+                </button>
+                <div className="text-sm text-gray-600">
+                  <span className="font-semibold">Ảnh {currentTaskIndex + 1} / {batchTasks.length}</span>
+                  {task?.dataItem?.filename && (
+                    <span className="ml-2 text-gray-500">({task.dataItem.filename})</span>
+                  )}
+                </div>
+                <button
+                  onClick={navigateToNext}
+                  disabled={currentTaskIndex >= batchTasks.length - 1}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
+                    currentTaskIndex >= batchTasks.length - 1
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+                  }`}
+                >
+                  Next <span>→</span>
+                </button>
+              </div>
+
+              {batchTasks.length <= 20 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500 mr-2">Chọn ảnh:</span>
+                  <div className="flex gap-1 overflow-x-auto max-w-md">
+                    {batchTasks.map((batchTask, idx) => {
+                      const isCurrent = batchTask._id === id;
+                      const isSubmitted = batchTask.status === 'submitted' || batchTask.status === 'approved';
+                      const isRejected = batchTask.status === 'rejected';
+                      return (
+                        <button
+                          key={batchTask._id}
+                          onClick={() => navigateToTaskByIndex(idx)}
+                          className={`w-12 h-12 rounded border-2 flex-shrink-0 overflow-hidden transition-all cursor-pointer ${
+                            isCurrent
+                              ? 'border-blue-500 ring-2 ring-blue-200'
+                              : isSubmitted
+                                ? 'border-green-300 hover:border-green-400'
+                                : isRejected
+                                  ? 'border-red-300 hover:border-red-400'
+                                  : 'border-gray-300 hover:border-gray-400'
+                          }`}
+                          title={`Task ${idx + 1}: ${batchTask.dataItem?.filename || 'Image'}`}
+                        >
+                          {batchTask.dataItem?.mimeType?.startsWith('image/') ? (
+                            <img
+                              src={`${API_URL}/${batchTask.dataItem.path}`}
+                              alt={`Task ${idx + 1}`}
+                              className="w-full h-full object-cover"
+                              onError={(e) => {
+                                e.target.style.display = 'none';
+                              }}
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-xs text-gray-400">
+                              {idx + 1}
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex-1 overflow-auto bg-gray-50 p-6 flex items-center justify-center">
             {getTaskKind(task) === 'image' ? (
               <div className="bg-white rounded-lg shadow-lg p-4 max-w-full">
