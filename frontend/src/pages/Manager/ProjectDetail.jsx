@@ -36,7 +36,7 @@ import {
   IconButton,
   Alert,
 } from '@mui/material';
-import { Upload as UploadIcon, Assignment as AssignmentIcon, Edit as EditIcon, Delete as DeleteIcon, Add as AddIcon, ExpandMore as ExpandMoreIcon, Settings as SettingsIcon, Download as DownloadIcon, Assessment as AssessmentIcon } from '@mui/icons-material';
+import { Upload as UploadIcon, Assignment as AssignmentIcon, Edit as EditIcon, Delete as DeleteIcon, Add as AddIcon, ExpandMore as ExpandMoreIcon, Settings as SettingsIcon, Download as DownloadIcon, Assessment as AssessmentIcon, CheckCircle as CheckCircleIcon } from '@mui/icons-material';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
 import { useAuth } from '../../context/AuthContext';
@@ -83,12 +83,23 @@ const ManagerProjectDetail = () => {
   const [previewLabelsOpen, setPreviewLabelsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // all | assigned | in_progress | submitted | approved | rejected
+  const [expandedAnnotators, setExpandedAnnotators] = useState({}); // annotatorId -> bool
 
   useEffect(() => {
     fetchData();
     fetchAnnotators();
     fetchReviewers();
+    fetchQualityStats();
   }, [id]);
+
+  const fetchQualityStats = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/api/projects/${id}/quality`);
+      setQualityStats(response.data);
+    } catch (error) {
+      console.error('Error fetching quality stats:', error);
+    }
+  };
 
   useEffect(() => {
     if (project) {
@@ -119,6 +130,9 @@ const ManagerProjectDetail = () => {
       )];
       setCurrentAnnotators(annotatorIds);
       setCurrentReviewers(reviewerIds);
+    } else {
+      setCurrentAnnotators([]);
+      setCurrentReviewers([]);
     }
   }, [tasks]);
 
@@ -487,22 +501,22 @@ const ManagerProjectDetail = () => {
               onClick={handleViewQuality}
               className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
             >
-              <span>📊</span>
-              <span>Quality & Stats</span>
+              <AssessmentIcon fontSize="small" />
+              <span>Analytics</span>
             </button>
             <button
               onClick={() => setExportDialogOpen(true)}
               className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
             >
-              <span>⬇️</span>
-              <span>Export Data</span>
+              <DownloadIcon fontSize="small" />
+              <span>Export</span>
             </button>
             <button
               onClick={() => setEditDialogOpen(true)}
               className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
             >
-              <span>⚙️</span>
-              <span>Project Settings</span>
+              <SettingsIcon fontSize="small" />
+              <span>Settings</span>
             </button>
           </div>
         </div>
@@ -510,286 +524,413 @@ const ManagerProjectDetail = () => {
         {/* Project Name and Description */}
         <div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">{project?.name || 'Project'}</h1>
-          <p className="text-gray-600 italic">{project?.description || 'No description'}</p>
+          <p className="text-gray-600">
+            {project?.description || 'No description provided for this project.'}
+          </p>
         </div>
       </div>
 
       {/* Main Content */}
-      <div className="p-6 space-y-6">
-        {/* Cards Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Datasets Card */}
+      <div className="p-6 space-y-6 relative">
+        {/* 4 Metric Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {/* Active Team Card */}
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-gray-900">Datasets</h2>
+              <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
+                <span className="text-2xl">👥</span>
+              </div>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">DATASET NAME</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">FILES</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {datasets.length === 0 ? (
-                    <tr>
-                      <td colSpan={2} className="px-4 py-8 text-center text-gray-500">
-                        No datasets found
-                      </td>
-                    </tr>
-                  ) : (
-                    datasets.map((dataset) => (
-                      <tr key={dataset._id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 text-gray-900">{dataset.name}</td>
-                        <td className="px-4 py-3 text-gray-600">{dataset.totalItems || 0}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+            <div className="text-2xl font-bold text-gray-900 mb-1">
+              {currentAnnotators.length + currentReviewers.length} Members
             </div>
+            <div className="text-sm text-gray-500">Active Team</div>
           </div>
 
-          {/* Tasks Overview Card */}
+          {/* Overall Progress Card */}
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Tasks Overview</h2>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => setStatusFilter('all')}
-                className={`px-3 py-1 text-sm rounded-full font-medium border ${
-                  statusFilter === 'all'
-                    ? 'bg-gray-900 text-white border-gray-900'
-                    : 'bg-gray-100 text-gray-800 border-gray-200'
-                }`}
-              >
-                All {tasks.length}
-              </button>
-              <button
-                type="button"
-                onClick={() => setStatusFilter('assigned')}
-                className={`px-3 py-1 text-sm rounded-full font-medium border ${
-                  statusFilter === 'assigned'
-                    ? 'bg-gray-900 text-white border-gray-900'
-                    : 'bg-gray-100 text-gray-800 border-gray-200'
-                }`}
-              >
-                Assigned {tasks.filter(t => t.status === 'assigned').length}
-              </button>
-              <button
-                type="button"
-                onClick={() => setStatusFilter('in_progress')}
-                className={`px-3 py-1 text-sm rounded-full font-medium border ${
-                  statusFilter === 'in_progress'
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-blue-50 text-blue-800 border-blue-100'
-                }`}
-              >
-                In Progress {tasks.filter(t => t.status === 'in_progress').length}
-              </button>
-              <button
-                type="button"
-                onClick={() => setStatusFilter('submitted')}
-                className={`px-3 py-1 text-sm rounded-full font-medium border ${
-                  statusFilter === 'submitted'
-                    ? 'bg-yellow-500 text-white border-yellow-500'
-                    : 'bg-yellow-50 text-yellow-800 border-yellow-100'
-                }`}
-              >
-                Submitted {tasks.filter(t => t.status === 'submitted').length}
-              </button>
-              <button
-                type="button"
-                onClick={() => setStatusFilter('approved')}
-                className={`px-3 py-1 text-sm rounded-full font-medium border ${
-                  statusFilter === 'approved'
-                    ? 'bg-green-600 text-white border-green-600'
-                    : 'bg-green-50 text-green-800 border-green-100'
-                }`}
-              >
-                Approved {tasks.filter(t => t.status === 'approved').length}
-              </button>
-              <button
-                type="button"
-                onClick={() => setStatusFilter('rejected')}
-                className={`px-3 py-1 text-sm rounded-full font-medium border ${
-                  statusFilter === 'rejected'
-                    ? 'bg-red-600 text-white border-red-600'
-                    : 'bg-red-50 text-red-800 border-red-100'
-                }`}
-              >
-                Rejected {tasks.filter(t => t.status === 'rejected').length}
-              </button>
+            <div className="flex items-center justify-between mb-4">
+              <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
+                <span className="text-2xl">📋</span>
+              </div>
             </div>
+            <div className="text-2xl font-bold text-gray-900 mb-2">
+              {tasks.length > 0 
+                ? Math.round((tasks.filter(t => ['submitted', 'approved'].includes(t.status)).length / tasks.length) * 100)
+                : 0}%
+            </div>
+            <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden mb-2">
+              <div 
+                className="h-2 bg-orange-500 rounded-full"
+                style={{ 
+                  width: `${tasks.length > 0 
+                    ? Math.round((tasks.filter(t => ['submitted', 'approved'].includes(t.status)).length / tasks.length) * 100)
+                    : 0}%` 
+                }}
+              ></div>
+            </div>
+            <div className="text-sm text-gray-500">Overall Progress</div>
           </div>
 
+          {/* Avg Quality Card */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                <span className="text-2xl">✓</span>
+              </div>
+            </div>
+            <div className="text-2xl font-bold text-gray-900 mb-1">
+              {qualityStats?.approvalRate ? parseFloat(qualityStats.approvalRate).toFixed(2) : '0.00'}%
+            </div>
+            <div className="text-sm text-gray-500">Avg Quality</div>
+          </div>
+
+          {/* Daily Throughput Card */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
+                <span className="text-2xl">⚡</span>
+              </div>
+            </div>
+            <div className="text-2xl font-bold text-gray-900 mb-1">
+              {(() => {
+                // Calculate tasks approved today
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const approvedToday = tasks.filter(t => {
+                  if (t.status !== 'approved') return false;
+                  if (!t.reviewedAt) return false;
+                  const reviewedDate = new Date(t.reviewedAt);
+                  reviewedDate.setHours(0, 0, 0, 0);
+                  return reviewedDate.getTime() === today.getTime();
+                }).length;
+                return approvedToday;
+              })()} tasks/day
+            </div>
+            <div className="text-sm text-gray-500">Daily Throughput</div>
+          </div>
         </div>
 
-        {/* All Tasks Card */}
+        {/* Team Performance & Activity - Grouped by Annotator */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">All Tasks</h2>
-          
-          {/* Search Bar - Search by Annotator or Reviewer name */}
-          <div className="mb-4">
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Tìm kiếm theo tên Annotator hoặc Reviewer..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <span className="absolute left-3 top-2.5 text-gray-400">🔍</span>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Team Performance &amp; Activity</h2>
+              <p className="text-xs text-gray-500 mt-1">
+                Grouped by annotator for efficient oversight. Click a row to xem chi tiết các tasks.
+              </p>
+            </div>
+            <div className="w-80">
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Filter by annotator or reviewer..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full px-4 py-2 pl-10 border border-gray-200 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <span className="absolute left-3 top-2.5 text-gray-400 text-sm">🔍</span>
+              </div>
             </div>
           </div>
 
-          {/* Tasks Table */}
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
+              <thead className="bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">ANNOTATOR</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">FILE ID</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">STATUS</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">REVIEWERS</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">SUBMITTED AT</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">ACTION</th>
+                  <th className="px-4 py-3 w-8"></th>
+                  <th className="px-4 py-3 text-left">Annotator</th>
+                  <th className="px-4 py-3 text-left">Assigned Tasks</th>
+                  <th className="px-4 py-3 text-left">Assigned Reviewers</th>
+                  <th className="px-4 py-3 text-left">Workload Progress</th>
+                  <th className="px-4 py-3 text-left">Avg Quality</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="bg-white divide-y divide-gray-100">
                 {(() => {
-                  // Filter tasks by annotator or reviewer name
+                  // 1) Filter tasks by status + search
                   const filteredTasks = tasks.filter((task) => {
-                    // Filter by status
                     if (statusFilter !== 'all' && task.status !== statusFilter) {
                       return false;
                     }
-
-                    // Filter by search (annotator / reviewer)
                     if (!searchTerm.trim()) return true;
-                    const searchLower = searchTerm.toLowerCase();
+                    const q = searchTerm.toLowerCase();
                     const annotatorName = (task.annotatorId?.fullName || task.annotatorId?.username || '').toLowerCase();
                     const reviewerNames = (task.reviewers || [])
                       .map(rv => (rv.reviewerId?.fullName || rv.reviewerId?.username || '').toLowerCase())
                       .join(' ');
-                    return annotatorName.includes(searchLower) || reviewerNames.includes(searchLower);
+                    return annotatorName.includes(q) || reviewerNames.includes(q);
                   });
 
                   if (filteredTasks.length === 0) {
                     return (
                       <tr>
-                        <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
-                          Không tìm thấy task nào
+                        <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                          Không tìm thấy task nào phù hợp với bộ lọc hiện tại.
                         </td>
                       </tr>
                     );
                   }
 
-                  return filteredTasks.map((task) => (
-                    <tr key={task._id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                            <span className="text-xs font-medium text-blue-700">
-                              {(task.annotatorId?.fullName || task.annotatorId?.username || 'A')[0].toUpperCase()}
-                            </span>
-                          </div>
-                          <span className="text-gray-900">{task.annotatorId?.fullName || task.annotatorId?.username || '-'}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-gray-600">
-                        {task.dataItem?.filename ? (
-                          task.dataItem.filename.length > 20 
-                            ? `${task.dataItem.filename.substring(0, 20)}...` 
-                            : task.dataItem.filename
-                        ) : '-'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                          task.status === 'approved' ? 'bg-green-100 text-green-800' :
-                          task.status === 'rejected' ? 'bg-red-100 text-red-800' :
-                          task.status === 'submitted' ? 'bg-yellow-100 text-yellow-800' :
-                          task.status === 'in_progress' ? 'bg-blue-100 text-blue-800' :
-                          'bg-gray-100 text-gray-800'
-                        }`}>
-                          {task.status?.toUpperCase() || 'ASSIGNED'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        {task.reviewers && task.reviewers.length > 0 ? (
-                          <div className="flex items-center gap-1 flex-wrap">
-                            {task.reviewers.slice(0, 2).map((rv, idx) => (
-                              <span
-                                key={rv.reviewerId?._id || idx}
-                                className="inline-flex items-center px-2 py-0.5 rounded-full bg-purple-50 text-purple-800 text-xs font-medium"
-                              >
-                                {(rv.reviewerId?.fullName || rv.reviewerId?.username || 'Reviewer')}
-                                {rv.status === 'pending' && (
-                                  <span className="ml-1 text-[10px] text-yellow-700">(pending)</span>
-                                )}
-                              </span>
-                            ))}
-                            {task.reviewers.length > 2 && (
-                              <span className="text-xs text-gray-500 ml-1">
-                                +{task.reviewers.length - 2} more
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 bg-gray-200 rounded-full flex items-center justify-center">
-                              <span className="text-xs text-gray-500">👤</span>
-                            </div>
-                            <span className="text-gray-500 text-sm">Unassigned</span>
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-gray-600">
-                        {task.submittedAt
-                          ? new Date(task.submittedAt).toLocaleString('en-GB', {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                              day: '2-digit',
-                              month: '2-digit',
-                              year: 'numeric'
-                            }).replace(',', '')
-                          : '-'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <button
-                          onClick={() => {
-                            setAuditTask(task);
-                            setAuditDialogOpen(true);
-                          }}
-                          className="px-3 py-1 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700 transition-colors"
+                  // 2) Group by annotator
+                  const groupsMap = new Map();
+                  filteredTasks.forEach((task) => {
+                    const key = task.annotatorId?._id || 'unassigned';
+                    if (!groupsMap.has(key)) {
+                      groupsMap.set(key, {
+                        key,
+                        annotatorId: key,
+                        annotatorName: task.annotatorId?.fullName || task.annotatorId?.username || 'Unassigned',
+                        tasks: [],
+                        total: 0,
+                        done: 0, // submitted + approved
+                        approved: 0,
+                        rejected: 0,
+                        reviewerNames: new Set(),
+                      });
+                    }
+                    const group = groupsMap.get(key);
+                    group.tasks.push(task);
+                    group.total += 1;
+                    if (task.status === 'approved') {
+                      group.approved += 1;
+                      group.done += 1;
+                    } else if (task.status === 'rejected') {
+                      group.rejected += 1;
+                    } else if (task.status === 'submitted') {
+                      group.done += 1;
+                    }
+                    (task.reviewers || []).forEach((rv) => {
+                      const name = rv.reviewerId?.fullName || rv.reviewerId?.username;
+                      if (name) group.reviewerNames.add(name);
+                    });
+                  });
+
+                  const groups = Array.from(groupsMap.values());
+
+                  const rows = groups.map((group) => {
+                    const reviewed = group.approved + group.rejected;
+                    const progress = group.total > 0 ? Math.round((group.done / group.total) * 100) : 0;
+                    const quality = reviewed > 0 ? Math.round((group.approved / reviewed) * 100) : 0;
+                    const qualityColor =
+                      quality >= 90 ? 'text-green-600' :
+                      quality >= 70 ? 'text-yellow-600' :
+                      'text-red-600';
+                    const progressBarColor =
+                      progress >= 80 ? 'bg-green-500' :
+                      progress >= 40 ? 'bg-yellow-400' :
+                      'bg-red-400';
+
+                    const reviewers = Array.from(group.reviewerNames);
+                    const isExpanded = !!expandedAnnotators[group.key];
+
+                    return (
+                      <React.Fragment key={group.key}>
+                        {/* Summary row per annotator */}
+                        <tr
+                          className="hover:bg-gray-50 cursor-pointer"
+                          onClick={() =>
+                            setExpandedAnnotators((prev) => ({
+                              ...prev,
+                              [group.key]: !prev[group.key],
+                            }))
+                          }
                         >
-                          AUDIT
-                        </button>
-                      </td>
-                    </tr>
-                  ));
+                          <td className="px-4 py-3 text-gray-400 text-xs">
+                            {isExpanded ? '▾' : '▸'}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-xs font-semibold text-blue-700">
+                                {(group.annotatorName || 'A')[0].toUpperCase()}
+                              </div>
+                              <div className="flex flex-col">
+                                <span className="font-medium text-gray-900">{group.annotatorName}</span>
+                                <span className="text-[11px] text-gray-500">
+                                  {reviewed} reviewed · {group.total} total
+                                </span>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-gray-700">
+                            {group.total} tasks
+                          </td>
+                          <td className="px-4 py-3">
+                            {reviewers.length === 0 ? (
+                              <span className="text-xs text-gray-400 italic">Unassigned</span>
+                            ) : (
+                              <div className="flex flex-wrap gap-1">
+                                {reviewers.slice(0, 2).map((name) => (
+                                  <span
+                                    key={name}
+                                    className="inline-flex items-center px-2 py-0.5 rounded-full bg-purple-50 text-purple-800 text-xs font-medium"
+                                  >
+                                    {name}
+                                  </span>
+                                ))}
+                                {reviewers.length > 2 && (
+                                  <span className="text-xs text-gray-500">
+                                    +{reviewers.length - 2} more
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex flex-col gap-1">
+                              <div className="flex items-center justify-between text-xs text-gray-500">
+                                <span>{progress}%</span>
+                                <span>
+                                  {group.done}/{group.total} done
+                                </span>
+                              </div>
+                              <div className="w-full h-2 rounded-full bg-gray-100 overflow-hidden">
+                                <div
+                                  className={`h-2 rounded-full ${progressBarColor}`}
+                                  style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
+                                ></div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`text-sm font-semibold ${qualityColor}`}>
+                              {quality}%
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <button
+                              type="button"
+                              className="text-xs font-semibold text-blue-600 hover:text-blue-800"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(`/manager/projects/${id}/annotator/${group.annotatorId}`);
+                              }}
+                            >
+                              DETAILS
+                            </button>
+                          </td>
+                        </tr>
+
+                        {/* Expanded row with task list for this annotator */}
+                        {isExpanded && (
+                          <tr>
+                            <td colSpan={7} className="bg-gray-50 px-4 pb-4 pt-1">
+                              <div className="border border-gray-200 rounded-xl bg-white shadow-sm mt-2 overflow-hidden">
+                                <div className="px-4 py-2 border-b border-gray-100 flex items-center justify-between">
+                                  <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                                    Tasks for {group.annotatorName}
+                                  </span>
+                                  <span className="text-xs text-gray-400">
+                                    {group.tasks.length} task(s)
+                                  </span>
+                                </div>
+                                <div className="max-h-80 overflow-y-auto">
+                                  <table className="w-full text-xs">
+                                    <thead className="bg-gray-50 border-b border-gray-100 text-[11px] uppercase text-gray-500">
+                                      <tr>
+                                        <th className="px-3 py-2 text-left">File</th>
+                                        <th className="px-3 py-2 text-left">Status</th>
+                                        <th className="px-3 py-2 text-left">Reviewers</th>
+                                        <th className="px-3 py-2 text-left">Submitted At</th>
+                                        <th className="px-3 py-2 text-right">Action</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                      {group.tasks.map((task) => (
+                                        <tr key={task._id} className="hover:bg-gray-50">
+                                          <td className="px-3 py-2 text-gray-700">
+                                            {task.dataItem?.filename
+                                              ? task.dataItem.filename.length > 28
+                                                ? `${task.dataItem.filename.substring(0, 28)}...`
+                                                : task.dataItem.filename
+                                              : '-'}
+                                          </td>
+                                          <td className="px-3 py-2">
+                                            <span
+                                              className={`px-2 py-0.5 text-[11px] font-medium rounded-full ${
+                                                task.status === 'approved'
+                                                  ? 'bg-green-100 text-green-800'
+                                                  : task.status === 'rejected'
+                                                  ? 'bg-red-100 text-red-800'
+                                                  : task.status === 'submitted'
+                                                  ? 'bg-yellow-100 text-yellow-800'
+                                                  : task.status === 'in_progress'
+                                                  ? 'bg-blue-100 text-blue-800'
+                                                  : 'bg-gray-100 text-gray-800'
+                                              }`}
+                                            >
+                                              {task.status?.toUpperCase() || 'ASSIGNED'}
+                                            </span>
+                                          </td>
+                                          <td className="px-3 py-2">
+                                            {task.reviewers && task.reviewers.length > 0 ? (
+                                              <div className="flex flex-wrap gap-1">
+                                                {task.reviewers.slice(0, 3).map((rv, idx) => (
+                                                  <span
+                                                    key={rv.reviewerId?._id || idx}
+                                                    className="inline-flex items-center px-2 py-0.5 rounded-full bg-purple-50 text-purple-800 text-[11px] font-medium"
+                                                  >
+                                                    {rv.reviewerId?.fullName || rv.reviewerId?.username || 'Reviewer'}
+                                                  </span>
+                                                ))}
+                                              </div>
+                                            ) : (
+                                              <span className="text-[11px] text-gray-400 italic">
+                                                Unassigned
+                                              </span>
+                                            )}
+                                          </td>
+                                          <td className="px-3 py-2 text-gray-500">
+                                            {task.submittedAt
+                                              ? new Date(task.submittedAt).toLocaleString('en-GB', {
+                                                  hour: '2-digit',
+                                                  minute: '2-digit',
+                                                  day: '2-digit',
+                                                  month: '2-digit',
+                                                  year: 'numeric',
+                                                }).replace(',', '')
+                                              : '-'}
+                                          </td>
+                                          <td className="px-3 py-2 text-right">
+                                            <button
+                                              type="button"
+                                              className="px-2 py-1 bg-blue-600 text-white rounded text-[11px] font-medium hover:bg-blue-700"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                navigate(`/manager/projects/${id}/annotator/${group.annotatorId}`);
+                                              }}
+                                            >
+                                              VIEW AUDIT
+                                            </button>
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  });
+
+                  return rows;
                 })()}
               </tbody>
             </table>
           </div>
 
-          {/* Pagination */}
-          {tasks.length > 0 && (
-            <div className="mt-4 flex items-center justify-between">
-              <p className="text-sm text-gray-600">
-                Showing 1 to {tasks.length} of {tasks.length} tasks
-              </p>
-              <div className="flex gap-2">
-                <button className="px-3 py-1 text-sm text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
-                  Previous
-                </button>
-                <button className="px-3 py-1 text-sm text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
-                  Next
-                </button>
-              </div>
-            </div>
-          )}
+          <div className="mt-4 text-xs text-gray-500 flex items-center justify-between">
+            <span>
+              Showing {currentAnnotators.length} active annotators out of {annotators.length}
+            </span>
+            <span>
+              Tip: dùng màu sắc của Avg Quality để phát hiện annotator có tỷ lệ rejected cao.
+            </span>
+          </div>
         </div>
       </div>
 
@@ -1566,6 +1707,7 @@ const ManagerProjectDetail = () => {
           <Button onClick={() => setPreviewLabelsOpen(false)}>Đóng</Button>
         </DialogActions>
       </Dialog>
+
     </div>
   );
 };
