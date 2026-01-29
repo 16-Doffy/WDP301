@@ -36,6 +36,8 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
   const [zoom, setZoom] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
+  const [isPanning, setIsPanning] = useState(false);
+  const [spacePressed, setSpacePressed] = useState(false);
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawStart, setDrawStart] = useState(null);
   const [dragStart, setDragStart] = useState(null);
@@ -125,67 +127,68 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
 
   const getImageCoordinates = (e) => {
     if (!imageRef.current || !containerRef.current) return null;
-    
-    const imageRect = imageRef.current.getBoundingClientRect();
+
     const containerRect = containerRef.current.getBoundingClientRect();
-    
-    // Calculate scroll offset
-    const scrollLeft = containerRef.current.scrollLeft;
-    const scrollTop = containerRef.current.scrollTop;
-    
-    // Get mouse position relative to container
-    const mouseX = e.clientX - containerRect.left + scrollLeft;
-    const mouseY = e.clientY - containerRect.top + scrollTop;
-    
-    // Account for image transform (zoom and position)
-    // Reverse the transform to get coordinates in the original image space
-    const imageX = (mouseX - position.x) / zoom;
-    const imageY = (mouseY - position.y) / zoom;
-    
-    // Get natural image dimensions
+
+    // Mouse position inside scroll container (content space)
+    const mouseX = e.clientX - containerRect.left + containerRef.current.scrollLeft;
+    const mouseY = e.clientY - containerRect.top + containerRef.current.scrollTop;
+
+    // Remove pan offset + zoom
+    const contentX = (mouseX - position.x) / zoom;
+    const contentY = (mouseY - position.y) / zoom;
+
+    // Map to natural image coordinates
     const naturalWidth = imageRef.current.naturalWidth;
     const naturalHeight = imageRef.current.naturalHeight;
-    
-    if (naturalWidth === 0 || naturalHeight === 0) return null;
-    
-    // Calculate the original displayed size (before zoom)
-    // imageRect.width/height are the displayed size after zoom
-    const originalDisplayWidth = imageRect.width / zoom;
-    const originalDisplayHeight = imageRect.height / zoom;
-    
-    // Convert to percentage based on the original displayed size
-    // This ensures coordinates are consistent regardless of zoom level
-    const x = (imageX / originalDisplayWidth) * 100;
-    const y = (imageY / originalDisplayHeight) * 100;
-    
+    const displayWidth = imageRef.current.offsetWidth;
+    const displayHeight = imageRef.current.offsetHeight;
+
+    if (!naturalWidth || !naturalHeight || !displayWidth || !displayHeight) return null;
+
+    const x = (contentX / displayWidth) * 100;
+    const y = (contentY / displayHeight) * 100;
+
     return {
       x: Math.max(0, Math.min(100, x)),
-      y: Math.max(0, Math.min(100, y))
+      y: Math.max(0, Math.min(100, y)),
     };
   };
 
   const handleMouseDown = (e) => {
     if (readOnly) return;
-    // Prevent default to avoid text selection
-    e.preventDefault();
-    
-    // Only draw on image, not on container
-    if (e.target !== imageRef.current && !imageRef.current?.contains(e.target)) {
-      // Start panning if clicking on container
-      if (e.target === containerRef.current || containerRef.current?.contains(e.target)) {
-        setIsDragging(true);
-        setDragStart({ 
-          x: e.clientX - position.x, 
-          y: e.clientY - position.y,
-          scrollLeft: containerRef.current?.scrollLeft || 0,
-          scrollTop: containerRef.current?.scrollTop || 0
-        });
-      }
+
+    // Space + drag OR middle mouse drag => pan
+    const shouldPan = spacePressed || e.button === 1;
+
+    // Prevent default to avoid text selection / middle click autoscroll
+    if (shouldPan) {
+      e.preventDefault();
+    }
+
+    if (shouldPan) {
+      setIsPanning(true);
+      setIsDragging(true);
+      setDragStart({
+        x: e.clientX,
+        y: e.clientY,
+        startPosX: position.x,
+        startPosY: position.y,
+      });
       return;
     }
-    
-    // Start drawing bounding box on image
+
+    // Left click draw bbox (only when clicking the image)
+    if (e.button !== 0) return;
+
+    // If clicking outside the image, do nothing (allow normal scroll)
+    if (e.target !== imageRef.current && !imageRef.current?.contains(e.target)) {
+      return;
+    }
+
+    e.preventDefault();
     e.stopPropagation();
+
     const coords = getImageCoordinates(e);
     if (coords) {
       setIsDrawing(true);
@@ -197,18 +200,17 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
 
   const handleMouseMove = (e) => {
     if (readOnly) return;
-    // Cancel previous animation frame
+
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
     }
-    
-    // Use requestAnimationFrame for smooth updates
+
     animationFrameRef.current = requestAnimationFrame(() => {
       if (isResizing || isMoving) {
         handleAnnotationMouseMove(e);
         return;
       }
-      
+
       if (isDrawing && drawStart) {
         const coords = getImageCoordinates(e);
         if (coords) {
@@ -217,24 +219,19 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
           setCurrentBox({
             x: drawStart.x,
             y: drawStart.y,
-            width: width,
-            height: height,
+            width,
+            height,
           });
         }
-      } else if (isDragging && dragStart && containerRef.current) {
-        const deltaX = e.clientX - (dragStart.x + position.x);
-        const deltaY = e.clientY - (dragStart.y + position.y);
-        
+        return;
+      }
+
+      if (isDragging && dragStart) {
+        const dx = e.clientX - dragStart.x;
+        const dy = e.clientY - dragStart.y;
         setPosition({
-          x: position.x + deltaX,
-          y: position.y + deltaY,
-        });
-        
-        // Update drag start for next frame
-        setDragStart({
-          ...dragStart,
-          x: e.clientX - position.x - deltaX,
-          y: e.clientY - position.y - deltaY,
+          x: dragStart.startPosX + dx,
+          y: dragStart.startPosY + dy,
         });
       }
     });
@@ -242,41 +239,39 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
 
   const handleMouseUp = (e) => {
     if (readOnly) return;
+
     if (isResizing || isMoving) {
       handleAnnotationMouseUp();
       return;
     }
-    
+
     if (isDrawing && drawStart && currentBox) {
       const coords = getImageCoordinates(e);
       if (coords && Math.abs(currentBox.width) > 1 && Math.abs(currentBox.height) > 1) {
-        // Create bounding box
         const bbox = [
           Math.min(drawStart.x, coords.x),
           Math.min(drawStart.y, coords.y),
           Math.max(drawStart.x, coords.x),
-          Math.max(drawStart.y, coords.y)
+          Math.max(drawStart.y, coords.y),
         ];
-        
-        // Store pending annotation and directly show label selection dialog
+
         setPendingAnnotation({
-          bbox: bbox,
+          bbox,
           label: null,
           answer: null,
         });
-        
-        // Directly show label selection dialog (no confirm dialog)
+
         setShowLabelDialog(true);
       } else {
-        // If box is too small, cancel drawing
         setIsDrawing(false);
         setDrawStart(null);
         setCurrentBox(null);
       }
     }
-    
+
     if (isDragging) {
       setIsDragging(false);
+      setIsPanning(false);
       setDragStart(null);
     }
   };
@@ -514,11 +509,39 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
 
 
   const handleZoomIn = () => {
-    setZoom(prevZoom => Math.min(prevZoom + 0.2, 5));
+    if (!containerRef.current) {
+      setZoom(prevZoom => Math.min(prevZoom + 0.2, 5));
+      return;
+    }
+    const rect = containerRef.current.getBoundingClientRect();
+    const centerX = rect.width / 2 + containerRef.current.scrollLeft;
+    const centerY = rect.height / 2 + containerRef.current.scrollTop;
+    const nextZoom = Math.min(zoom + 0.2, 5);
+    const contentX = (centerX - position.x) / zoom;
+    const contentY = (centerY - position.y) / zoom;
+    setZoom(nextZoom);
+    setPosition({
+      x: centerX - contentX * nextZoom,
+      y: centerY - contentY * nextZoom,
+    });
   };
 
   const handleZoomOut = () => {
-    setZoom(prevZoom => Math.max(prevZoom - 0.2, 0.1));
+    if (!containerRef.current) {
+      setZoom(prevZoom => Math.max(prevZoom - 0.2, 0.1));
+      return;
+    }
+    const rect = containerRef.current.getBoundingClientRect();
+    const centerX = rect.width / 2 + containerRef.current.scrollLeft;
+    const centerY = rect.height / 2 + containerRef.current.scrollTop;
+    const nextZoom = Math.max(zoom - 0.2, 0.1);
+    const contentX = (centerX - position.x) / zoom;
+    const contentY = (centerY - position.y) / zoom;
+    setZoom(nextZoom);
+    setPosition({
+      x: centerX - contentX * nextZoom,
+      y: centerY - contentY * nextZoom,
+    });
   };
 
   const handleReset = () => {
@@ -545,6 +568,34 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
       setSelectedAnnotation(null);
     }
   };
+
+  // Keyboard: hold Space to pan
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.code === 'Space') {
+        // Prevent page scroll
+        e.preventDefault();
+        setSpacePressed(true);
+      }
+    };
+
+    const onKeyUp = (e) => {
+      if (e.code === 'Space') {
+        setSpacePressed(false);
+        setIsDragging(false);
+        setIsPanning(false);
+        setDragStart(null);
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown, { passive: false });
+    window.addEventListener('keyup', onKeyUp);
+
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, []);
 
   // Cleanup animation frame on unmount
   useEffect(() => {
@@ -696,7 +747,7 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
             overflow: 'auto',
             border: '2px solid #ccc',
             borderRadius: 1,
-            cursor: isDrawing ? 'crosshair' : (isDragging ? 'grabbing' : 'default'),
+            cursor: isDrawing ? 'crosshair' : (isDragging ? 'grabbing' : (spacePressed ? 'grab' : 'default')),
             maxHeight: '80vh',
             minHeight: '400px',
             backgroundColor: '#f5f5f5',
@@ -709,6 +760,28 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
+          onWheel={(e) => {
+            if (!containerRef.current) return;
+            if (!e.ctrlKey && !e.metaKey) return; // require Ctrl/Cmd + wheel to zoom
+            e.preventDefault();
+
+            const nextZoom = e.deltaY < 0 ? Math.min(zoom + 0.1, 5) : Math.max(zoom - 0.1, 0.1);
+
+            const rect = containerRef.current.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left + containerRef.current.scrollLeft;
+            const mouseY = e.clientY - rect.top + containerRef.current.scrollTop;
+
+            // Keep the point under cursor stable
+            const contentX = (mouseX - position.x) / zoom;
+            const contentY = (mouseY - position.y) / zoom;
+
+            setZoom(nextZoom);
+            setPosition({
+              x: mouseX - contentX * nextZoom,
+              y: mouseY - contentY * nextZoom,
+            });
+          }}
+          onMouseDown={handleMouseDown}
         >
           <Box
             component="img"
