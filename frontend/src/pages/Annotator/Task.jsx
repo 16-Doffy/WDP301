@@ -72,7 +72,6 @@ const AnnotatorTask = () => {
     }, 5000);
 
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, task?.status]);
 
   useEffect(() => {
