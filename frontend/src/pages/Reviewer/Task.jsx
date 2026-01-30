@@ -125,6 +125,8 @@ const ReviewerTask = () => {
       setReviewComments(taskData.reviewComments || '');
 
       // Load existing sentence feedbacks
+      setSentenceFeedbacks({});
+      setSentenceStatus({});
       if (taskData.sentenceFeedbacks) {
         const feedbacks = {};
         const statuses = {};
@@ -136,7 +138,7 @@ const ReviewerTask = () => {
             .replace('audio_', '')
             .replace('segment_', '');
 
-          const uiKey = `${taskData._id}-${index}`;
+          const uiKey = `${id}-${index}`;
 
           feedbacks[uiKey] = fb.feedback || '';
 
@@ -160,41 +162,45 @@ const ReviewerTask = () => {
     }
   };
 
+  const isReviewed = task?.status === 'approved' || task?.status === 'rejected';
+
   const handleApprove = useCallback(async () => {
     // Check if task has already been reviewed
-    if (task?.status === 'approved' || task?.status === 'rejected') {
-      alert('Task này đã được đánh giá rồi. Mỗi task chỉ có thể được đánh giá 1 lần.');
+    if (isReviewed) {
+      alert('Task này đã được đánh giá rồi.');
       return;
     }
 
-    if (window.confirm('Bạn có chắc muốn phê duyệt task này? Task sẽ được đánh dấu là approved và không thể chỉnh sửa nữa. Lưu ý: Mỗi task chỉ có thể được đánh giá 1 lần.')) {
-      setProcessing(true);
-      try {
-        const payloadNotes = (reviewNotes && reviewNotes.length > 0)
-          ? reviewNotes.map(n => ({
-            bbox: n.bbox,
-            label: n.label,
-            comment: n.comment
-          }))
-          : [];
-        await axios.post(`${API_URL}/api/reviews/${id}/approve`, {
-          reviewComments: reviewComments.trim() || undefined,
-          reviewNotes: payloadNotes,
-        });
+    if (!window.confirm('Bạn có chắc muốn phê duyệt task này?')) return;
+
+    setProcessing(true);
+    try {
+      const payloadNotes = (reviewNotes && reviewNotes.length > 0)
+        ? reviewNotes.map(n => ({
+          bbox: n.bbox,
+          label: n.label,
+          comment: n.comment
+        }))
+        : [];
+
+      const response = await axios.post(`${API_URL}/api/reviews/${id}/approve`, {
+        reviewComments: reviewComments.trim() || undefined,
+        reviewNotes: payloadNotes,
+      }, { timeout: 15000 });
+
+      if (response.status === 200 || response.status === 201) {
         alert('Đã phê duyệt task thành công!');
-        // Refresh task data and tasks list to update statistics
         await fetchTask();
         await fetchAllTasks();
-        // Stay on current page instead of navigating away
-      } catch (error) {
-        const errorMessage = error.response?.data?.message || 'Lỗi khi phê duyệt task';
-        alert(errorMessage);
-        console.error('Error approving task:', error);
-      } finally {
-        setProcessing(false);
       }
+    } catch (error) {
+      const msg = error.response?.data?.message || error.message || 'Lỗi khi phê duyệt';
+      alert(`Không thể hoàn tất: ${msg}`);
+      console.error(error);
+    } finally {
+      setProcessing(false);
     }
-  }, [id, task, reviewComments, reviewNotes]);
+  }, [id, task, reviewComments, reviewNotes, isReviewed]);
 
   const handleReject = useCallback(async () => {
     // Check if task has already been reviewed
@@ -335,7 +341,6 @@ const ReviewerTask = () => {
   };
 
   const qualityScore = calculateQualityScore();
-  const isReviewed = task?.status === 'approved' || task?.status === 'rejected';
   const averageConfidence = calculateAverageConfidence();
   const reviewStats = calculateReviewStats();
   const accuracy = reviewStats.accuracy;
@@ -405,30 +410,47 @@ const ReviewerTask = () => {
     return sentences;
   };
 
-  const handleSentenceAction = async (idx, action) => {
-    const key = `${id}-${idx}`; // Use URL id for absolute consistency
+  const handleSentenceAction = async (idx, action, type = 'sentence') => {
+    const key = `${id}-${idx}`;
     if (action === 'reject' && !sentenceFeedbacks[key]?.trim()) {
-      alert('Vui lòng nhập feedback trước khi từ chối câu này.');
+      alert('Vui lòng nhập feedback trước khi từ chối mục này.');
       return;
     }
-    if (!window.confirm(`Bạn chắc chắn muốn ${action === 'approve' ? 'Phê duyệt' : 'Từ chối'} câu này?`)) return;
+    if (!window.confirm(`Bạn chắc chắn muốn ${action === 'approve' ? 'Phê duyệt' : 'Từ chối'} mục này?`)) return;
 
     setProcessingSentences(prev => ({ ...prev, [key]: true }));
     try {
       await axios.post(`${API_URL}/api/reviews/${id}/sentences`, {
+        taskId: id, // Explicitly pass taskId in body too
         index: idx,
         action: action,
         feedback: sentenceFeedbacks[key]?.trim() || undefined,
+        type: type,
       }, { timeout: 10000 });
 
       // Update local state immediately
       const newStatus = action === 'approve' ? 'approved' : 'rejected';
+
+      // Update the status map
       setSentenceStatus(prev => ({ ...prev, [key]: newStatus }));
 
-      // We clear processing state first, then refresh in background
-      setProcessingSentences(prev => ({ ...prev, [key]: false }));
+      // Also inject into the current task labels for UI consistency
+      setTask(prev => {
+        if (!prev) return prev;
+        const newLabels = { ...(prev.labels || {}) };
+        const listKey = type === 'span' ? 'spans' : 'sentences';
+        if (newLabels[listKey] && newLabels[listKey][idx]) {
+          newLabels[listKey][idx].status = newStatus;
+          newLabels[listKey][idx].reviewFeedback = sentenceFeedbacks[key]?.trim();
+        }
+        return { ...prev, labels: newLabels };
+      });
 
-      await fetchTask();
+      // Clear processing after a short delay
+      setTimeout(() => {
+        setProcessingSentences(prev => ({ ...prev, [key]: false }));
+      }, 800);
+
       await fetchAllTasks();
     } catch (err) {
       setProcessingSentences(prev => ({ ...prev, [key]: false }));
@@ -771,17 +793,18 @@ const ReviewerTask = () => {
                                 />
                                 <div className="grid grid-cols-2 gap-4">
                                   <button
-                                    onClick={() => handleSentenceAction(idx, 'approve')}
-                                    className="py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-emerald-500/30 transition-all hover:-translate-y-1"
+                                    onClick={() => handleSentenceAction(idx, 'approve', hasSegments ? 'segment' : 'audio')}
+                                    disabled={isProcessing}
+                                    className="py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-emerald-500/30 transition-all hover:-translate-y-1 disabled:opacity-50"
                                   >
-                                    ✓ Approve
+                                    {isProcessing ? '⏳ DUYỆT...' : '✓ Approve'}
                                   </button>
                                   <button
-                                    onClick={() => handleSentenceAction(idx, 'reject')}
-                                    disabled={!feedback.trim()}
+                                    onClick={() => handleSentenceAction(idx, 'reject', hasSegments ? 'segment' : 'audio')}
+                                    disabled={isProcessing || !feedback.trim()}
                                     className="py-4 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-rose-500/30 transition-all hover:-translate-y-1 disabled:opacity-50 disabled:translate-y-0"
                                   >
-                                    ✕ Reject
+                                    {isProcessing ? '⏳ TỪ CHỐI...' : '✕ Reject'}
                                   </button>
                                 </div>
                               </div>
@@ -903,20 +926,20 @@ const ReviewerTask = () => {
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
                                   <button
-                                    onClick={() => handleSentenceAction(idx, 'approve')}
+                                    onClick={() => handleSentenceAction(idx, 'approve', task?.labels?.spans ? 'span' : 'sentence')}
                                     disabled={isProcessing}
                                     className="group relative overflow-hidden py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black text-sm uppercase tracking-widest transition-all shadow-xl shadow-emerald-500/30 disabled:opacity-50"
                                   >
-                                    <span className="relative z-10">{isProcessing ? '⏳ PROCESSSING...' : '✓ PHÊ DUYỆT CÂU NÀY'}</span>
+                                    <span className="relative z-10">{isProcessing ? '⏳ ĐANG DUYỆT...' : '✓ PHÊ DUYỆT CÂU NÀY'}</span>
                                     <div className="absolute inset-0 bg-white/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
                                   </button>
                                   <button
-                                    onClick={() => handleSentenceAction(idx, 'reject')}
+                                    onClick={() => handleSentenceAction(idx, 'reject', task?.labels?.spans ? 'span' : 'sentence')}
                                     disabled={isProcessing || !feedback.trim()}
                                     className="group relative overflow-hidden py-4 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl font-black text-sm uppercase tracking-widest transition-all shadow-xl shadow-rose-500/30 disabled:opacity-50"
                                     title={!feedback.trim() ? 'Bạn cần nhập phản hồi trước khi từ chối' : ''}
                                   >
-                                    <span className="relative z-10">{isProcessing ? '⏳ PROCESSSING...' : '✕ TỪ CHỐI CÂU NÀY'}</span>
+                                    <span className="relative z-10">{isProcessing ? '⏳ ĐANG XỬ LÝ...' : '✕ TỪ CHỐI CÂU NÀY'}</span>
                                     <div className="absolute inset-0 bg-white/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
                                   </button>
                                 </div>
@@ -993,8 +1016,20 @@ const ReviewerTask = () => {
                                 className="w-full p-5 border-2 border-gray-200 rounded-2xl focus:border-amber-500 focus:outline-none transition-all"
                               />
                               <div className="grid grid-cols-2 gap-4">
-                                <button onClick={() => handleSentenceAction(sIdx, 'approve')} className="py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-emerald-500/20 hover:scale-[1.02] active:scale-[0.98] transition-all">✓ Approve</button>
-                                <button onClick={() => handleSentenceAction(sIdx, 'reject')} className="py-4 bg-rose-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-rose-500/20 hover:scale-[1.02] active:scale-[0.98] transition-all">✕ Reject</button>
+                                <button
+                                  onClick={() => handleSentenceAction(sIdx, 'approve', 'sentence')}
+                                  disabled={sIsProcessing}
+                                  className={`py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-emerald-500/20 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50`}
+                                >
+                                  {sIsProcessing ? '⏳ ĐANG LƯU...' : '✓ Approve'}
+                                </button>
+                                <button
+                                  onClick={() => handleSentenceAction(sIdx, 'reject', 'sentence')}
+                                  disabled={sIsProcessing || !sFeedback.trim()}
+                                  className={`py-4 bg-rose-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-rose-500/20 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50`}
+                                >
+                                  {sIsProcessing ? '⏳ ĐANG LƯU...' : '✕ Reject'}
+                                </button>
                               </div>
                             </>
                           ) : (
@@ -1216,8 +1251,8 @@ const ReviewerTask = () => {
                           </p>
                         </div>
                       </div>
-                    ))
-                  )};
+                    )))
+                  }
                 </div>
                 <div className="flex gap-2">
                   <input
