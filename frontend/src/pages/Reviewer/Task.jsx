@@ -27,6 +27,7 @@ const ReviewerTask = () => {
   const [sentenceFeedbacks, setSentenceFeedbacks] = useState({});
   const [sentenceStatus, setSentenceStatus] = useState({});
   const [processingSentences, setProcessingSentences] = useState({});
+  const [activeSentenceIdx, setActiveSentenceIdx] = useState(0);
 
   useEffect(() => {
     fetchTask();
@@ -106,31 +107,48 @@ const ReviewerTask = () => {
     try {
       const response = await axios.get(`${API_URL}/api/tasks/${id}`);
       let taskData = response.data;
-      
+
       // If mimeType is text/plain but no text content, fetch from file
       if (taskData.dataItem?.mimeType === 'text/plain' && !taskData.dataItem?.text) {
         try {
-          const fileResp = await axios.get(`${API_URL}/${taskData.dataItem.path}`, { 
-            responseType: 'text' 
+          const fileResp = await axios.get(`${API_URL}/${taskData.dataItem.path}`, {
+            responseType: 'text'
           });
           taskData.dataItem.text = fileResp.data;
         } catch (err) {
           console.error('Error fetching text file:', err);
         }
       }
-      
+
       setTask(taskData);
       setReviewNotes(taskData.reviewNotes || []);
       setReviewComments(taskData.reviewComments || '');
-      
+
       // Load existing sentence feedbacks
       if (taskData.sentenceFeedbacks) {
         const feedbacks = {};
         const statuses = {};
         Object.entries(taskData.sentenceFeedbacks).forEach(([key, fb]) => {
-          const sentenceIndex = key.replace('sentence_', '');
-          feedbacks[`${taskData._id}-${sentenceIndex}`] = fb.feedback || '';
-          statuses[`${taskData._id}-${sentenceIndex}`] = fb.action;
+          // Extract index from keys like "sentence_0", "span_0", "audio_0", "segment_0", or just "0"
+          const index = key.toString()
+            .replace('sentence_', '')
+            .replace('span_', '')
+            .replace('audio_', '')
+            .replace('segment_', '');
+
+          const uiKey = `${taskData._id}-${index}`;
+
+          feedbacks[uiKey] = fb.feedback || '';
+
+          // Map both 'approve' and 'approved' to 'approved' for UI consistency
+          const backendAction = (fb.action || fb.status || '').toLowerCase();
+          if (backendAction === 'approve' || backendAction === 'approved') {
+            statuses[uiKey] = 'approved';
+          } else if (backendAction === 'reject' || backendAction === 'rejected') {
+            statuses[uiKey] = 'rejected';
+          } else {
+            statuses[uiKey] = backendAction;
+          }
         });
         setSentenceFeedbacks(feedbacks);
         setSentenceStatus(statuses);
@@ -154,10 +172,10 @@ const ReviewerTask = () => {
       try {
         const payloadNotes = (reviewNotes && reviewNotes.length > 0)
           ? reviewNotes.map(n => ({
-              bbox: n.bbox,
-              label: n.label,
-              comment: n.comment
-            }))
+            bbox: n.bbox,
+            label: n.label,
+            comment: n.comment
+          }))
           : [];
         await axios.post(`${API_URL}/api/reviews/${id}/approve`, {
           reviewComments: reviewComments.trim() || undefined,
@@ -193,19 +211,19 @@ const ReviewerTask = () => {
     if (window.confirm('Bạn có chắc muốn từ chối task này? Annotator sẽ nhận được phản hồi và cần chỉnh sửa lại. Lưu ý: Mỗi task chỉ có thể được đánh giá 1 lần.')) {
       setProcessing(true);
       try {
-        const payloadNotes = (reviewNotes && reviewNotes.length > 0) 
+        const payloadNotes = (reviewNotes && reviewNotes.length > 0)
           ? reviewNotes.map(n => ({
-              bbox: n.bbox,
-              label: n.label,
-              comment: n.comment
-            }))
+            bbox: n.bbox,
+            label: n.label,
+            comment: n.comment
+          }))
           : [];
         // Map frontend error category to backend format
         const selectedErrorType = errorTypes.find(et => et.id === (errorCategory || selectedError));
-        const backendErrorCategory = selectedErrorType 
-          ? selectedErrorType.backendCategory 
+        const backendErrorCategory = selectedErrorType
+          ? selectedErrorType.backendCategory
           : mapErrorCategoryToBackend(errorCategory || selectedError || 'other');
-        
+
         await axios.post(`${API_URL}/api/reviews/${id}/reject`, {
           reviewComments: reviewComments.trim(),
           errorCategory: backendErrorCategory,
@@ -290,7 +308,7 @@ const ReviewerTask = () => {
   const calculateReviewStats = () => {
     // Calculate based on all reviewed tasks (approved + rejected)
     const totalReviewed = reviewedTasks.length;
-    
+
     if (totalReviewed === 0) {
       // If no tasks reviewed yet, show 0 for both
       return {
@@ -298,15 +316,15 @@ const ReviewerTask = () => {
         rejection: 0
       };
     }
-    
+
     const approvedCount = reviewedTasks.filter(t => t.status === 'approved').length;
     const rejectedCount = reviewedTasks.filter(t => t.status === 'rejected').length;
-    
+
     // Accuracy = percentage of approved tasks out of all reviewed tasks
     const accuracy = (approvedCount / totalReviewed) * 100;
     // Rejection = percentage of rejected tasks out of all reviewed tasks
     const rejection = (rejectedCount / totalReviewed) * 100;
-    
+
     return {
       accuracy: Math.round(accuracy * 10) / 10,
       rejection: Math.round(rejection * 10) / 10,
@@ -343,8 +361,8 @@ const ReviewerTask = () => {
     if (carouselRef.current) {
       const scrollAmount = 300;
       const currentScroll = carouselRef.current.scrollLeft;
-      const newScroll = direction === 'left' 
-        ? currentScroll - scrollAmount 
+      const newScroll = direction === 'left'
+        ? currentScroll - scrollAmount
         : currentScroll + scrollAmount;
       const maxScroll = carouselRef.current.scrollWidth - carouselRef.current.clientWidth;
       const finalScroll = Math.max(0, Math.min(newScroll, maxScroll));
@@ -370,7 +388,7 @@ const ReviewerTask = () => {
   const splitSentences = (text = '') => {
     // Split by newline first (mỗi dòng là 1 câu)
     let sentences = text.split('\n').map(s => s.trim()).filter(Boolean);
-    
+
     // If no newlines, try splitting by . ? !
     if (sentences.length <= 1) {
       sentences = text
@@ -378,39 +396,45 @@ const ReviewerTask = () => {
         .map(s => s.trim())
         .filter(Boolean);
     }
-    
+
     // If still only 1 or empty, return original text as single sentence
     if (sentences.length === 0) {
       return text.trim() ? [text.trim()] : [];
     }
-    
+
     return sentences;
   };
 
   const handleSentenceAction = async (idx, action) => {
-    const key = `${task?._id}-${idx}`;
+    const key = `${id}-${idx}`; // Use URL id for absolute consistency
     if (action === 'reject' && !sentenceFeedbacks[key]?.trim()) {
       alert('Vui lòng nhập feedback trước khi từ chối câu này.');
       return;
     }
-    if (!window.confirm(`Bạn chắc chắn muốn ${action} câu này?`)) return;
+    if (!window.confirm(`Bạn chắc chắn muốn ${action === 'approve' ? 'Phê duyệt' : 'Từ chối'} câu này?`)) return;
 
     setProcessingSentences(prev => ({ ...prev, [key]: true }));
     try {
-      await axios.post(`${API_URL}/api/reviews/${task._id}/sentences`, {
+      await axios.post(`${API_URL}/api/reviews/${id}/sentences`, {
         index: idx,
-        action,
+        action: action,
         feedback: sentenceFeedbacks[key]?.trim() || undefined,
-      });
-      setSentenceStatus(prev => ({ ...prev, [key]: action === 'approve' ? 'approved' : 'rejected' }));
-      // refresh task data if needed
+      }, { timeout: 10000 });
+
+      // Update local state immediately
+      const newStatus = action === 'approve' ? 'approved' : 'rejected';
+      setSentenceStatus(prev => ({ ...prev, [key]: newStatus }));
+
+      // We clear processing state first, then refresh in background
+      setProcessingSentences(prev => ({ ...prev, [key]: false }));
+
       await fetchTask();
       await fetchAllTasks();
     } catch (err) {
-      alert(err.response?.data?.message || 'Lỗi khi lưu đánh giá câu');
-      console.error(err);
-    } finally {
       setProcessingSentences(prev => ({ ...prev, [key]: false }));
+      const msg = err.response?.data?.message || err.message || 'Lỗi kết nối';
+      alert(`Không thể lưu đánh giá: ${msg}`);
+      console.error(err);
     }
   };
 
@@ -435,7 +459,7 @@ const ReviewerTask = () => {
           </span>
         </div>
         <div className="flex items-center gap-3">
-          <button 
+          <button
             onClick={() => setDarkMode(!darkMode)}
             className={`p-2 rounded-lg transition-all ${darkMode ? 'bg-gray-700 text-yellow-300 hover:bg-gray-600' : 'bg-white/60 text-gray-700 hover:bg-white/80'}`}
           >
@@ -466,21 +490,20 @@ const ReviewerTask = () => {
                   id={`object-${idx}`}
                   onMouseEnter={() => setHoveredObjectIndex(idx)}
                   onMouseLeave={() => setHoveredObjectIndex(null)}
-                  className={`p-3 rounded-lg cursor-pointer transition-all duration-200 ${
-                    isHovered
-                      ? darkMode
-                        ? 'bg-emerald-600/30 border-2 border-emerald-400 shadow-lg shadow-emerald-500/50'
-                        : 'bg-emerald-100 border-2 border-emerald-400 shadow-lg'
-                      : darkMode
-                        ? 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
-                        : 'bg-white/40 border border-gray-300/50 hover:bg-white/60'
-                  }`}
+                  className={`p-3 rounded-lg cursor-pointer transition-all duration-200 ${isHovered
+                    ? darkMode
+                      ? 'bg-emerald-600/30 border-2 border-emerald-400 shadow-lg shadow-emerald-500/50'
+                      : 'bg-emerald-100 border-2 border-emerald-400 shadow-lg'
+                    : darkMode
+                      ? 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
+                      : 'bg-white/40 border border-gray-300/50 hover:bg-white/60'
+                    }`}
                 >
                   <div className="flex items-center justify-between mb-2">
                     <span className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                       {obj.label || `OBJECT_${idx + 1}`}
                     </span>
-                    <span 
+                    <span
                       className={`text-xs px-2 py-0.5 rounded ${darkMode ? 'bg-emerald-900/50 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}
                       title="Độ tin cậy của nhãn này (confidence score)"
                     >
@@ -503,15 +526,14 @@ const ReviewerTask = () => {
           <div className={`flex-1 overflow-y-auto p-6 ${darkMode ? 'bg-gray-900' : ''}`}>
             {/* Status Banner - Show when task is already reviewed */}
             {isReviewed && (
-              <div className={`mb-4 p-4 rounded-xl border-2 ${
-                task?.status === 'approved'
-                  ? darkMode 
-                    ? 'bg-emerald-900/30 border-emerald-500 text-emerald-300'
-                    : 'bg-emerald-100 border-emerald-500 text-emerald-800'
-                  : darkMode
-                    ? 'bg-red-900/30 border-red-500 text-red-300'
-                    : 'bg-red-100 border-red-500 text-red-800'
-              }`}>
+              <div className={`mb-4 p-4 rounded-xl border-2 ${task?.status === 'approved'
+                ? darkMode
+                  ? 'bg-emerald-900/30 border-emerald-500 text-emerald-300'
+                  : 'bg-emerald-100 border-emerald-500 text-emerald-800'
+                : darkMode
+                  ? 'bg-red-900/30 border-red-500 text-red-300'
+                  : 'bg-red-100 border-red-500 text-red-800'
+                }`}>
                 <div className="flex items-center gap-2">
                   <span className="text-2xl">
                     {task?.status === 'approved' ? '✓' : '✕'}
@@ -521,7 +543,7 @@ const ReviewerTask = () => {
                       {task?.status === 'approved' ? 'ĐÃ PHÊ DUYỆT' : 'ĐÃ TỪ CHỐI'}
                     </h3>
                     <p className="text-sm mt-1">
-                      Task này đã được đánh giá bởi bạn vào {task?.reviewedAt ? new Date(task.reviewedAt).toLocaleString('vi-VN') : 'trước đó'}. 
+                      Task này đã được đánh giá bởi bạn vào {task?.reviewedAt ? new Date(task.reviewedAt).toLocaleString('vi-VN') : 'trước đó'}.
                       Mỗi task chỉ có thể được đánh giá 1 lần.
                     </p>
                     {task?.reviewComments && (
@@ -533,7 +555,7 @@ const ReviewerTask = () => {
                 </div>
               </div>
             )}
-            
+
             <div className="mb-4">
               <h2 className={`text-lg font-bold mb-1 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                 CURRENTLY AUDITING
@@ -567,15 +589,14 @@ const ReviewerTask = () => {
                         <button
                           key={pendingTask._id}
                           onClick={() => navigate(`/reviewer/tasks/${pendingTask._id}`)}
-                          className={`w-full text-left rounded-xl p-3 transition-all duration-200 ${
-                            isActive
-                              ? darkMode
-                                ? 'bg-emerald-600/30 border-2 border-emerald-400'
-                                : 'bg-emerald-100 border-2 border-emerald-400'
-                              : darkMode
-                                ? 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
-                                : 'bg-white/40 border border-gray-300/50 hover:bg-white/60'
-                          }`}
+                          className={`w-full text-left rounded-xl p-3 transition-all duration-200 ${isActive
+                            ? darkMode
+                              ? 'bg-emerald-600/30 border-2 border-emerald-400'
+                              : 'bg-emerald-100 border-2 border-emerald-400'
+                            : darkMode
+                              ? 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
+                              : 'bg-white/40 border border-gray-300/50 hover:bg-white/60'
+                            }`}
                         >
                           <div className="flex items-center gap-3">
                             {pendingTask.dataItem?.mimeType?.startsWith('image/') && (
@@ -617,13 +638,12 @@ const ReviewerTask = () => {
 
                 {task?.dataItem?.mimeType?.startsWith('image/') ? (
                   <>
-                    <div className={`mb-4 rounded-xl overflow-hidden transition-all duration-300 ${
-                      hoveredObjectIndex !== null 
-                        ? darkMode 
-                          ? 'ring-4 ring-emerald-400/50 shadow-2xl shadow-emerald-500/30' 
-                          : 'ring-4 ring-emerald-300/50 shadow-2xl'
-                        : ''
-                    }`}>
+                    <div className={`mb-4 rounded-xl overflow-hidden transition-all duration-300 ${hoveredObjectIndex !== null
+                      ? darkMode
+                        ? 'ring-4 ring-emerald-400/50 shadow-2xl shadow-emerald-500/30'
+                        : 'ring-4 ring-emerald-300/50 shadow-2xl'
+                      : ''
+                      }`}>
                       <ImageViewer
                         imageUrl={`${API_URL}/${task.dataItem.path}`}
                         annotations={task?.labels?.objects?.map((obj, idx) => ({
@@ -647,13 +667,13 @@ const ReviewerTask = () => {
                       />
                     </div>
                     <div className="flex items-center gap-4 text-sm">
-                      <span 
+                      <span
                         className={`font-semibold ${darkMode ? 'text-emerald-400' : 'text-emerald-600'}`}
                         title="Độ tin cậy trung bình của tất cả các đối tượng được gán nhãn trong ảnh này"
                       >
                         AVG CONFIDENCE {averageConfidence.toFixed(1)}%
                       </span>
-                      <span 
+                      <span
                         className={darkMode ? 'text-gray-400' : 'text-gray-600'}
                         title="Tổng số đối tượng (objects) đã được gán nhãn trong ảnh này"
                       >
@@ -661,185 +681,330 @@ const ReviewerTask = () => {
                       </span>
                     </div>
                   </>
-                ) : task?.dataItem?.mimeType?.startsWith('text/') || task?.dataItem?.text ? (
+                ) : task?.dataItem?.mimeType?.startsWith('audio/') ? (
                   (() => {
-                    // Check if we have sentence-level labels from annotator
-                    if (task?.labels?.sentences && Array.isArray(task.labels.sentences) && task.labels.sentences.length > 0) {
-                      console.log('Sentence labels from annotator:', task.labels.sentences);
-                      
-                      return (
-                        <div className="space-y-4 max-h-96 overflow-y-auto pr-2">
-                          {task.labels.sentences.map((sentenceLabel, idx) => {
-                            const key = `${task._id}-${idx}`;
-                            const status = sentenceStatus[key];
-                            const processing = !!processingSentences[key];
-                            const feedback = sentenceFeedbacks[key] || '';
-                            
-                            return (
-                              <div 
-                                key={key} 
-                                className={`p-4 rounded-lg border-2 transition-all ${
-                                  status === 'approved'
-                                    ? darkMode ? 'bg-green-900/20 border-green-500/50' : 'bg-green-50 border-green-300'
-                                    : status === 'rejected'
-                                      ? darkMode ? 'bg-red-900/20 border-red-500/50' : 'bg-red-50 border-red-300'
-                                      : darkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-white/60 border-gray-300'
-                                }`}
-                              >
-                                <div className="flex items-start justify-between gap-3 mb-3">
-                                  <div className={`text-sm p-2 rounded flex-1 ${darkMode ? 'bg-gray-800 text-gray-100' : 'bg-gray-100 text-gray-900'} leading-relaxed`}>
-                                    "{sentenceLabel.text || sentenceLabel.sentence || ''}"
-                                  </div>
-                                  <span className={`text-xs px-3 py-1 rounded-full font-semibold whitespace-nowrap flex-shrink-0 ${
-                                    sentenceLabel.label?.toLowerCase().includes('tích cực') || sentenceLabel.label?.toLowerCase().includes('positive')
-                                      ? darkMode ? 'bg-green-900/50 text-green-300' : 'bg-green-100 text-green-700'
-                                      : sentenceLabel.label?.toLowerCase().includes('tiêu cực') || sentenceLabel.label?.toLowerCase().includes('negative')
-                                        ? darkMode ? 'bg-red-900/50 text-red-300' : 'bg-red-100 text-red-700'
-                                        : darkMode ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-700'
-                                  }`}>
-                                    📌 {sentenceLabel.label}
-                                  </span>
+                    // Support both generic label/note and potential segments
+                    const segments = task?.labels?.segments || [];
+                    const hasSegments = segments.length > 0;
+
+                    // If no segments, create a pseudo-segment from the main label/note
+                    const items = hasSegments ? segments : [
+                      {
+                        label: task.labels?.label || 'Chưa gán nhãn',
+                        note: task.labels?.note || '',
+                        isGlobal: true
+                      }
+                    ];
+
+                    const idx = Math.min(activeSentenceIdx, items.length - 1);
+                    const item = items[idx];
+                    const key = `${id}-${idx}`;
+                    const status = sentenceStatus[key];
+                    const isProcessing = !!processingSentences[key];
+                    const feedback = sentenceFeedbacks[key] || '';
+                    const audioUrl = `${API_URL}/${task.dataItem.path}`;
+
+                    return (
+                      <div className="flex flex-col h-full min-h-[450px]">
+                        {/* Audio Player Section */}
+                        <div className={`p-6 mb-6 rounded-3xl border-2 transition-all ${darkMode ? 'bg-gray-800/40 border-gray-700' : 'bg-gray-50 border-gray-200'
+                          }`}>
+                          <div className="flex items-center gap-6">
+                            <div className={`w-16 h-16 rounded-full flex items-center justify-center text-3xl shadow-lg border-4 ${darkMode ? 'bg-gray-900 border-gray-700 text-blue-400' : 'bg-white border-white text-blue-600'
+                              }`}>
+                              🎧
+                            </div>
+                            <div className="flex-1">
+                              <p className={`font-black truncate ${darkMode ? 'text-white' : 'text-gray-900'}`}>{task.dataItem.filename}</p>
+                              <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest mt-1">Audio Source • {task.dataItem.mimeType}</p>
+                              <audio controls src={audioUrl} className="w-full h-10 mt-4 filter drop-shadow-sm" />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Annotation Review Unit */}
+                        <div className="flex-1 flex flex-col">
+                          <div className="flex items-center justify-between mb-4">
+                            <span className={`text-[10px] font-black tracking-widest px-3 py-1.5 rounded-full ${darkMode ? 'bg-blue-900/40 text-blue-400' : 'bg-blue-100 text-blue-700'
+                              }`}>
+                              {item.isGlobal ? 'OVERALL LABEL' : `SEGMENT ${idx + 1} / ${items.length}`}
+                            </span>
+                            {hasSegments && (
+                              <div className="flex gap-2">
+                                <button onClick={() => setActiveSentenceIdx(prev => Math.max(0, prev - 1))} disabled={idx === 0} className="p-2 border rounded-xl disabled:opacity-30">←</button>
+                                <button onClick={() => setActiveSentenceIdx(prev => Math.min(items.length - 1, prev + 1))} disabled={idx === items.length - 1} className="p-2 border rounded-xl disabled:opacity-30">→</button>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className={`p-8 rounded-[2rem] border-2 flex flex-col items-center justify-center text-center space-y-4 ${status === 'approved'
+                            ? 'bg-emerald-500/5 border-emerald-500/20'
+                            : status === 'rejected'
+                              ? 'bg-rose-500/5 border-rose-500/20'
+                              : darkMode ? 'bg-gray-900/30 border-gray-700' : 'bg-white border-gray-100 shadow-xl shadow-gray-200/50'
+                            }`}>
+                            <span className={`px-6 py-2 rounded-full text-sm font-black uppercase tracking-tighter shadow-sm border ${darkMode ? 'bg-gray-800 text-blue-300 border-blue-500/30' : 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                              }`}>
+                              🏷️ Nhãn: {item.label}
+                            </span>
+                            <blockquote className={`text-xl font-bold leading-relaxed max-w-md ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                              "{item.note || 'Không có ghi chú chi tiết'}"
+                            </blockquote>
+                            {item.startTime !== undefined && (
+                              <p className="text-xs font-black text-gray-400 font-mono">
+                                TIME: {item.startTime}s - {item.endTime}s
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Action Area */}
+                          <div className="mt-8 border-t pt-6">
+                            {!status && !isReviewed ? (
+                              <div className="space-y-4">
+                                <textarea
+                                  value={feedback}
+                                  onChange={(e) => setSentenceFeedbacks(prev => ({ ...prev, [key]: e.target.value }))}
+                                  placeholder="Nhập phản hồi đánh giá cho nhãn audio này..."
+                                  className={`w-full p-4 border rounded-2xl resize-none text-sm transition-all ${darkMode ? 'bg-gray-900 border-gray-700 text-white' : 'bg-gray-50 border-gray-200 focus:bg-white'
+                                    }`}
+                                  rows={2}
+                                />
+                                <div className="grid grid-cols-2 gap-4">
+                                  <button
+                                    onClick={() => handleSentenceAction(idx, 'approve')}
+                                    className="py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-emerald-500/30 transition-all hover:-translate-y-1"
+                                  >
+                                    ✓ Approve
+                                  </button>
+                                  <button
+                                    onClick={() => handleSentenceAction(idx, 'reject')}
+                                    disabled={!feedback.trim()}
+                                    className="py-4 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-rose-500/30 transition-all hover:-translate-y-1 disabled:opacity-50 disabled:translate-y-0"
+                                  >
+                                    ✕ Reject
+                                  </button>
                                 </div>
-                                
-                                {!status && (
-                                  <>
-                                    <textarea
-                                      value={feedback}
-                                      onChange={(e) => setSentenceFeedbacks(prev => ({ ...prev, [key]: e.target.value }))
-                                      }
-                                      placeholder="Feedback (required to reject)"
-                                      className={`w-full mb-3 p-2 border rounded resize-none text-sm focus:outline-none focus:ring-2 ${
-                                        darkMode
-                                          ? 'bg-gray-800 text-white border-gray-600 focus:ring-emerald-500/50'
-                                          : 'bg-white text-gray-900 border-gray-300 focus:ring-emerald-500/30'
-                                      }`}
-                                      rows={2}
-                                    />
-                                    
-                                    <div className="flex items-center gap-2">
-                                      <button
-                                        onClick={() => handleSentenceAction(idx, 'approve')}
-                                        disabled={processing}
-                                        className="flex-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded font-semibold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                                      >
-                                        {processing ? '⏳ Processing...' : '✓ Approve'}
-                                      </button>
-                                      <button
-                                        onClick={() => handleSentenceAction(idx, 'reject')}
-                                        disabled={processing || !feedback.trim()}
-                                        className="flex-1 px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded font-semibold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                                        title={!feedback.trim() ? 'Feedback is required' : ''}
-                                      >
-                                        {processing ? '⏳ Processing...' : '✕ Reject'}
-                                      </button>
-                                    </div>
-                                  </>
-                                )}
-                                
-                                {status && (
-                                  <div className={`p-2 rounded text-center font-bold text-sm ${
-                                    status === 'approved'
-                                      ? darkMode ? 'bg-green-900/30 text-green-300' : 'bg-green-100 text-green-700'
-                                      : darkMode ? 'bg-red-900/30 text-red-300' : 'bg-red-100 text-red-700'
-                                  }`}>
-                                    {status === 'approved' ? '✓ APPROVED' : '✕ REJECTED'}
-                                    {feedback && (
-                                      <div className={`text-xs mt-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                                        Feedback: {feedback}
-                                      </div>
-                                    )}
-                                  </div>
+                              </div>
+                            ) : (
+                              <div className={`p-6 rounded-2xl text-center border-2 ${status === 'approved' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' : 'bg-rose-500/10 border-rose-500/20 text-rose-500'
+                                }`}>
+                                <p className="font-black text-xl uppercase tracking-widest mb-2">
+                                  {status === 'approved' ? '✅ Đã phê duyệt' : '❌ Đã từ chối'}
+                                </p>
+                                {feedback && <p className="text-sm italic opacity-80">"{feedback}"</p>}
+                                {hasSegments && idx < items.length - 1 && (
+                                  <button onClick={() => setActiveSentenceIdx(idx + 1)} className="mt-4 text-[10px] font-black uppercase border-b border-current">
+                                    Next Segment →
+                                  </button>
                                 )}
                               </div>
-                            );
-                          })}
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()
+                ) : task?.dataItem?.mimeType?.startsWith('text/') || task?.dataItem?.text ? (
+                  (() => {
+                    const annotatedItems = task?.labels?.spans || task?.labels?.sentences || [];
+                    const hasItems = annotatedItems.length > 0;
+
+                    if (hasItems) {
+                      const idx = Math.min(activeSentenceIdx, annotatedItems.length - 1);
+                      const item = annotatedItems[idx];
+                      const key = `${id}-${idx}`;
+                      const status = sentenceStatus[key];
+                      const isProcessing = !!processingSentences[key];
+                      const feedback = sentenceFeedbacks[key] || '';
+                      const itemText = item.text || item.sentence || '';
+                      const itemLabel = item.label || 'No Label';
+
+                      return (
+                        <div className="flex flex-col h-full min-h-[400px]">
+                          {/* Pagination Header */}
+                          <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-100">
+                            <div className="flex items-center gap-2">
+                              <span className={`text-xs font-bold px-3 py-1.5 rounded-full ${darkMode ? 'bg-emerald-900/50 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}>
+                                CÂU {idx + 1} / {annotatedItems.length}
+                              </span>
+                              {status && (
+                                <span className={`text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider ${status === 'approved' ? 'bg-green-500 text-white shadow-lg shadow-green-500/30' : 'bg-red-500 text-white shadow-lg shadow-red-500/30'
+                                  }`}>
+                                  {status === 'approved' ? '✓ APPROVED' : '✕ REJECTED'}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => setActiveSentenceIdx(prev => Math.max(0, prev - 1))}
+                                disabled={idx === 0}
+                                className={`p-2 rounded-xl border transition-all ${darkMode ? 'border-gray-600 bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-20' : 'bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-20 border-gray-200'}`}
+                              >
+                                ← Prev
+                              </button>
+                              <button
+                                onClick={() => setActiveSentenceIdx(prev => Math.min(annotatedItems.length - 1, prev + 1))}
+                                disabled={idx === annotatedItems.length - 1}
+                                className={`p-2 rounded-xl border transition-all ${darkMode ? 'border-gray-600 bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-20' : 'bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-20 border-gray-200'}`}
+                              >
+                                Next →
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Main Sentence Content */}
+                          <div className="flex-1 flex flex-col justify-center items-center py-8">
+                            <div className={`w-full p-8 rounded-3xl border-2 transition-all duration-500 relative ${status === 'approved'
+                              ? darkMode ? 'bg-green-900/10 border-green-500/40 shadow-xl shadow-green-500/10' : 'bg-green-50/50 border-green-200 shadow-xl shadow-green-100'
+                              : status === 'rejected'
+                                ? darkMode ? 'bg-red-900/10 border-red-500/40 shadow-xl shadow-red-500/10' : 'bg-red-50/50 border-red-200 shadow-xl shadow-red-100'
+                                : darkMode ? 'bg-gray-700/30 border-gray-600' : 'bg-gray-50/50 border-gray-200 shadow-xl'
+                              }`}>
+                              <blockquote className={`text-2xl font-semibold leading-relaxed text-center ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                "{itemText}"
+                              </blockquote>
+
+                              <div className="mt-8 flex flex-wrap justify-center gap-3">
+                                <span className={`px-5 py-2 rounded-full text-xs font-bold shadow-md flex items-center gap-2 ${itemLabel.toLowerCase().includes('tích cực') || itemLabel.toLowerCase().includes('positive')
+                                  ? 'bg-green-100 text-green-700 border border-green-200'
+                                  : itemLabel.toLowerCase().includes('tiêu cực') || itemLabel.toLowerCase().includes('negative')
+                                    ? 'bg-red-100 text-red-700 border border-red-200'
+                                    : 'bg-indigo-100 text-indigo-700 border border-indigo-200'
+                                  }`}>
+                                  🏷️ {itemLabel}
+                                </span>
+                                {item.note && (
+                                  <span className={`px-5 py-2 rounded-full text-[11px] font-medium ${darkMode ? 'bg-gray-800 text-gray-400 border border-gray-700' : 'bg-gray-200 text-gray-600 border border-gray-300'}`}>
+                                    Lưu chú: {item.note}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Footer Actions */}
+                          <div className={`mt-auto pt-8 border-t ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
+                            {!status && !isReviewed ? (
+                              <div className="space-y-5">
+                                <div className="relative group">
+                                  <textarea
+                                    value={feedback}
+                                    onChange={(e) => setSentenceFeedbacks(prev => ({ ...prev, [key]: e.target.value }))}
+                                    placeholder="Nhập phản hồi đánh giá của bạn cho câu này..."
+                                    className={`w-full p-5 border rounded-2xl resize-none text-sm font-medium focus:outline-none focus:ring-4 transition-all ${darkMode
+                                      ? 'bg-gray-950 text-white border-gray-700 focus:ring-emerald-500/20'
+                                      : 'bg-white text-gray-900 border-gray-300 focus:ring-emerald-500/10 focus:border-emerald-500'
+                                      }`}
+                                    rows={3}
+                                  />
+                                  <div className="absolute right-4 bottom-4 text-[10px] text-gray-400 font-bold uppercase tracking-widest opacity-0 group-focus-within:opacity-100 transition-opacity">
+                                    {feedback.length} chars
+                                  </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                  <button
+                                    onClick={() => handleSentenceAction(idx, 'approve')}
+                                    disabled={isProcessing}
+                                    className="group relative overflow-hidden py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black text-sm uppercase tracking-widest transition-all shadow-xl shadow-emerald-500/30 disabled:opacity-50"
+                                  >
+                                    <span className="relative z-10">{isProcessing ? '⏳ PROCESSSING...' : '✓ PHÊ DUYỆT CÂU NÀY'}</span>
+                                    <div className="absolute inset-0 bg-white/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleSentenceAction(idx, 'reject')}
+                                    disabled={isProcessing || !feedback.trim()}
+                                    className="group relative overflow-hidden py-4 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl font-black text-sm uppercase tracking-widest transition-all shadow-xl shadow-rose-500/30 disabled:opacity-50"
+                                    title={!feedback.trim() ? 'Bạn cần nhập phản hồi trước khi từ chối' : ''}
+                                  >
+                                    <span className="relative z-10">{isProcessing ? '⏳ PROCESSSING...' : '✕ TỪ CHỐI CÂU NÀY'}</span>
+                                    <div className="absolute inset-0 bg-white/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className={`p-6 rounded-3xl text-center flex flex-col gap-3 group border-2 ${status === 'approved'
+                                ? 'bg-emerald-500/5 border-emerald-500/20 text-emerald-500'
+                                : status === 'rejected'
+                                  ? 'bg-rose-500/5 border-rose-500/20 text-rose-500'
+                                  : 'bg-gray-500/5 border-gray-500/20 text-gray-500'
+                                }`}>
+                                <div className="flex items-center justify-center gap-3">
+                                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl font-black ${status === 'approved' ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'
+                                    }`}>
+                                    {status === 'approved' ? '✓' : '✕'}
+                                  </div>
+                                  <p className="font-black text-xl uppercase tracking-[0.2em]">
+                                    {status === 'approved' ? 'Đã phê duyệt' : 'Đã từ chối'}
+                                  </p>
+                                </div>
+                                {feedback && (
+                                  <div className={`mx-auto max-w-md p-3 rounded-xl text-sm font-bold border-l-4 ${darkMode ? 'bg-gray-900 border-gray-600 text-gray-400' : 'bg-white border-gray-200 text-gray-600'
+                                    }`}>
+                                    " {feedback} "
+                                  </div>
+                                )}
+                                <button
+                                  onClick={() => setActiveSentenceIdx(prev => Math.min(annotatedItems.length - 1, prev + 1))}
+                                  disabled={idx === annotatedItems.length - 1}
+                                  className={`mt-4 mx-auto px-8 py-2.5 rounded-full text-xs font-black uppercase tracking-widest border-2 transition-all disabled:opacity-0 ${darkMode ? 'border-gray-700 hover:bg-gray-700 text-gray-300' : 'border-gray-200 hover:bg-white hover:border-emerald-500 text-gray-600 hover:text-emerald-500 shadow-sm'
+                                    }`}
+                                >
+                                  Câu tiếp theo →
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       );
                     }
-                    
-                    // Fallback to old logic: split text by sentences
+
                     const rawText = task.dataItem?.text || task.dataItem?.content || '';
                     const sentences = splitSentences(rawText);
-                    
-                    if (!sentences || sentences.length === 0) {
-                      return <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>No text content found.</div>;
-                    }
+                    if (!sentences || sentences.length === 0) return <div className="text-center py-20 font-black opacity-20 text-4xl uppercase tracking-tighter">No Content Found</div>;
+
+                    const sIdx = Math.min(activeSentenceIdx, sentences.length - 1);
+                    const sent = sentences[sIdx];
+                    const sKey = `${id}-${sIdx}`;
+                    const sStatus = sentenceStatus[sKey];
+                    const sIsProcessing = !!processingSentences[sKey];
+                    const sFeedback = sentenceFeedbacks[sKey] || '';
 
                     return (
-                      <div className="space-y-4 max-h-96 overflow-y-auto pr-2">
-                        {sentences.map((sent, idx) => {
-                          const key = `${task._id}-${idx}`;
-                          const status = sentenceStatus[key];
-                          const processing = !!processingSentences[key];
-                          const feedback = sentenceFeedbacks[key] || '';
-                          
-                          return (
-                            <div 
-                              key={key} 
-                              className={`p-4 rounded-lg border-2 transition-all ${
-                                status === 'approved'
-                                  ? darkMode ? 'bg-green-900/20 border-green-500/50' : 'bg-green-50 border-green-300'
-                                  : status === 'rejected'
-                                    ? darkMode ? 'bg-red-900/20 border-red-500/50' : 'bg-red-50 border-red-300'
-                                    : darkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-white/60 border-gray-300'
-                              }`}
-                            >
-                              <div className={`text-sm mb-3 p-2 rounded ${darkMode ? 'bg-gray-800 text-gray-100' : 'bg-gray-100 text-gray-900'} leading-relaxed`}>
-                                📝 Câu {idx + 1}: "{sent}"
+                      <div className="flex flex-col h-full min-h-[400px]">
+                        <div className="flex items-center justify-between mb-4 border-b pb-4">
+                          <span className="text-[10px] font-black tracking-widest bg-amber-100 text-amber-700 px-3 py-1.5 rounded-full border border-amber-200">
+                            AUTO-SEGMENT: {sIdx + 1} / {sentences.length}
+                          </span>
+                          <div className="flex gap-2">
+                            <button onClick={() => setActiveSentenceIdx(prev => Math.max(0, prev - 1))} className="w-10 h-10 flex items-center justify-center border-2 border-gray-200 rounded-xl font-bold hover:bg-white transition-all">←</button>
+                            <button onClick={() => setActiveSentenceIdx(prev => Math.min(sentences.length - 1, prev + 1))} className="w-10 h-10 flex items-center justify-center border-2 border-gray-200 rounded-xl font-bold hover:bg-white transition-all">→</button>
+                          </div>
+                        </div>
+                        <div className="flex-1 flex items-center justify-center p-12 bg-gray-50/50 rounded-[2.5rem] border-2 border-dashed border-gray-200 shadow-inner">
+                          <p className="text-2xl font-bold italic text-gray-800 text-center leading-relaxed">"{sent}"</p>
+                        </div>
+                        <div className="mt-8 space-y-4">
+                          {!sStatus && !isReviewed ? (
+                            <>
+                              <textarea
+                                value={sFeedback}
+                                onChange={(e) => setSentenceFeedbacks(prev => ({ ...prev, [sKey]: e.target.value }))}
+                                placeholder="Ghi chú đánh giá cho câu này..."
+                                className="w-full p-5 border-2 border-gray-200 rounded-2xl focus:border-amber-500 focus:outline-none transition-all"
+                              />
+                              <div className="grid grid-cols-2 gap-4">
+                                <button onClick={() => handleSentenceAction(sIdx, 'approve')} className="py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-emerald-500/20 hover:scale-[1.02] active:scale-[0.98] transition-all">✓ Approve</button>
+                                <button onClick={() => handleSentenceAction(sIdx, 'reject')} className="py-4 bg-rose-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-rose-500/20 hover:scale-[1.02] active:scale-[0.98] transition-all">✕ Reject</button>
                               </div>
-                              
-                              {!status && (
-                                <>
-                                  <textarea
-                                    value={feedback}
-                                    onChange={(e) => setSentenceFeedbacks(prev => ({ ...prev, [key]: e.target.value }))
-                                    }
-                                    placeholder="Feedback (required to reject)"
-                                    className={`w-full mb-3 p-2 border rounded resize-none text-sm focus:outline-none focus:ring-2 ${
-                                      darkMode
-                                        ? 'bg-gray-800 text-white border-gray-600 focus:ring-emerald-500/50'
-                                        : 'bg-white text-gray-900 border-gray-300 focus:ring-emerald-500/30'
-                                    }`}
-                                    rows={2}
-                                  />
-                                  
-                                  <div className="flex items-center gap-2">
-                                    <button
-                                      onClick={() => handleSentenceAction(idx, 'approve')}
-                                      disabled={processing}
-                                      className="flex-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded font-semibold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
-                                      {processing ? '⏳ Processing...' : '✓ Approve'}
-                                    </button>
-                                    <button
-                                      onClick={() => handleSentenceAction(idx, 'reject')}
-                                      disabled={processing || !feedback.trim()}
-                                      className="flex-1 px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded font-semibold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                                      title={!feedback.trim() ? 'Feedback is required' : ''}
-                                    >
-                                      {processing ? '⏳ Processing...' : '✕ Reject'}
-                                    </button>
-                                  </div>
-                                </>
-                              )}
-                              
-                              {status && (
-                                <div className={`p-2 rounded text-center font-bold text-sm ${
-                                  status === 'approved'
-                                    ? darkMode ? 'bg-green-900/30 text-green-300' : 'bg-green-100 text-green-700'
-                                    : darkMode ? 'bg-red-900/30 text-red-300' : 'bg-red-100 text-red-700'
-                                }`}>
-                                  {status === 'approved' ? '✓ APPROVED' : '✕ REJECTED'}
-                                  {feedback && (
-                                    <div className={`text-xs mt-2 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                                      Feedback: {feedback}
-                                    </div>
-                                  )}
-                                </div>
-                              )}
+                            </>
+                          ) : (
+                            <div className="p-8 bg-gray-100/50 rounded-[2rem] text-center border-2 border-gray-200">
+                              <p className="font-black text-2xl uppercase tracking-widest text-gray-400">
+                                {sStatus === 'approved' ? '✅ Duyệt thành công' : '❌ Đã từ chối'}
+                              </p>
                             </div>
-                          );
-                        })}
+                          )}
+                        </div>
                       </div>
                     );
                   })()
@@ -881,11 +1046,11 @@ const ReviewerTask = () => {
                   ℹ️ Giải thích
                 </button>
               </div>
-              
+
               {/* Batch Progress */}
               <div className="mb-6">
                 <div className="flex items-center justify-between mb-2">
-                  <span 
+                  <span
                     className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}
                     title="Tiến độ xem xét: số task đã xem / tổng số task trong hàng đợi"
                   >
@@ -896,7 +1061,7 @@ const ReviewerTask = () => {
                   </span>
                 </div>
                 <div className={`w-full ${darkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-full h-3 overflow-hidden`}>
-                  <div 
+                  <div
                     className="bg-gradient-to-r from-emerald-400 to-teal-500 h-3 rounded-full transition-all duration-500 shadow-lg"
                     style={{ width: `${Math.max(0, Math.min(100, batchProgress))}%` }}
                   ></div>
@@ -909,7 +1074,7 @@ const ReviewerTask = () => {
               {/* Circular Progress Charts */}
               <div className="grid grid-cols-2 gap-4">
                 {/* Accuracy */}
-                <div 
+                <div
                   className="relative w-32 h-32 mx-auto cursor-help"
                   title={`Tỷ lệ task được phê duyệt: ${reviewStats.approvedCount || 0} approved / ${reviewStats.totalReviewed || 0} đã review = ${accuracy.toFixed(1)}%`}
                 >
@@ -945,7 +1110,7 @@ const ReviewerTask = () => {
                 </div>
 
                 {/* Rejection */}
-                <div 
+                <div
                   className="relative w-32 h-32 mx-auto cursor-help"
                   title={`Tỷ lệ task bị từ chối: ${reviewStats.rejectedCount || 0} rejected / ${reviewStats.totalReviewed || 0} đã review = ${rejection.toFixed(1)}%`}
                 >
@@ -1005,15 +1170,14 @@ const ReviewerTask = () => {
                       setSelectedError(errorType.id);
                       setErrorCategory(errorType.id);
                     }}
-                    className={`p-4 rounded-xl transition-all duration-300 transform ${
-                      selectedError === errorType.id
-                        ? darkMode
-                          ? `bg-gradient-to-br ${errorType.color} text-white shadow-2xl scale-105 ring-4 ring-white/20`
-                          : `bg-gradient-to-br ${errorType.color} text-white shadow-2xl scale-105`
-                        : darkMode
-                          ? 'bg-gray-700/50 text-gray-300 hover:bg-gray-700 hover:scale-102 border border-gray-600'
-                          : 'bg-white/60 text-gray-700 hover:bg-white/80 hover:scale-102 border border-gray-300/50'
-                    }`}
+                    className={`p-4 rounded-xl transition-all duration-300 transform ${selectedError === errorType.id
+                      ? darkMode
+                        ? `bg-gradient-to-br ${errorType.color} text-white shadow-2xl scale-105 ring-4 ring-white/20`
+                        : `bg-gradient-to-br ${errorType.color} text-white shadow-2xl scale-105`
+                      : darkMode
+                        ? 'bg-gray-700/50 text-gray-300 hover:bg-gray-700 hover:scale-102 border border-gray-600'
+                        : 'bg-white/60 text-gray-700 hover:bg-white/80 hover:scale-102 border border-gray-300/50'
+                      }`}
                   >
                     <div className="text-3xl mb-2">{errorType.icon}</div>
                     <div className="text-xs font-bold mb-1">{errorType.name}</div>
@@ -1042,11 +1206,10 @@ const ReviewerTask = () => {
                         key={msg.id}
                         className={`flex ${msg.sender === 'reviewer' ? 'justify-end' : 'justify-start'}`}
                       >
-                        <div className={`max-w-[80%] rounded-lg px-3 py-2 ${
-                          msg.sender === 'reviewer'
-                            ? darkMode ? 'bg-emerald-600 text-white' : 'bg-emerald-500 text-white'
-                            : darkMode ? 'bg-gray-700 text-gray-200' : 'bg-gray-200 text-gray-800'
-                        }`}>
+                        <div className={`max-w-[80%] rounded-lg px-3 py-2 ${msg.sender === 'reviewer'
+                          ? darkMode ? 'bg-emerald-600 text-white' : 'bg-emerald-500 text-white'
+                          : darkMode ? 'bg-gray-700 text-gray-200' : 'bg-gray-200 text-gray-800'
+                          }`}>
                           <p className="text-sm">{msg.text}</p>
                           <p className={`text-xs mt-1 ${msg.sender === 'reviewer' ? (darkMode ? 'text-emerald-200' : 'text-emerald-100') : (darkMode ? 'text-gray-400' : 'text-gray-500')}`}>
                             {msg.timestamp.toLocaleTimeString()}
@@ -1054,7 +1217,7 @@ const ReviewerTask = () => {
                         </div>
                       </div>
                     ))
-                  )};  
+                  )};
                 </div>
                 <div className="flex gap-2">
                   <input
@@ -1063,20 +1226,18 @@ const ReviewerTask = () => {
                     onChange={(e) => setNewMessage(e.target.value)}
                     onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
                     placeholder="Add rejection comment..."
-                    className={`flex-1 px-3 py-2 rounded-lg text-sm ${
-                      darkMode 
-                        ? 'bg-gray-800 text-white border-gray-600 focus:border-emerald-500' 
-                        : 'bg-white text-gray-900 border-gray-300 focus:border-emerald-500'
-                    } border focus:outline-none focus:ring-2 focus:ring-emerald-500/50`}
+                    className={`flex-1 px-3 py-2 rounded-lg text-sm ${darkMode
+                      ? 'bg-gray-800 text-white border-gray-600 focus:border-emerald-500'
+                      : 'bg-white text-gray-900 border-gray-300 focus:border-emerald-500'
+                      } border focus:outline-none focus:ring-2 focus:ring-emerald-500/50`}
                   />
                   <button
                     onClick={sendMessage}
                     disabled={!newMessage.trim()}
-                    className={`px-4 py-2 rounded-lg font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
-                      darkMode
-                        ? 'bg-emerald-600 text-white hover:bg-emerald-500'
-                        : 'bg-emerald-500 text-white hover:bg-emerald-600 shadow-lg'
-                    }`}
+                    className={`px-4 py-2 rounded-lg font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed ${darkMode
+                      ? 'bg-emerald-600 text-white hover:bg-emerald-500'
+                      : 'bg-emerald-500 text-white hover:bg-emerald-600 shadow-lg'
+                      }`}
                   >
                     ➤
                   </button>
@@ -1089,18 +1250,16 @@ const ReviewerTask = () => {
 
       {/* Floating Action Dock */}
       {!isReviewed && (
-        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 px-6 py-4 rounded-2xl shadow-2xl ${
-          darkMode 
-            ? 'bg-gray-800/90 backdrop-blur-xl border border-gray-700' 
-            : 'bg-white/90 backdrop-blur-xl border border-gray-200/50'
-        }`}>
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 px-6 py-4 rounded-2xl shadow-2xl ${darkMode
+          ? 'bg-gray-800/90 backdrop-blur-xl border border-gray-700'
+          : 'bg-white/90 backdrop-blur-xl border border-gray-200/50'
+          }`}>
           <button
             onClick={handleSkip}
-            className={`px-6 py-3 rounded-xl font-bold transition-all transform hover:scale-105 ${
-              darkMode
-                ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-            }`}
+            className={`px-6 py-3 rounded-xl font-bold transition-all transform hover:scale-105 ${darkMode
+              ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
           >
             <span className="mr-2"></span> Skip
           </button>
@@ -1131,14 +1290,12 @@ const ReviewerTask = () => {
                 onChange={(e) => setAutoNext(e.target.checked)}
                 className="sr-only peer"
               />
-              <div className={`w-12 h-6 rounded-full peer transition-all ${
-                autoNext
-                  ? darkMode ? 'bg-emerald-600' : 'bg-emerald-500'
-                  : darkMode ? 'bg-gray-700' : 'bg-gray-300'
-              } peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300/50`}>
-                <div className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-all ${
-                  autoNext ? 'translate-x-6' : 'translate-x-0'
-                }`}></div>
+              <div className={`w-12 h-6 rounded-full peer transition-all ${autoNext
+                ? darkMode ? 'bg-emerald-600' : 'bg-emerald-500'
+                : darkMode ? 'bg-gray-700' : 'bg-gray-300'
+                } peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300/50`}>
+                <div className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-all ${autoNext ? 'translate-x-6' : 'translate-x-0'
+                  }`}></div>
               </div>
             </label>
           </div>
