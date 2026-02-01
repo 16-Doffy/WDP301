@@ -4,6 +4,7 @@ const { auth, authorize } = require('../middleware/auth');
 const Penalty = require('../models/Penalty');
 const Warning = require('../models/Warning');
 const UserScore = require('../models/UserScore');
+const Reward = require('../models/Reward');
 const Task = require('../models/Task');
 const User = require('../models/User');
 const { createActivityLog } = require('./activityLogs');
@@ -145,6 +146,26 @@ router.put('/:id/resolve', auth, authorize('manager', 'admin'), async (req, res)
     penalty.resolvedBy = req.user._id;
 
     await penalty.save();
+
+    // Restore some score when penalty is resolved
+    let userScore = await UserScore.findOne({ userId: penalty.userId });
+    if (userScore) {
+      // Restore 50% of deducted score
+      const restoredScore = Math.floor(penalty.scoreDeduction * 0.5);
+      userScore.qualityScore = Math.min(100, userScore.qualityScore + restoredScore);
+      
+      // If all active penalties are resolved, reset penalty level
+      const activePenalties = await Penalty.find({
+        userId: penalty.userId,
+        status: 'active'
+      });
+      
+      if (activePenalties.length === 0) {
+        userScore.currentPenaltyLevel = 'none';
+      }
+      
+      await userScore.save();
+    }
 
     res.json(penalty);
   } catch (error) {
@@ -367,6 +388,193 @@ router.post('/check-auto-penalty/:userId', auth, authorize('manager', 'admin'), 
       message: 'Auto-penalty check completed',
       errorRate,
       currentLevel: userScore.currentPenaltyLevel
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Create reward (Manager/Admin only)
+router.post('/reward', auth, authorize('manager', 'admin'), async (req, res) => {
+  try {
+    const {
+      userId,
+      type,
+      reason,
+      scoreBonus,
+      relatedTaskId,
+      relatedProjectId,
+      metadata
+    } = req.body;
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Create reward
+    const reward = new Reward({
+      userId,
+      role: user.role,
+      type,
+      reason: reason.trim(),
+      scoreBonus: scoreBonus || 0,
+      relatedTaskId,
+      relatedProjectId,
+      createdBy: req.user._id,
+      metadata: metadata || {}
+    });
+
+    await reward.save();
+
+    // Update user score
+    let userScore = await UserScore.findOne({ userId });
+    if (!userScore) {
+      userScore = new UserScore({
+        userId,
+        role: user.role,
+        qualityScore: 100
+      });
+    }
+
+    userScore.qualityScore = Math.min(100, userScore.qualityScore + (scoreBonus || 0));
+    userScore.lastUpdated = new Date();
+    await userScore.save();
+
+    // Log activity
+    await createActivityLog(
+      req.user._id,
+      'reward_create',
+      'reward',
+      reward._id,
+      `Created reward for ${user.fullName || user.username}: ${reason}`,
+      { userId, type, scoreBonus },
+      req
+    );
+
+    res.status(201).json(reward);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Get rewards for a user
+router.get('/rewards/:userId', auth, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    if (userId !== req.user._id.toString() && req.user.role !== 'manager' && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    const rewards = await Reward.find({ userId })
+      .populate('createdBy', 'fullName username')
+      .populate('relatedTaskId', 'dataItem')
+      .populate('relatedProjectId', 'name')
+      .sort({ createdAt: -1 })
+      .limit(50);
+
+    res.json(rewards);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Auto-reduce penalty on improvement (Manager can trigger)
+router.post('/:userId/check-improvement', auth, authorize('manager', 'admin'), async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    let userScore = await UserScore.findOne({ userId });
+    if (!userScore) {
+      return res.json({ message: 'No score record found' });
+    }
+
+    // Get recent performance (last 7 days)
+    const recentTasks = await Task.find({
+      $or: [
+        { annotatorId: userId },
+        { reviewerId: userId }
+      ],
+      createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
+    });
+
+    if (recentTasks.length === 0) {
+      return res.json({ message: 'No recent tasks to evaluate' });
+    }
+
+    const approvedCount = recentTasks.filter(t => t.status === 'approved').length;
+    const rejectedCount = recentTasks.filter(t => t.status === 'rejected').length;
+    const recentErrorRate = recentTasks.length > 0 ? (rejectedCount / recentTasks.length) * 100 : 0;
+
+    const improvements = [];
+
+    // Check if error rate improved
+    if (recentErrorRate < 5 && userScore.errorRate > 10) {
+      improvements.push('Error rate giảm đáng kể');
+      
+      // Resolve active warnings
+      const warnings = await Penalty.find({
+        userId,
+        status: 'active',
+        level: 'warning'
+      });
+      
+      for (const warning of warnings) {
+        warning.status = 'resolved';
+        warning.resolvedAt = new Date();
+        warning.resolvedBy = req.user._id;
+        await warning.save();
+      }
+
+      // Restore some score
+      userScore.qualityScore = Math.min(100, userScore.qualityScore + 5);
+      if (userScore.currentPenaltyLevel === 'warning') {
+        userScore.currentPenaltyLevel = 'none';
+      }
+    }
+
+    // Check approval streak
+    if (approvedCount >= 5 && rejectedCount === 0) {
+      improvements.push('Chuỗi approval tốt');
+      
+      // Create reward
+      const reward = new Reward({
+        userId,
+        role: user.role,
+        type: 'improvement',
+        reason: `Cải thiện tốt: ${approvedCount} tasks được approve, 0 reject`,
+        scoreBonus: 3,
+        createdBy: req.user._id,
+        metadata: { approvedCount, rejectedCount }
+      });
+      await reward.save();
+      
+      userScore.qualityScore = Math.min(100, userScore.qualityScore + 3);
+    }
+
+    // Remove restrictions if score improved
+    if (userScore.qualityScore >= 75 && userScore.isRestricted) {
+      userScore.isRestricted = false;
+      userScore.restrictionUntil = null;
+      if (userScore.weeklyTaskLimit && userScore.weeklyTaskLimit < 20) {
+        userScore.weeklyTaskLimit = null; // Remove limit
+      }
+      improvements.push('Đã gỡ hạn chế do cải thiện');
+    }
+
+    userScore.lastUpdated = new Date();
+    await userScore.save();
+
+    res.json({
+      message: 'Improvement check completed',
+      improvements,
+      newScore: userScore.qualityScore,
+      errorRate: recentErrorRate
     });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });

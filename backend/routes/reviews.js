@@ -6,6 +6,7 @@ const { createActivityLog } = require('./activityLogs');
 const Penalty = require('../models/Penalty');
 const Warning = require('../models/Warning');
 const UserScore = require('../models/UserScore');
+const Reward = require('../models/Reward');
 
 const router = express.Router();
 
@@ -185,7 +186,7 @@ router.post('/:id/approve', auth, authorize('reviewer', 'admin'), async (req, re
     await task.populate('reviewerId', 'username fullName');
 
     // Update annotator score positively (approval = good work)
-    await updateAnnotatorScoreOnApproval(task.annotatorId._id || task.annotatorId);
+    await updateAnnotatorScoreOnApproval(task.annotatorId._id || task.annotatorId, task._id, task.projectId._id || task.projectId, req.user._id);
 
     // Log task approval
     await createActivityLog(
@@ -345,11 +346,11 @@ router.get('/stats', auth, authorize('reviewer', 'manager', 'admin'), async (req
 });
 
 // Helper function to update annotator score on approval
-async function updateAnnotatorScoreOnApproval(annotatorId) {
+async function updateAnnotatorScoreOnApproval(annotatorId, taskId, projectId, reviewerId) {
   let userScore = await UserScore.findOne({ userId: annotatorId });
+  const User = require('../models/User');
   
   if (!userScore) {
-    const User = require('../models/User');
     const user = await User.findById(annotatorId);
     userScore = new UserScore({
       userId: annotatorId,
@@ -358,13 +359,108 @@ async function updateAnnotatorScoreOnApproval(annotatorId) {
     });
   }
 
-  // Small positive boost for approval (max 100)
-  userScore.qualityScore = Math.min(100, userScore.qualityScore + 0.5);
+  // Get recent approvals for streak calculation
+  const recentApprovals = await Task.find({
+    annotatorId,
+    status: 'approved',
+    reviewedAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } // Last 7 days
+  }).sort({ reviewedAt: -1 });
+
+  const approvalStreak = recentApprovals.length;
+  let scoreBonus = 0.5; // Base bonus
+  let rewardType = 'approval_streak';
+  let rewardReason = 'Task được approve';
+
+  // Bonus for streaks
+  if (approvalStreak >= 10) {
+    scoreBonus = 3; // Big bonus for 10+ approvals
+    rewardType = 'approval_streak';
+    rewardReason = `Chuỗi ${approvalStreak} tasks được approve liên tiếp!`;
+  } else if (approvalStreak >= 5) {
+    scoreBonus = 2; // Medium bonus for 5+ approvals
+    rewardType = 'approval_streak';
+    rewardReason = `Chuỗi ${approvalStreak} tasks được approve!`;
+  }
+
+  // Check if user had penalties and reduce them on good performance
+  const activePenalties = await Penalty.find({
+    userId: annotatorId,
+    status: 'active',
+    level: { $in: ['warning', 'light'] }
+  });
+
+  // If user has active penalties and gets 3+ approvals, reduce penalty
+  if (activePenalties.length > 0 && approvalStreak >= 3) {
+    // Resolve oldest warning
+    const oldestWarning = activePenalties
+      .filter(p => p.level === 'warning')
+      .sort((a, b) => a.createdAt - b.createdAt)[0];
+    
+    if (oldestWarning) {
+      oldestWarning.status = 'resolved';
+      oldestWarning.resolvedAt = new Date();
+      oldestWarning.resolvedBy = reviewerId;
+      await oldestWarning.save();
+      
+      // Restore some score
+      scoreBonus += 2;
+      rewardReason += ' - Đã cải thiện, penalty cảnh báo đã được gỡ!';
+    }
+  }
+
+  // Update score
+  userScore.qualityScore = Math.min(100, userScore.qualityScore + scoreBonus);
   userScore.approvedTasks = (userScore.approvedTasks || 0) + 1;
   userScore.completedTasks = (userScore.completedTasks || 0) + 1;
-  userScore.lastUpdated = new Date();
   
+  // Update error rate
+  const allTasks = await Task.find({ annotatorId });
+  if (allTasks.length > 0) {
+    const rejectedCount = allTasks.filter(t => t.status === 'rejected').length;
+    userScore.errorRate = (rejectedCount / allTasks.length) * 100;
+    userScore.rejectedTasks = rejectedCount;
+  }
+
+  // If error rate drops below 5% and had penalties, reduce penalty level
+  if (userScore.errorRate < 5 && userScore.currentPenaltyLevel !== 'none') {
+    if (userScore.currentPenaltyLevel === 'warning') {
+      userScore.currentPenaltyLevel = 'none';
+      rewardReason += ' - Error rate thấp, đã gỡ cảnh báo!';
+    } else if (userScore.currentPenaltyLevel === 'light' && approvalStreak >= 5) {
+      userScore.currentPenaltyLevel = 'warning';
+      rewardReason += ' - Đã cải thiện từ phạt nhẹ xuống cảnh báo!';
+    }
+  }
+
+  // Remove restrictions if score is high enough
+  if (userScore.qualityScore >= 80 && userScore.isRestricted) {
+    userScore.isRestricted = false;
+    userScore.restrictionUntil = null;
+    userScore.weeklyTaskLimit = null;
+    rewardReason += ' - Score cao, đã gỡ hạn chế!';
+  }
+
+  userScore.lastUpdated = new Date();
   await userScore.save();
+
+  // Create reward record if bonus is significant
+  if (scoreBonus >= 2) {
+    const reward = new Reward({
+      userId: annotatorId,
+      role: 'annotator',
+      type: rewardType,
+      reason: rewardReason,
+      scoreBonus,
+      relatedTaskId: taskId,
+      relatedProjectId: projectId,
+      createdBy: reviewerId,
+      metadata: {
+        approvalStreak,
+        previousScore: userScore.qualityScore - scoreBonus
+      }
+    });
+    await reward.save();
+  }
 }
 
 // Helper function to check and apply penalty on rejection
