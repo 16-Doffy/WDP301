@@ -52,6 +52,11 @@ const LayoutTailwind = () => {
         icon: '📝',
         path: '/annotator/tasks',
       });
+      baseItems.push({
+        text: 'Rules',
+        icon: '📜',
+        path: '/annotator/rules',
+      });
     }
 
     if (user.role === 'reviewer' || user.role === 'admin') {
