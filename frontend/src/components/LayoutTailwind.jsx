@@ -13,13 +13,15 @@ const LayoutTailwind = () => {
   const getMenuItems = () => {
     if (!user) return [];
 
-    const baseItems = [
-      {
+    // For annotators we will directly show their task list; other roles keep generic Dashboard
+    const baseItems = [];
+    if (user.role !== 'annotator') {
+      baseItems.push({
         text: 'Dashboard',
         icon: <img src={dashboardIcon} alt="Dashboard" className="w-5 h-5" />,
         path: '/dashboard',
-      },
-    ];
+      });
+    }
 
     if (user.role === 'manager' || user.role === 'admin') {
       baseItems.push({
@@ -40,6 +42,11 @@ const LayoutTailwind = () => {
     }
 
     if (user.role === 'annotator') {
+      baseItems.push({
+        text: 'Dashboard',
+        icon: <img src={dashboardIcon} alt="Dashboard" className="w-5 h-5" />,
+        path: '/annotator',
+      });
       baseItems.push({
         text: 'My Tasks',
         icon: '📝',

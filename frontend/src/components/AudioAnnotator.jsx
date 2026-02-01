@@ -16,7 +16,12 @@ const AudioAnnotator = ({ audioUrl, labelSet = [], initialSegments = [], readOnl
   const waveformRef = useRef(null);
   const wavesurferRef = useRef(null);
   const [segments, setSegments] = useState(initialSegments);
-  const [selectedLabel, setSelectedLabel] = useState(labelSet[0]?.name || '');
+  const [selectedLabel, _setSelectedLabel] = useState(labelSet[0]?.name || '');
+  const selectedLabelRef = useRef(labelSet[0]?.name || '');
+  const setSelectedLabel = (val) => {
+    selectedLabelRef.current = val;
+    _setSelectedLabel(val);
+  };
   const [isReady, setIsReady] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [, forceRender] = useState({}); // để cập nhật tiến độ thời gian
@@ -83,8 +88,8 @@ const AudioAnnotator = ({ audioUrl, labelSet = [], initialSegments = [], readOnl
 
     ws.on('region-created', (region) => {
       if (!region.data.label) {
-        region.update({ color: getLabelColor(selectedLabel), data: { label: selectedLabel } });
-        const newSeg = { id: region.id, start: region.start, end: region.end, label: selectedLabel };
+        region.update({ color: getLabelColor(selectedLabelRef.current), data: { label: selectedLabelRef.current } });
+        const newSeg = { id: region.id, start: region.start, end: region.end, label: selectedLabelRef.current };
         setSegments((prev) => {
           const next = [...prev, newSeg];
           onChange?.(next);

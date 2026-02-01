@@ -15,6 +15,7 @@ import TeamManagement from './pages/Manager/TeamManagement';
 import Datasets from './pages/Manager/Datasets';
 import Penalties from './pages/Manager/Penalties';
 import AnnotatorDashboard from './pages/Annotator/Dashboard';
+import AnnotatorOverview from './pages/Annotator/Overview';
 import AnnotatorTask from './pages/Annotator/Task';
 import ReviewerDashboard from './pages/Reviewer/Dashboard';
 import ReviewerTask from './pages/Reviewer/Task';
@@ -48,7 +49,7 @@ const RoleDashboard = () => {
   }
 
   if (user.role === 'annotator') {
-    return <AnnotatorDashboard />;
+    return <Navigate to="/annotator/tasks" replace />;
   }
 
   if (user.role === 'reviewer') {
@@ -84,6 +85,7 @@ function App() {
               <Route path="manager/team" element={<TeamManagement />} />
               <Route path="manager/datasets" element={<Datasets />} />
               <Route path="manager/penalties" element={<Penalties />} />
+              <Route path="annotator" element={<AnnotatorOverview />} />
               <Route path="annotator/tasks" element={<AnnotatorDashboard />} />
               <Route path="annotator/tasks/:id" element={<AnnotatorTask />} />
               <Route path="reviewer/tasks" element={<ReviewerDashboard />} />
