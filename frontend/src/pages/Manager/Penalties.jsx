@@ -37,6 +37,9 @@ import {
   CheckCircle as CheckCircleIcon,
   Cancel as CancelIcon,
   Visibility as VisibilityIcon,
+  Star as StarIcon,
+  TrendingUp as TrendingUpIcon,
+  Refresh as RefreshIcon,
 } from '@mui/icons-material';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
@@ -61,6 +64,13 @@ const Penalties = () => {
   const [viewPenaltiesDialogOpen, setViewPenaltiesDialogOpen] = useState(false);
   const [userPenalties, setUserPenalties] = useState([]);
   const [selectedUserId, setSelectedUserId] = useState(null);
+  const [rewardDialogOpen, setRewardDialogOpen] = useState(false);
+  const [rewardForm, setRewardForm] = useState({
+    type: 'improvement',
+    reason: '',
+    scoreBonus: 5,
+  });
+  const [checkingImprovement, setCheckingImprovement] = useState(false);
 
   useEffect(() => {
     fetchUsers();
@@ -223,22 +233,40 @@ const Penalties = () => {
             Xem quality scores và tạo penalties cho annotators/reviewers
           </Typography>
         </Box>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => {
-            setSelectedUser(null);
-            setPenaltyForm({
-              level: 'warning',
-              reason: '',
-              errorType: '',
-              action: 'notification',
-            });
-            setCreateDialogOpen(true);
-          }}
-        >
-          Tạo Penalty
-        </Button>
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          <Button
+            variant="outlined"
+            color="success"
+            startIcon={<StarIcon />}
+            onClick={() => {
+              setSelectedUser(null);
+              setRewardForm({
+                type: 'improvement',
+                reason: '',
+                scoreBonus: 5,
+              });
+              setRewardDialogOpen(true);
+            }}
+          >
+            Tạo Reward
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => {
+              setSelectedUser(null);
+              setPenaltyForm({
+                level: 'warning',
+                reason: '',
+                errorType: '',
+                action: 'notification',
+              });
+              setCreateDialogOpen(true);
+            }}
+          >
+            Tạo Penalty
+          </Button>
+        </Box>
       </Box>
 
       {/* Alerts */}
@@ -557,9 +585,39 @@ const Penalties = () => {
                       color={getPenaltyLevelColor(penalty.level)}
                       size="small"
                     />
-                    <Typography variant="caption" color="textSecondary">
-                      {new Date(penalty.createdAt).toLocaleString('vi-VN')}
-                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                      <Typography variant="caption" color="textSecondary">
+                        {new Date(penalty.createdAt).toLocaleString('vi-VN')}
+                      </Typography>
+                      {penalty.status === 'active' && (
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          color="success"
+                          onClick={async () => {
+                            try {
+                              await axios.put(
+                                `${API_URL}/api/penalties/${penalty._id}/resolve`,
+                                {},
+                                {
+                                  headers: {
+                                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                                  }
+                                }
+                              );
+                              setSuccess('Đã resolve penalty và restore 50% điểm!');
+                              await handleViewPenalties(selectedUserId);
+                              await fetchUsers();
+                              setTimeout(() => setSuccess(null), 3000);
+                            } catch (error) {
+                              setError('Lỗi khi resolve penalty: ' + (error.response?.data?.message || error.message));
+                            }
+                          }}
+                        >
+                          Resolve
+                        </Button>
+                      )}
+                    </Box>
                   </Box>
                   <Typography variant="body2" sx={{ mb: 1 }}>
                     <strong>Lý do:</strong> {penalty.reason}
@@ -585,6 +643,126 @@ const Penalties = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setViewPenaltiesDialogOpen(false)}>Đóng</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Create Reward Dialog */}
+      <Dialog open={rewardDialogOpen} onClose={() => setRewardDialogOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle>
+          Tạo Reward {selectedUser && `cho ${selectedUser.fullName || selectedUser.username}`}
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+            {!selectedUser && (
+              <FormControl fullWidth>
+                <InputLabel>Chọn User *</InputLabel>
+                <Select
+                  value={selectedUser?._id || ''}
+                  onChange={(e) => {
+                    const user = users.find(u => u._id === e.target.value);
+                    setSelectedUser(user);
+                  }}
+                  label="Chọn User *"
+                >
+                  {users.map((user) => (
+                    <MenuItem key={user._id} value={user._id}>
+                      {user.fullName || user.username} ({user.role})
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
+
+            <FormControl fullWidth>
+              <InputLabel>Loại thưởng *</InputLabel>
+              <Select
+                value={rewardForm.type}
+                onChange={(e) => setRewardForm({ ...rewardForm, type: e.target.value })}
+                label="Loại thưởng *"
+              >
+                <MenuItem value="approval_streak">Chuỗi approval tốt</MenuItem>
+                <MenuItem value="high_quality">Chất lượng cao</MenuItem>
+                <MenuItem value="fast_completion">Hoàn thành nhanh</MenuItem>
+                <MenuItem value="no_errors">Không có lỗi</MenuItem>
+                <MenuItem value="improvement">Cải thiện tốt</MenuItem>
+                <MenuItem value="bonus_task">Bonus task</MenuItem>
+              </Select>
+            </FormControl>
+
+            <TextField
+              fullWidth
+              type="number"
+              label="Điểm thưởng *"
+              value={rewardForm.scoreBonus}
+              onChange={(e) => setRewardForm({ ...rewardForm, scoreBonus: parseInt(e.target.value) || 0 })}
+              inputProps={{ min: 1, max: 20 }}
+              helperText="Điểm sẽ được cộng vào quality score (1-20 điểm)"
+            />
+
+            <TextField
+              fullWidth
+              multiline
+              rows={4}
+              label="Lý do thưởng *"
+              value={rewardForm.reason}
+              onChange={(e) => setRewardForm({ ...rewardForm, reason: e.target.value })}
+              placeholder="Mô tả chi tiết lý do thưởng..."
+              required
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRewardDialogOpen(false)} disabled={submitting}>
+            Hủy
+          </Button>
+          <Button
+            onClick={async () => {
+              if (!selectedUser) {
+                setError('Vui lòng chọn user');
+                return;
+              }
+              if (!rewardForm.reason.trim()) {
+                setError('Vui lòng nhập lý do thưởng');
+                return;
+              }
+
+              setSubmitting(true);
+              setError(null);
+              try {
+                await axios.post(`${API_URL}/api/penalties/reward`, {
+                  userId: selectedUser._id,
+                  type: rewardForm.type,
+                  reason: rewardForm.reason.trim(),
+                  scoreBonus: rewardForm.scoreBonus || 5,
+                }, {
+                  headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                  }
+                });
+
+                setSuccess(`Đã tạo reward +${rewardForm.scoreBonus} điểm cho ${selectedUser.fullName || selectedUser.username}`);
+                setRewardDialogOpen(false);
+                setRewardForm({
+                  type: 'improvement',
+                  reason: '',
+                  scoreBonus: 5,
+                });
+                setSelectedUser(null);
+                
+                await fetchUsers();
+                setTimeout(() => setSuccess(null), 3000);
+              } catch (error) {
+                setError('Lỗi khi tạo reward: ' + (error.response?.data?.message || error.message));
+              } finally {
+                setSubmitting(false);
+              }
+            }}
+            variant="contained"
+            color="success"
+            disabled={submitting || !rewardForm.reason.trim() || !selectedUser}
+          >
+            {submitting ? <CircularProgress size={20} /> : 'Tạo Reward'}
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>
