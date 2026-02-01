@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
 import ImageAnnotator from '../../components/ImageAnnotator';
+import AudioAnnotator from '../../components/AudioAnnotator';
 import {
   Dialog,
   DialogTitle,
@@ -295,6 +296,11 @@ const AnnotatorTask = () => {
           spans: textSpans.map(({ id, ...rest }) => rest), // Remove id before saving
           note: annotationNote?.trim() || '',
         };
+      } else if (kind === 'audio') {
+        labelsPayload = {
+          segments: labels.segments || [],
+          note: annotationNote?.trim() || '',
+        };
       } else {
         labelsPayload = {
           note: annotationNote?.trim() || '',
@@ -394,10 +400,25 @@ const AnnotatorTask = () => {
   }, [task, batchTasks, navigate]);
 
   // Open submit confirmation dialog
-  const handleSubmit = useCallback(() => {
-    if (task?.status === 'submitted' || task?.status === 'approved') return;
+  const handleSubmit = useCallback(async () => {
+    if (!task) return;
+    if (task.status === 'submitted' || task.status === 'approved') return;
+
+    // Nếu task chưa completed (đặc biệt với audio/text) thì tự completed trước khi mở hộp thoại submit
+    if (task.status !== 'completed') {
+      try {
+        await handleSave(); // lưu nhãn hiện tại
+        await axios.post(`${API_URL}/api/tasks/${task._id}/complete`);
+        setTask((prev) => (prev ? { ...prev, status: 'completed' } : prev));
+        // cập nhật mảng batchTasks để điều kiện allCompleted chính xác
+        setBatchTasks((list) => list.map((t) => (t._id === task._id ? { ...t, status: 'completed' } : t)));
+      } catch (err) {
+        console.error('Error completing task before submit:', err);
+      }
+    }
+
     setShowSubmitConfirm(true);
-  }, [task]);
+  }, [task, handleSave]);
 
   // Confirm submit – actually call batch submit then close dialog
   const handleConfirmSubmit = useCallback(async () => {
@@ -914,7 +935,7 @@ const AnnotatorTask = () => {
                   </div>
                 </div>
               ) : getTaskKind(task) === 'audio' ? (
-                <div className="bg-white rounded-lg shadow-lg p-4 max-w-3xl w-full space-y-4">
+                <div className="bg-white rounded-lg shadow-lg p-4 max-w-4xl w-full space-y-4">
                   <div className="flex justify-between items-center">
                     <div>
                       <p className="text-sm text-gray-500">Audio File</p>
@@ -924,10 +945,14 @@ const AnnotatorTask = () => {
                     </div>
                     <span className="text-xs text-gray-400">{task?.dataItem?.mimeType}</span>
                   </div>
-                  <audio
-                    controls
-                    className="w-full"
-                    src={`${API_URL}/${task?.dataItem?.path}`}
+                  <AudioAnnotator
+                    audioUrl={`${API_URL}/${task?.dataItem?.path}`}
+                    labelSet={task?.projectId?.labelSet || []}
+                    initialSegments={labels?.segments || []}
+                    readOnly={task?.status === 'submitted' || task?.status === 'approved'}
+                    onChange={(segs) => {
+                      setLabels((prev) => ({ ...prev, segments: segs }));
+                    }}
                   />
                   {task?.projectId?.labelSet?.length > 0 && (
                     <div className="space-y-2">
