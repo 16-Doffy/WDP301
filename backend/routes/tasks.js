@@ -420,6 +420,127 @@ router.put('/:id/label', auth, authorize('annotator'), async (req, res) => {
   }
 });
 
+// Mark a single task as completed (Annotator)
+router.post('/:id/complete', auth, authorize('annotator'), async (req, res) => {
+  try {
+    const task = await Task.findById(req.params.id)
+      .populate('projectId', 'deadline');
+
+    if (!task) {
+      return res.status(404).json({ message: 'Task not found' });
+    }
+
+    const annotatorId = normalizeId(task.annotatorId);
+    const userId = normalizeId(req.user._id);
+
+    if (annotatorId !== userId) {
+      return res.status(403).json({ message: 'Not authorized to complete this task' });
+    }
+
+    if (task.status === 'submitted' || task.status === 'approved') {
+      return res.status(400).json({ message: 'Cannot complete a submitted/approved task' });
+    }
+
+    // If rejected, allow completing again but enforce deadline
+    if (task.projectId?.deadline) {
+      const deadline = new Date(task.projectId.deadline);
+      const now = new Date();
+      if (now > deadline) {
+        return res.status(400).json({
+          message: `Không thể hoàn thành task. Deadline của project đã hết hạn (${deadline.toLocaleString('vi-VN')}). Vui lòng liên hệ Manager.`
+        });
+      }
+    }
+
+    if (!task.labels || Object.keys(task.labels).length === 0) {
+      return res.status(400).json({ message: 'Cannot complete task without labels. Please add labels first.' });
+    }
+
+    task.status = 'completed';
+    task.updatedAt = new Date();
+    await task.save();
+
+    res.json(task);
+  } catch (error) {
+    console.error('Error completing task:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Submit batch (all tasks in a dataset) for review (Annotator)
+router.post('/submit-batch', auth, authorize('annotator'), async (req, res) => {
+  try {
+    const { datasetId } = req.body;
+    if (!datasetId) {
+      return res.status(400).json({ message: 'datasetId is required' });
+    }
+
+    const tasks = await Task.find({ datasetId, annotatorId: req.user._id })
+      .populate('projectId', 'questions deadline');
+
+    if (!tasks || tasks.length === 0) {
+      return res.status(404).json({ message: 'No tasks found for this batch' });
+    }
+
+    // Enforce deadline (use project's deadline; all tasks share same project)
+    const projectDeadline = tasks[0]?.projectId?.deadline;
+    if (projectDeadline) {
+      const deadline = new Date(projectDeadline);
+      const now = new Date();
+      if (now > deadline) {
+        return res.status(400).json({
+          message: `Không thể nộp batch. Deadline của project đã hết hạn (${deadline.toLocaleString('vi-VN')}). Vui lòng liên hệ Manager.`
+        });
+      }
+    }
+
+    // Validate all tasks are completed and have labels
+    const notCompleted = tasks.filter(t => t.status !== 'completed');
+    if (notCompleted.length > 0) {
+      return res.status(400).json({
+        message: 'Please complete all images before submitting the batch.',
+        remaining: notCompleted.map(t => t._id.toString()),
+      });
+    }
+
+    const missingLabels = tasks.filter(t => !t.labels || Object.keys(t.labels).length === 0);
+    if (missingLabels.length > 0) {
+      return res.status(400).json({
+        message: 'Some tasks are missing labels. Please label all images before submitting.',
+        missing: missingLabels.map(t => t._id.toString()),
+      });
+    }
+
+    // Set all to submitted
+    const now = new Date();
+    for (const task of tasks) {
+      // Ensure reviewer assignment exists
+      if (!task.reviewers || task.reviewers.length === 0) {
+        return res.status(400).json({ message: 'Task must have at least one reviewer assigned before submission' });
+      }
+
+      // Reset reviewer states to pending
+      task.reviewers = task.reviewers.map(r => ({
+        reviewerId: r.reviewerId?._id || r.reviewerId,
+        status: 'pending',
+        comment: undefined,
+        reviewedAt: undefined,
+      }));
+
+      task.reviewNotes = [];
+      task.status = 'submitted';
+      task.submittedAt = now;
+      task.updatedAt = now;
+      await task.save();
+    }
+
+    res.json({ message: `Submitted batch successfully`, count: tasks.length });
+  } catch (error) {
+    console.error('Error submitting batch:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
 // Submit task for review (Annotator)
 router.post('/:id/submit', auth, authorize('annotator'), async (req, res) => {
   try {

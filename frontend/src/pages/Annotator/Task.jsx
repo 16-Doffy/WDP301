@@ -315,114 +315,95 @@ const AnnotatorTask = () => {
     }
   }, [id, labels, annotationNote, selectedLabel, textSpans, task]);
 
-  const handleSubmit = useCallback(() => {
-    const kind = getTaskKind(task);
-    if (kind === 'image') {
-      if (Object.keys(labels).length === 0 || (labels.objects && labels.objects.length === 0)) {
-        alert('Bạn chưa khoanh vùng đối tượng nào. Vui lòng thêm annotations trước khi nộp bài.');
-        return;
-      }
-    } else if (kind === 'text') {
-      if (!textSpans || textSpans.length === 0) {
-        alert('Vui lòng bôi đen và gán nhãn cho ít nhất một phần văn bản trước khi nộp.');
-        return;
-      }
-    } else {
-      if (!selectedLabel) {
-        alert('Vui lòng chọn nhãn cho đoạn audio trước khi nộp.');
-        return;
-      }
-      if (!annotationNote.trim()) {
-        alert('Vui lòng nhập ghi chú/nhãn trước khi nộp.');
-        return;
-      }
-    }
+  const handleCompleteImage = useCallback(async () => {
+    if (!task) return;
 
-    if (!task?.reviewers || task.reviewers.length === 0) {
-      alert('Task chưa được gán Reviewer. Liên hệ Manager để gán Reviewer trước khi nộp.');
+    // Basic validation before completing
+    if (getTaskKind(task) === 'image' && (!labels.objects || labels.objects.length === 0)) {
+      alert('Vui lòng thêm ít nhất một nhãn trước khi hoàn thành.');
       return;
     }
-
-    if (task?.projectId?.questions && Array.isArray(task.projectId.questions) && task.projectId.questions.length > 0) {
-      if (labels.objects && Array.isArray(labels.objects)) {
-        const missingAnswers = [];
-        labels.objects.forEach((obj, idx) => {
-          if (!obj.answer || Object.keys(obj.answer).length === 0) {
-            missingAnswers.push(`Đối tượng ${idx + 1} (${obj.label || 'chưa có label'})`);
-          }
-        });
-        
-        if (missingAnswers.length > 0) {
-          alert(`Vui lòng trả lời câu hỏi cho các đối tượng sau:\n${missingAnswers.join('\n')}`);
-          return;
-        }
-      }
-    }
-
-    setShowSubmitConfirm(true);
-  }, [labels, task, textSpans, selectedLabel, annotationNote]);
-
-  const handleConfirmSubmit = useCallback(async () => {
-    setShowSubmitConfirm(false);
-    if (task?.status === 'submitted' || task?.status === 'approved') {
-      alert('Task đã được nộp. Vui lòng chờ reviewer đánh giá.');
-      return;
-    }
-
-    // Check deadline if project has one
-    if (task?.projectId?.deadline) {
-      const deadline = new Date(task.projectId.deadline);
-      const now = new Date();
-      if (now > deadline) {
-        alert(`Không thể nộp task. Deadline của project đã hết hạn (${deadline.toLocaleString('vi-VN')}). Vui lòng liên hệ Manager.`);
-        return;
-      }
-    }
-
+    
     setSaving(true);
     try {
-      const kind = getTaskKind(task);
-      let labelsPayload = labels;
+      // 1. Save the labels first
+      await handleSave();
 
-      if (kind === 'image') {
-        labelsPayload = labels;
-      } else if (kind === 'text') {
-        labelsPayload = {
-          spans: textSpans.map(({ id, ...rest }) => rest), // Remove id before saving
-          note: annotationNote?.trim() || '',
-        };
-      } else {
-        labelsPayload = {
-          note: annotationNote?.trim() || '',
-          label: selectedLabel || '',
-        };
-      }
+      // 2. Mark the task as completed
+      await axios.post(`${API_URL}/api/tasks/${id}/complete`);
 
-      await axios.put(`${API_URL}/api/tasks/${id}/label`, {
-        labels: labelsPayload,
-        status: task?.status === 'rejected' ? 'in_progress' : 'in_progress',
-      });
-      await axios.post(`${API_URL}/api/tasks/${id}/submit`);
-      const message = task?.status === 'rejected' 
-        ? 'Nộp lại bài thành công! Reviewer sẽ kiểm tra và phản hồi.'
-        : 'Nộp bài thành công! Reviewer sẽ kiểm tra và phản hồi.';
-      alert(message);
-      setTask((prev) => (prev ? { ...prev, status: 'submitted' } : prev));
-      
-      // Navigate to next task in batch or back to dashboard
-      if (currentTaskIndex < batchTasks.length - 1) {
-        navigate(`/annotator/tasks/${batchTasks[currentTaskIndex + 1]._id}`);
+      // 3. Update the task in the local batch state
+      const updatedBatchTasks = batchTasks.map(t => 
+        t._id === id ? { ...t, status: 'completed' } : t
+      );
+      setBatchTasks(updatedBatchTasks);
+      setTask(prev => prev ? { ...prev, status: 'completed' } : null);
+
+      // 4. Find the next uncompleted task and navigate to it
+      const nextTaskIndex = updatedBatchTasks.findIndex((t, index) => 
+        index > currentTaskIndex && t.status !== 'completed' && t.status !== 'submitted' && t.status !== 'approved'
+      );
+
+      if (nextTaskIndex !== -1) {
+        navigate(`/annotator/tasks/${updatedBatchTasks[nextTaskIndex]._id}`);
       } else {
-        navigate('/annotator/tasks');
+        // If no next task, find the first uncompleted task from the beginning
+        const firstUncompletedIndex = updatedBatchTasks.findIndex(t => 
+          t.status !== 'completed' && t.status !== 'submitted' && t.status !== 'approved'
+        );
+        if (firstUncompletedIndex !== -1) {
+          navigate(`/annotator/tasks/${updatedBatchTasks[firstUncompletedIndex]._id}`);
+        } else {
+          // All tasks are completed, stay on the current one but show a message
+          alert('Tất cả ảnh trong batch này đã được hoàn thành! Bạn có thể nộp bài ngay bây giờ.');
+        }
       }
     } catch (error) {
       const errorMessage = error.response?.data?.message || error.message;
-      setMessage('Lỗi khi nộp bài: ' + errorMessage);
-      alert('Lỗi khi nộp bài: ' + errorMessage);
+      alert('Lỗi khi hoàn thành ảnh: ' + errorMessage);
     } finally {
       setSaving(false);
     }
-  }, [id, labels, currentTaskIndex, batchTasks, navigate, task, textSpans, annotationNote, selectedLabel]);
+  }, [task, labels, handleSave, id, batchTasks, currentTaskIndex, navigate]);
+
+  // Handle submitting entire batch after all images completed
+  const handleBatchSubmit = useCallback(async () => {
+    if (!task || !task.datasetId) return;
+
+    const allCompleted = batchTasks.every(t => t.status === 'completed' || t.status === 'submitted' || t.status === 'approved');
+    if (!allCompleted) {
+      alert('Vui lòng hoàn thành tất cả các ảnh trong batch trước khi nộp bài.');
+      return;
+    }
+
+    if (window.confirm('Bạn có chắc muốn nộp toàn bộ batch này cho reviewer không?')) {
+      setSaving(true);
+      try {
+        await axios.post(`${API_URL}/api/tasks/submit-batch`, { 
+          datasetId: task.datasetId._id || task.datasetId 
+        });
+        alert('Nộp bài thành công! Đang quay về trang dashboard.');
+        navigate('/annotator/tasks');
+      } catch (error) {
+        const errorMessage = error.response?.data?.message || error.message;
+        alert('Lỗi khi nộp bài: ' + errorMessage);
+      } finally {
+        setSaving(false);
+      }
+    }
+  }, [task, batchTasks, navigate]);
+
+  // Open submit confirmation dialog
+  const handleSubmit = useCallback(() => {
+    if (task?.status === 'submitted' || task?.status === 'approved') return;
+    setShowSubmitConfirm(true);
+  }, [task]);
+
+  // Confirm submit – actually call batch submit then close dialog
+  const handleConfirmSubmit = useCallback(async () => {
+    await handleBatchSubmit();
+    setShowSubmitConfirm(false);
+  }, [handleBatchSubmit]);
 
   const navigateToTask = async (taskId, saveCurrent = true) => {
     // Auto-save current task before navigating
@@ -517,6 +498,9 @@ const AnnotatorTask = () => {
       </div>
     );
   }
+
+    // Determine if all tasks are completed for enabling Submit Batch
+  const allCompletedInBatch = batchTasks.length > 0 && batchTasks.every(t => t.status === 'completed' || t.status === 'submitted' || t.status === 'approved');
 
   const batchProgress = batchTasks.length > 0 
     ? ((currentTaskIndex + 1) / batchTasks.length) * 100 
@@ -632,6 +616,18 @@ const AnnotatorTask = () => {
                 >
                   Next <span>→</span>
                 </button>
+                <div className="flex items-center gap-4">
+  …
+  <Button
+    variant="contained"
+    color="primary"
+    disabled={!allCompletedInBatch || saving}
+    onClick={handleSubmit}          // mở dialog confirm
+  >
+    Submit
+  </Button>
+</div>
+                
               </div>
               
               {/* Task Thumbnail Grid */}
@@ -673,6 +669,11 @@ const AnnotatorTask = () => {
                               {idx + 1}
                             </div>
                           )}
+                          {(batchTask.status === 'completed' || batchTask.status === 'submitted' || batchTask.status === 'approved') && (
+  <span className="absolute bottom-0 right-0 bg-green-500 text-white text-xs rounded-full p-0.5">
+    ✓
+  </span>
+)}
                         </button>
                       );
                     })}
@@ -692,7 +693,7 @@ const AnnotatorTask = () => {
                   questions={task?.projectId?.questions || []}
                   onAnnotationsChange={handleAnnotationsChange}
                   initialAnnotations={annotations}
-                  onSubmit={handleSubmit}
+                  onSubmit={handleCompleteImage}
                   readOnly={task?.status === 'submitted' || task?.status === 'approved'}
                 />
               </div>

@@ -60,6 +60,13 @@ const AnnotatorDashboard = () => {
           batch.status = 'completed';
         } else if (batch.inProgressTasks > 0 || batch.completedTasks > 0) {
           batch.status = 'in_progress';
+        } else {
+          batch.status = 'new';
+        }
+
+        // Check overdue by deadline
+        if (batch.deadline && new Date(batch.deadline) < new Date() && batch.status !== 'completed') {
+          batch.status = 'overdue';
         }
         
         // Get earliest assigned date
@@ -92,6 +99,7 @@ const AnnotatorDashboard = () => {
       new: { text: 'NEW', color: 'bg-green-100 text-green-800' },
       in_progress: { text: 'IN PROGRESS', color: 'bg-blue-100 text-blue-800' },
       completed: { text: 'COMPLETED', color: 'bg-gray-100 text-gray-800' },
+      overdue: { text: 'OVERDUE', color: 'bg-red-100 text-red-800' },
       urgent: { text: 'URGENT', color: 'bg-orange-100 text-orange-800' },
     };
     return badges[status] || badges.new;
@@ -102,18 +110,44 @@ const AnnotatorDashboard = () => {
     return Math.round((batch.completedTasks / batch.totalTasks) * 100);
   };
 
-  const getTimeRemaining = () => {
-    return null;
-  };
+  // Filter & Sort controls
+  const [filterStatus, setFilterStatus] = useState('all'); // all | active | completed | overdue
+  const [sortDir, setSortDir] = useState('asc'); // asc => Active>Completed>Overdue, desc => reverse
 
-  // Separate batches into active and completed
-  const activeBatches = batches.filter(batch => {
+  // Apply search, filter and sort
+  const statusOrder = { in_progress: 0, new: 0, completed: 1, overdue: 2 };
+
+  const filteredSorted = batches
+    .filter(batch => {
+      const matchesSearch = batch.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        batch.project.toLowerCase().includes(searchTerm.toLowerCase());
+
+      const filterMatch = filterStatus === 'all' ||
+        (filterStatus === 'active' && batch.status !== 'completed' && batch.status !== 'overdue') ||
+        (filterStatus === 'completed' && batch.status === 'completed') ||
+        (filterStatus === 'overdue' && batch.status === 'overdue');
+
+      return matchesSearch && filterMatch;
+    })
+    .sort((a, b) => {
+      const diff = statusOrder[a.status] - statusOrder[b.status];
+      return sortDir === 'asc' ? diff : -diff;
+    });
+
+  // Separate batches into overdue, active and completed
+  const overdueBatches = filteredSorted.filter(batch => {
     const matchesSearch = batch.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       batch.project.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesSearch && batch.status !== 'completed';
+    return matchesSearch && batch.status === 'overdue';
   });
 
-  const completedBatches = batches.filter(batch => {
+  const activeBatches = filteredSorted.filter(batch => {
+    const matchesSearch = batch.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      batch.project.toLowerCase().includes(searchTerm.toLowerCase());
+    return matchesSearch && batch.status !== 'completed' && batch.status !== 'overdue';
+  });
+
+  const completedBatches = filteredSorted.filter(batch => {
     const matchesSearch = batch.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       batch.project.toLowerCase().includes(searchTerm.toLowerCase());
     return matchesSearch && batch.status === 'completed';
@@ -123,7 +157,6 @@ const AnnotatorDashboard = () => {
   const renderBatchCard = (batch) => {
     const progress = getProgressPercentage(batch);
     const statusBadge = getStatusBadge(batch.status);
-    const timeRemaining = getTimeRemaining(batch);
     const firstTask = batch.tasks[0];
 
     return (
@@ -273,7 +306,7 @@ const AnnotatorDashboard = () => {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto bg-gray-50 p-6">
+    <div className="flex-1 overflow-y-auto bg-gray-50 p-6 flex flex-col">
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-gray-900 mb-2">My Tasks</h1>
@@ -292,17 +325,51 @@ const AnnotatorDashboard = () => {
           />
           <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">🔍</span>
         </div>
-        <button className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2">
-          <span>Filter</span>
-          <span>🔽</span>
-        </button>
-        <button className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2">
+
+        <select
+          value={filterStatus}
+          onChange={(e) => setFilterStatus(e.target.value)}
+          className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="all">All</option>
+          <option value="active">Active Projects</option>
+          <option value="completed">Completed Projects</option>
+          <option value="overdue">Overdue Tasks</option>
+        </select>
+
+        <button
+          onClick={() => setSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
+          className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2"
+          title="Sort order"
+        >
           <span>Sort</span>
-          <span>⇅</span>
+          <span>{sortDir === 'asc' ? '↑' : '↓'}</span>
         </button>
       </div>
 
-      {/* Active Batches Section */}
+      {/* --OVERDUE-SECTION-REMOVED-- */}
+      {false && overdueBatches.length > 0 && (
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-2xl font-bold text-red-800">Overdue Tasks</h2>
+              <p className="text-sm text-red-600 mt-1">Các project đã quá hạn deadline cần ưu tiên</p>
+            </div>
+            <span className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm font-medium">
+              {overdueBatches.length} Overdue
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {overdueBatches.map((batch) => {
+              return renderBatchCard(batch);
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* --SECTIONS-START-- */}
+      {(filterStatus==='all' || filterStatus==='active') &&
       <div className="mb-8">
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -350,9 +417,9 @@ const AnnotatorDashboard = () => {
           </div>
         )}
       </div>
+      }
 
-      {/* Completed Batches Section */}
-      {completedBatches.length > 0 && (
+      {(filterStatus === 'all' || filterStatus === 'completed') && completedBatches.length > 0 && (
         <div className="mb-8">
           <div className="flex items-center justify-between mb-4">
             <div>
@@ -366,6 +433,27 @@ const AnnotatorDashboard = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {completedBatches.map((batch) => {
+              return renderBatchCard(batch);
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* --OVERDUE-SECTION-NEW-- */}
+      {overdueBatches.length > 0 && (
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-2xl font-bold text-red-800">Overdue Tasks</h2>
+              <p className="text-sm text-red-600 mt-1">Các project đã quá hạn deadline cần ưu tiên</p>
+            </div>
+            <span className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm font-medium">
+              {overdueBatches.length} Overdue
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {overdueBatches.map((batch) => {
               return renderBatchCard(batch);
             })}
           </div>
