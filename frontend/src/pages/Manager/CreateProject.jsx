@@ -608,18 +608,30 @@ const CreateProject = () => {
                       </Typography>
                     </MenuItem>
                   ) : (
-                    datasets.map((dataset) => (
-                      <MenuItem key={dataset._id} value={dataset._id}>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
-                          <span>{dataset.name}</span>
-                          <Chip 
-                            label={`${dataset.totalItems || 0} files`} 
-                            size="small" 
-                            sx={{ ml: 1 }}
-                          />
-                        </Box>
-                      </MenuItem>
-                    ))
+                    datasets.map((dataset) => {
+                      const datasetType = dataset.type || (dataset.files?.[0]?.mimeType?.startsWith('audio/') ? 'audio' : dataset.files?.[0]?.mimeType?.startsWith('image/') ? 'image' : 'text');
+                      return (
+                        <MenuItem key={dataset._id} value={dataset._id}>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <span>{dataset.name}</span>
+                              <Chip 
+                                label={datasetType.toUpperCase()} 
+                                size="small" 
+                                color={datasetType === 'image' ? 'primary' : datasetType === 'audio' ? 'secondary' : 'default'}
+                                sx={{ fontSize: '0.7rem', height: 20 }}
+                              />
+                            </Box>
+                            <Chip 
+                              label={`${dataset.totalItems || 0} files`} 
+                              size="small" 
+                              variant="outlined"
+                              sx={{ ml: 1 }}
+                            />
+                          </Box>
+                        </MenuItem>
+                      );
+                    })
                   )}
                 </Select>
               </FormControl>

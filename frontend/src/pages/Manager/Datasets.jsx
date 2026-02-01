@@ -79,7 +79,33 @@ const Datasets = () => {
 
   const handleFileUpload = (e) => {
     const files = Array.from(e.target.files || []);
+    
+    // Validate file types
+    const validExtensions = formData.type === 'audio' 
+      ? ['.mp3', '.wav', '.m4a', '.ogg', '.mp4', '.m4v']
+      : formData.type === 'text'
+      ? ['.txt', '.csv', '.json', '.xml']
+      : ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp'];
+    
+    const invalidFiles = files.filter(file => {
+      const fileName = file.name.toLowerCase();
+      return !validExtensions.some(ext => fileName.endsWith(ext));
+    });
+    
+    if (invalidFiles.length > 0) {
+      alert(`Các file sau không hợp lệ cho dataset type "${formData.type}":\n${invalidFiles.map(f => f.name).join('\n')}`);
+      return;
+    }
+    
+    // Validate file size (50MB)
+    const oversizedFiles = files.filter(file => file.size > 50 * 1024 * 1024);
+    if (oversizedFiles.length > 0) {
+      alert(`Các file sau vượt quá 50MB:\n${oversizedFiles.map(f => `${f.name} (${(f.size / 1024 / 1024).toFixed(2)}MB)`).join('\n')}`);
+      return;
+    }
+    
     setUploadedFiles([...uploadedFiles, ...files]);
+    setError(null);
   };
 
   const handleRemoveFile = (index) => {
@@ -170,7 +196,7 @@ const Datasets = () => {
   };
 
   const getAcceptForType = (type) => {
-    if (type === 'audio') return 'audio/*,.mp3,.wav,.m4a,.ogg';
+    if (type === 'audio') return 'audio/*,.mp3,.wav,.m4a,.ogg,.mp4,.m4v';
     if (type === 'text') return '.txt,.csv,.json,.xml,text/plain,text/csv,application/json,application/xml';
     return 'image/*';
   };
@@ -510,6 +536,13 @@ const Datasets = () => {
                 </Typography>
                 <Typography variant="body2" color="textSecondary">
                   Maximum file size 50MB per file
+                </Typography>
+                <Typography variant="caption" color="textSecondary" sx={{ mt: 1, display: 'block' }}>
+                  {formData.type === 'audio' 
+                    ? 'Accepted: MP3, WAV, M4A, OGG, MP4, M4V'
+                    : formData.type === 'text'
+                    ? 'Accepted: TXT, CSV, JSON, XML'
+                    : 'Accepted: JPG, PNG, GIF, BMP, WEBP'}
                 </Typography>
                 <input
                   id="file-upload-dataset"

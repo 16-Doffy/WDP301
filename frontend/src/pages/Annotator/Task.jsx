@@ -262,14 +262,25 @@ const AnnotatorTask = () => {
 
   const handleAnnotationsChange = useCallback((newAnnotations) => {
     setAnnotations(newAnnotations);
-    const labelsObj = {
-      objects: newAnnotations.map(ann => ({
-        label: ann.label,
-        bbox: ann.bbox,
-        confidence: ann.confidence,
-        answer: ann.answer || null,
-      })),
-    };
+    const kind = getTaskKind(task);
+    
+    let labelsObj = {};
+    if (kind === 'image') {
+      labelsObj = {
+        objects: newAnnotations.map(ann => ({
+          label: ann.label,
+          bbox: ann.bbox,
+          confidence: ann.confidence,
+          answer: ann.answer || null,
+        })),
+      };
+    } else if (kind === 'text') {
+      labelsObj = {
+        spans: textSpans.map(({ id, ...rest }) => rest),
+        note: annotationNote?.trim() || '',
+      };
+    }
+    
     setLabels(labelsObj);
     
     // Update progress
@@ -280,7 +291,7 @@ const AnnotatorTask = () => {
     } else {
       setProgress(newAnnotations.length > 0 ? 50 : 0);
     }
-  }, [task]);
+  }, [task, annotationNote, textSpans]);
 
   const handleSave = useCallback(async () => {
     setSaving(true);
@@ -293,6 +304,18 @@ const AnnotatorTask = () => {
       } else if (kind === 'text') {
         labelsPayload = {
           spans: textSpans.map(({ id, ...rest }) => rest), // Remove id before saving
+          note: annotationNote?.trim() || '',
+        };
+      } else if (kind === 'audio') {
+        labelsPayload = {
+          segments: annotations.map(ann => ({
+            id: ann.id,
+            label: ann.label,
+            startTime: ann.startTime,
+            endTime: ann.endTime,
+            note: ann.note || '',
+            answer: ann.answer || null,
+          })),
           note: annotationNote?.trim() || '',
         };
       } else {
@@ -344,7 +367,7 @@ const AnnotatorTask = () => {
     }
 
     if (task?.projectId?.questions && Array.isArray(task.projectId.questions) && task.projectId.questions.length > 0) {
-      if (labels.objects && Array.isArray(labels.objects)) {
+      if (kind === 'image' && labels.objects && Array.isArray(labels.objects)) {
         const missingAnswers = [];
         labels.objects.forEach((obj, idx) => {
           if (!obj.answer || Object.keys(obj.answer).length === 0) {
@@ -422,7 +445,7 @@ const AnnotatorTask = () => {
     } finally {
       setSaving(false);
     }
-  }, [id, labels, currentTaskIndex, batchTasks, navigate, task, textSpans, annotationNote, selectedLabel]);
+  }, [id, labels, currentTaskIndex, batchTasks, navigate, task, textSpans, annotationNote, selectedLabel, annotations]);
 
   const navigateToTask = async (taskId, saveCurrent = true) => {
     // Auto-save current task before navigating
