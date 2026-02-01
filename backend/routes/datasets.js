@@ -22,6 +22,8 @@ const inferFileKind = (mimeType, originalName = '') => {
   if (mt === 'text/csv' || name.endsWith('.csv')) return 'text';
   // common audio extensions when mimeType is unreliable
   if (name.endsWith('.mp3') || name.endsWith('.wav') || name.endsWith('.m4a') || name.endsWith('.ogg')) return 'audio';
+  // MP4 files can contain audio (video/mp4 mimeType but may be audio-only)
+  if (name.endsWith('.mp4') || name.endsWith('.m4v') || mt === 'video/mp4') return 'audio';
   return 'other';
 };
 

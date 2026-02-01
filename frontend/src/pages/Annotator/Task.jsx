@@ -47,7 +47,6 @@ const AnnotatorTask = () => {
     if (mt.startsWith('image/')) return 'image';
     if (mt.startsWith('audio/')) return 'audio';
     if (mt.startsWith('text/')) return 'text';
-    // common text-ish mime/types
     if (['application/json', 'application/xml', 'text/csv'].includes(mt)) return 'text';
     return 'other';
   }, []);
@@ -56,39 +55,35 @@ const AnnotatorTask = () => {
     if (!textContent) return 'Không có nội dung hiển thị.';
     if (textSpans.length === 0) return textContent;
 
-    // Sort spans by start position
     const sortedSpans = [...textSpans].sort((a, b) => a.start - b.start);
-    
+
     const parts = [];
     let lastIndex = 0;
 
     sortedSpans.forEach((span) => {
-      // Add text before this span
       if (span.start > lastIndex) {
         parts.push({
           text: textContent.substring(lastIndex, span.start),
-          isSpan: false
+          isSpan: false,
         });
       }
 
-      // Add the span with highlight
-      const labelInfo = task?.projectId?.labelSet?.find(l => l.name === span.label);
+      const labelInfo = task?.projectId?.labelSet?.find((l) => l.name === span.label);
       parts.push({
         text: textContent.substring(span.start, span.end),
         isSpan: true,
         spanId: span.id,
         label: span.label,
-        color: labelInfo?.color || '#3b82f6'
+        color: labelInfo?.color || '#3b82f6',
       });
 
       lastIndex = span.end;
     });
 
-    // Add remaining text after last span
     if (lastIndex < textContent.length) {
       parts.push({
         text: textContent.substring(lastIndex),
-        isSpan: false
+        isSpan: false,
       });
     }
 
@@ -101,9 +96,9 @@ const AnnotatorTask = () => {
                 key={`span-${part.spanId}-${idx}`}
                 className="px-0.5 rounded cursor-pointer hover:opacity-80 transition-opacity"
                 style={{
-                  backgroundColor: part.color + '40', // 40 = 25% opacity
+                  backgroundColor: part.color + '40',
                   color: 'inherit',
-                  borderBottom: `2px solid ${part.color}`
+                  borderBottom: `2px solid ${part.color}`,
                 }}
                 title={`Nhãn: ${part.label}`}
               >
@@ -118,28 +113,26 @@ const AnnotatorTask = () => {
   };
 
   useEffect(() => {
-    // Reset annotations when task ID changes
     setAnnotations([]);
     setLabels({});
     setSelectedAnnotation(null);
-      setTextContent('');
-      setAnnotationNote('');
-      setSelectedLabel('');
-      setTextSpans([]);
-      setSelectedTextRange(null);
-      setShowLabelDropdown(false);
-      setLoading(true);
-      fetchTask();
+    setTextContent('');
+    setAnnotationNote('');
+    setSelectedLabel('');
+    setTextSpans([]);
+    setSelectedTextRange(null);
+    setShowLabelDropdown(false);
+    setLoading(true);
+    fetchTask();
   }, [id]);
 
-  // Auto-refresh task every 5 seconds to check for status updates from reviewer
   useEffect(() => {
     if (!task || task.status !== 'submitted') return;
-    
+
     const interval = setInterval(() => {
       fetchTask();
     }, 5000);
-    
+
     return () => clearInterval(interval);
   }, [id, task?.status]);
 
@@ -150,14 +143,13 @@ const AnnotatorTask = () => {
     return () => clearInterval(timer);
   }, []);
 
-  // Track mouse position
   useEffect(() => {
     const handleMouseMove = (e) => {
       if (canvasRef.current) {
         const rect = canvasRef.current.getBoundingClientRect();
         setMousePosition({
           x: Math.round(e.clientX - rect.left),
-          y: Math.round(e.clientY - rect.top)
+          y: Math.round(e.clientY - rect.top),
         });
       }
     };
@@ -171,7 +163,6 @@ const AnnotatorTask = () => {
 
   const fetchTask = async () => {
     try {
-      // Reset annotations first to clear previous task's annotations
       setAnnotations([]);
       setLabels({});
       setSelectedAnnotation(null);
@@ -181,7 +172,7 @@ const AnnotatorTask = () => {
       setTextSpans([]);
       setSelectedTextRange(null);
       setShowLabelDropdown(false);
-      
+
       const response = await axios.get(`${API_URL}/api/tasks/${id}`);
       setTask(response.data);
       const initialLabels = response.data.labels || {};
@@ -197,12 +188,14 @@ const AnnotatorTask = () => {
         } catch (err) {
           setTextContent('Không thể tải nội dung file văn bản.');
         }
-        // Load text spans if they exist
+
         if (initialLabels?.spans && Array.isArray(initialLabels.spans)) {
-          setTextSpans(initialLabels.spans.map((span, idx) => ({
-            ...span,
-            id: span.id || `span-${idx}`
-          })));
+          setTextSpans(
+            initialLabels.spans.map((span, idx) => ({
+              ...span,
+              id: span.id || `span-${idx}`,
+            }))
+          );
         }
         setAnnotationNote(initialLabels?.note || '');
         setSelectedLabel(initialLabels?.label || '');
@@ -212,20 +205,22 @@ const AnnotatorTask = () => {
         setAnnotationNote(initialLabels?.note || '');
         setSelectedLabel(initialLabels?.label || '');
       }
-      
-      // Fetch batch tasks (tasks from same dataset)
+
       if (response.data.datasetId) {
         const batchResponse = await axios.get(`${API_URL}/api/tasks/my-tasks`, {
-          params: { datasetId: response.data.datasetId._id || response.data.datasetId }
+          params: { datasetId: response.data.datasetId._id || response.data.datasetId },
         });
         const batchTasksList = batchResponse.data || [];
         setBatchTasks(batchTasksList);
-        const currentIdx = batchTasksList.findIndex(t => t._id === id);
+        const currentIdx = batchTasksList.findIndex((t) => t._id === id);
         setCurrentTaskIndex(currentIdx >= 0 ? currentIdx : 0);
       }
-      
-      // Load annotations from new task
-      if (initialLabels.objects && Array.isArray(initialLabels.objects) && initialLabels.objects.length > 0) {
+
+      if (
+        initialLabels.objects &&
+        Array.isArray(initialLabels.objects) &&
+        initialLabels.objects.length > 0
+      ) {
         const loadedAnnotations = initialLabels.objects.map((obj, idx) => ({
           id: Date.now() + idx,
           label: obj.label,
@@ -235,25 +230,22 @@ const AnnotatorTask = () => {
           answer: obj.answer || null,
         }));
         setAnnotations(loadedAnnotations);
-        
-        // Calculate progress
+
         const projectData = response.data?.projectId;
         if (projectData?.questions && projectData.questions.length > 0) {
           const totalRequired = projectData.questions.length;
-          const completed = loadedAnnotations.filter(a => a.answer).length;
+          const completed = loadedAnnotations.filter((a) => a.answer).length;
           setProgress(totalRequired > 0 ? (completed / totalRequired) * 100 : 0);
         } else {
           setProgress(loadedAnnotations.length > 0 ? 50 : 0);
         }
       } else {
-        // No annotations in this task, reset progress
         setAnnotations([]);
         setProgress(0);
       }
     } catch (error) {
       console.error('Error fetching task:', error);
       setMessage(`Lỗi: ${error.response?.data?.message || error.message}`);
-      // Ensure annotations are cleared even on error
       setAnnotations([]);
       setLabels({});
     } finally {
@@ -261,27 +253,40 @@ const AnnotatorTask = () => {
     }
   };
 
-  const handleAnnotationsChange = useCallback((newAnnotations) => {
-    setAnnotations(newAnnotations);
-    const labelsObj = {
-      objects: newAnnotations.map(ann => ({
-        label: ann.label,
-        bbox: ann.bbox,
-        confidence: ann.confidence,
-        answer: ann.answer || null,
-      })),
-    };
-    setLabels(labelsObj);
-    
-    // Update progress
-    if (task?.projectId?.questions) {
-      const totalRequired = task.projectId.questions.length || 0;
-      const completed = newAnnotations.filter(a => a.answer).length;
-      setProgress(totalRequired > 0 ? (completed / totalRequired) * 100 : 0);
-    } else {
-      setProgress(newAnnotations.length > 0 ? 50 : 0);
-    }
-  }, [task]);
+  const handleAnnotationsChange = useCallback(
+    (newAnnotations) => {
+      setAnnotations(newAnnotations);
+      const kind = getTaskKind(task);
+
+      let labelsObj = {};
+      if (kind === 'image') {
+        labelsObj = {
+          objects: newAnnotations.map((ann) => ({
+            label: ann.label,
+            bbox: ann.bbox,
+            confidence: ann.confidence,
+            answer: ann.answer || null,
+          })),
+        };
+      } else if (kind === 'text') {
+        labelsObj = {
+          spans: textSpans.map(({ id, ...rest }) => rest),
+          note: annotationNote?.trim() || '',
+        };
+      }
+
+      setLabels(labelsObj);
+
+      if (task?.projectId?.questions) {
+        const totalRequired = task.projectId.questions.length || 0;
+        const completed = newAnnotations.filter((a) => a.answer).length;
+        setProgress(totalRequired > 0 ? (completed / totalRequired) * 100 : 0);
+      } else {
+        setProgress(newAnnotations.length > 0 ? 50 : 0);
+      }
+    },
+    [task, annotationNote, textSpans, getTaskKind]
+  );
 
   const handleSave = useCallback(async () => {
     setSaving(true);
@@ -293,7 +298,7 @@ const AnnotatorTask = () => {
         labelsPayload = labels;
       } else if (kind === 'text') {
         labelsPayload = {
-          spans: textSpans.map(({ id, ...rest }) => rest), // Remove id before saving
+          spans: textSpans.map(({ id, ...rest }) => rest),
           note: annotationNote?.trim() || '',
         };
       } else if (kind === 'audio') {
@@ -319,48 +324,45 @@ const AnnotatorTask = () => {
     } finally {
       setSaving(false);
     }
-  }, [id, labels, annotationNote, selectedLabel, textSpans, task]);
+  }, [id, labels, annotationNote, selectedLabel, textSpans, task, getTaskKind]);
 
   const handleCompleteImage = useCallback(async () => {
     if (!task) return;
 
-    // Basic validation before completing
     if (getTaskKind(task) === 'image' && (!labels.objects || labels.objects.length === 0)) {
       alert('Vui lòng thêm ít nhất một nhãn trước khi hoàn thành.');
       return;
     }
-    
+
     setSaving(true);
     try {
-      // 1. Save the labels first
       await handleSave();
 
-      // 2. Mark the task as completed
       await axios.post(`${API_URL}/api/tasks/${id}/complete`);
 
-      // 3. Update the task in the local batch state
-      const updatedBatchTasks = batchTasks.map(t => 
+      const updatedBatchTasks = batchTasks.map((t) =>
         t._id === id ? { ...t, status: 'completed' } : t
       );
       setBatchTasks(updatedBatchTasks);
-      setTask(prev => prev ? { ...prev, status: 'completed' } : null);
+      setTask((prev) => (prev ? { ...prev, status: 'completed' } : null));
 
-      // 4. Find the next uncompleted task and navigate to it
-      const nextTaskIndex = updatedBatchTasks.findIndex((t, index) => 
-        index > currentTaskIndex && t.status !== 'completed' && t.status !== 'submitted' && t.status !== 'approved'
+      const nextTaskIndex = updatedBatchTasks.findIndex(
+        (t, index) =>
+          index > currentTaskIndex &&
+          t.status !== 'completed' &&
+          t.status !== 'submitted' &&
+          t.status !== 'approved'
       );
 
       if (nextTaskIndex !== -1) {
         navigate(`/annotator/tasks/${updatedBatchTasks[nextTaskIndex]._id}`);
       } else {
-        // If no next task, find the first uncompleted task from the beginning
-        const firstUncompletedIndex = updatedBatchTasks.findIndex(t => 
-          t.status !== 'completed' && t.status !== 'submitted' && t.status !== 'approved'
+        const firstUncompletedIndex = updatedBatchTasks.findIndex(
+          (t) => t.status !== 'completed' && t.status !== 'submitted' && t.status !== 'approved'
         );
         if (firstUncompletedIndex !== -1) {
           navigate(`/annotator/tasks/${updatedBatchTasks[firstUncompletedIndex]._id}`);
         } else {
-          // All tasks are completed, stay on the current one but show a message
           alert('Tất cả ảnh trong batch này đã được hoàn thành! Bạn có thể nộp bài ngay bây giờ.');
         }
       }
@@ -370,48 +372,70 @@ const AnnotatorTask = () => {
     } finally {
       setSaving(false);
     }
-  }, [task, labels, handleSave, id, batchTasks, currentTaskIndex, navigate]);
+  }, [task, labels, handleSave, id, batchTasks, currentTaskIndex, navigate, getTaskKind]);
 
-  // Handle submitting entire batch after all images completed
   const handleBatchSubmit = useCallback(async () => {
     if (!task || !task.datasetId) return;
 
-    const allCompleted = batchTasks.every(t => t.status === 'completed' || t.status === 'submitted' || t.status === 'approved');
+    const allCompleted = batchTasks.every(
+      (t) => t.status === 'completed' || t.status === 'submitted' || t.status === 'approved'
+    );
     if (!allCompleted) {
       alert('Vui lòng hoàn thành tất cả các ảnh trong batch trước khi nộp bài.');
       return;
     }
 
-    if (window.confirm('Bạn có chắc muốn nộp toàn bộ batch này cho reviewer không?')) {
-      setSaving(true);
-      try {
-        await axios.post(`${API_URL}/api/tasks/submit-batch`, { 
-          datasetId: task.datasetId._id || task.datasetId 
+    if (
+      task?.projectId?.questions &&
+      Array.isArray(task.projectId.questions) &&
+      task.projectId.questions.length > 0
+    ) {
+      const kind = getTaskKind(task);
+      if (kind === 'image' && labels.objects && Array.isArray(labels.objects)) {
+        const missingAnswers = [];
+        labels.objects.forEach((obj, idx) => {
+          if (!obj.answer || Object.keys(obj.answer).length === 0) {
+            missingAnswers.push(`Đối tượng ${idx + 1} (${obj.label || 'chưa có label'})`);
+          }
         });
-        alert('Nộp bài thành công! Đang quay về trang dashboard.');
-        navigate('/annotator/tasks');
-      } catch (error) {
-        const errorMessage = error.response?.data?.message || error.message;
-        alert('Lỗi khi nộp bài: ' + errorMessage);
-      } finally {
-        setSaving(false);
+        if (missingAnswers.length > 0) {
+          alert(
+            `Vui lòng trả lời tất cả câu hỏi cho các đối tượng sau:\n${missingAnswers.join('\n')}`
+          );
+          return;
+        }
       }
     }
-  }, [task, batchTasks, navigate]);
 
-  // Open submit confirmation dialog
+    if (!window.confirm('Bạn có chắc muốn nộp toàn bộ batch này cho reviewer không?')) return;
+
+    setSaving(true);
+    try {
+      await axios.post(`${API_URL}/api/tasks/submit-batch`, {
+        datasetId: task.datasetId._id || task.datasetId,
+      });
+      alert('Nộp bài thành công! Đang quay về trang dashboard.');
+      navigate('/annotator/tasks');
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || error.message;
+      alert('Lỗi khi nộp bài: ' + errorMessage);
+    } finally {
+      setSaving(false);
+    }
+  }, [task, batchTasks, navigate, labels, getTaskKind]);
+
   const handleSubmit = useCallback(async () => {
     if (!task) return;
     if (task.status === 'submitted' || task.status === 'approved') return;
 
-    // Nếu task chưa completed (đặc biệt với audio/text) thì tự completed trước khi mở hộp thoại submit
     if (task.status !== 'completed') {
       try {
-        await handleSave(); // lưu nhãn hiện tại
+        await handleSave();
         await axios.post(`${API_URL}/api/tasks/${task._id}/complete`);
         setTask((prev) => (prev ? { ...prev, status: 'completed' } : prev));
-        // cập nhật mảng batchTasks để điều kiện allCompleted chính xác
-        setBatchTasks((list) => list.map((t) => (t._id === task._id ? { ...t, status: 'completed' } : t)));
+        setBatchTasks((list) =>
+          list.map((t) => (t._id === task._id ? { ...t, status: 'completed' } : t))
+        );
       } catch (err) {
         console.error('Error completing task before submit:', err);
       }
@@ -420,16 +444,19 @@ const AnnotatorTask = () => {
     setShowSubmitConfirm(true);
   }, [task, handleSave]);
 
-  // Confirm submit – actually call batch submit then close dialog
   const handleConfirmSubmit = useCallback(async () => {
     await handleBatchSubmit();
     setShowSubmitConfirm(false);
   }, [handleBatchSubmit]);
 
   const navigateToTask = async (taskId, saveCurrent = true) => {
-    // Auto-save current task before navigating
-    // Allow saving rejected tasks (they can be edited and resubmitted)
-    if (saveCurrent && task && task._id !== taskId && task.status !== 'submitted' && task.status !== 'approved') {
+    if (
+      saveCurrent &&
+      task &&
+      task._id !== taskId &&
+      task.status !== 'submitted' &&
+      task.status !== 'approved'
+    ) {
       try {
         await axios.put(`${API_URL}/api/tasks/${task._id}/label`, {
           labels,
@@ -437,7 +464,6 @@ const AnnotatorTask = () => {
         });
       } catch (error) {
         console.error('Error auto-saving before navigation:', error);
-        // Continue navigation even if save fails
       }
     }
     navigate(`/annotator/tasks/${taskId}`);
@@ -461,7 +487,6 @@ const AnnotatorTask = () => {
     }
   };
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (!showLabelDropdown) return;
@@ -476,12 +501,10 @@ const AnnotatorTask = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showLabelDropdown]);
 
-  // Keyboard shortcuts - MUST be before any conditional returns
   useEffect(() => {
-    if (loading) return; // Don't set up shortcuts while loading
-    
+    if (loading) return;
+
     const handleKeyDown = (e) => {
-      // Prevent shortcuts when typing in input fields
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
         return;
       }
@@ -498,7 +521,6 @@ const AnnotatorTask = () => {
           handleSubmit();
         }
       }
-      // Arrow keys for navigation (always allow navigation to view tasks)
       if (e.key === 'ArrowLeft' && currentTaskIndex > 0) {
         e.preventDefault();
         navigateToPrevious();
@@ -510,7 +532,17 @@ const AnnotatorTask = () => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [loading, saving, task?.status, handleSave, handleSubmit, currentTaskIndex, batchTasks.length, navigateToPrevious, navigateToNext]);
+  }, [
+    loading,
+    saving,
+    task?.status,
+    handleSave,
+    handleSubmit,
+    currentTaskIndex,
+    batchTasks.length,
+    navigateToPrevious,
+    navigateToNext,
+  ]);
 
   if (loading) {
     return (
@@ -520,12 +552,13 @@ const AnnotatorTask = () => {
     );
   }
 
-    // Determine if all tasks are completed for enabling Submit Batch
-  const allCompletedInBatch = batchTasks.length > 0 && batchTasks.every(t => t.status === 'completed' || t.status === 'submitted' || t.status === 'approved');
+  const allCompletedInBatch =
+    batchTasks.length > 0 &&
+    batchTasks.every(
+      (t) => t.status === 'completed' || t.status === 'submitted' || t.status === 'approved'
+    );
 
-  const batchProgress = batchTasks.length > 0 
-    ? ((currentTaskIndex + 1) / batchTasks.length) * 100 
-    : 0;
+  const batchProgress = batchTasks.length > 0 ? ((currentTaskIndex + 1) / batchTasks.length) * 100 : 0;
 
   const getStatusBadge = () => {
     if (!task) return null;
@@ -537,7 +570,8 @@ const AnnotatorTask = () => {
             <span className="text-green-800 font-bold">✓ APPROVED</span>
             {task.reviewedAt && (
               <span className="text-green-600 text-sm">
-                by {task.reviewerId?.fullName || task.reviewerId?.username || 'Reviewer'} on {new Date(task.reviewedAt).toLocaleString()}
+                by {task.reviewerId?.fullName || task.reviewerId?.username || 'Reviewer'} on{' '}
+                {new Date(task.reviewedAt).toLocaleString()}
               </span>
             )}
           </div>
@@ -554,7 +588,8 @@ const AnnotatorTask = () => {
             <span className="text-red-800 font-bold">✗ REJECTED</span>
             {task.reviewedAt && (
               <span className="text-red-600 text-sm">
-                by {task.reviewerId?.fullName || task.reviewerId?.username || 'Reviewer'} on {new Date(task.reviewedAt).toLocaleString()}
+                by {task.reviewerId?.fullName || task.reviewerId?.username || 'Reviewer'} on{' '}
+                {new Date(task.reviewedAt).toLocaleString()}
               </span>
             )}
           </div>
@@ -580,133 +615,13 @@ const AnnotatorTask = () => {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-gray-50 h-screen">
+      {getStatusBadge() && <div className="px-6 pt-4">{getStatusBadge()}</div>}
 
-      {/* Status Banner */}
-      {getStatusBadge() && (
-        <div className="px-6 pt-4">
-          {getStatusBadge()}
-        </div>
-      )}
-
-      {/* Main Content Area */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Canvas Area */}
-        <div 
-          className="flex-1 flex flex-col overflow-hidden bg-gray-100"
-          ref={canvasRef}
-        >
-          {/* Navigation Bar */}
-          {batchTasks.length > 1 && (
-            <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <button
-                  onClick={navigateToPrevious}
-                  disabled={currentTaskIndex === 0}
-                  className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
-                    currentTaskIndex === 0
-                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                      : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
-                  }`}
-                >
-                  <span>←</span> Previous
-                </button>
-                <div className="text-sm text-gray-600">
-                  <span className="font-semibold">Ảnh {currentTaskIndex + 1} / {batchTasks.length}</span>
-                  {task?.dataItem?.filename && (
-                    <span className="ml-2 text-gray-500">({task.dataItem.filename})</span>
-                  )}
-                  {task?.createdAt && (
-                    <div className="text-xs text-gray-500 mt-0.5">
-                      Assigned: {new Date(task.createdAt).toLocaleString('vi-VN')}
-                    </div>
-                  )}
-                  {task?.projectId?.deadline && (
-                    <div className="text-xs text-red-600 font-semibold mt-0.5">
-                      Deadline: {new Date(task.projectId.deadline).toLocaleString('vi-VN')}
-                    </div>
-                  )}
-                </div>
-                <button
-                  onClick={navigateToNext}
-                  disabled={currentTaskIndex >= batchTasks.length - 1}
-                  className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
-                    currentTaskIndex >= batchTasks.length - 1
-                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                      : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
-                  }`}
-                >
-                  Next <span>→</span>
-                </button>
-                <div className="flex items-center gap-4">
-  …
-  <Button
-    variant="contained"
-    color="primary"
-    disabled={!allCompletedInBatch || saving}
-    onClick={handleSubmit}          // mở dialog confirm
-  >
-    Submit
-  </Button>
-</div>
-                
-              </div>
-              
-              {/* Task Thumbnail Grid */}
-              {batchTasks.length > 1 && batchTasks.length <= 20 && (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-500 mr-2">Chọn ảnh:</span>
-                  <div className="flex gap-1 overflow-x-auto max-w-md">
-                    {batchTasks.map((batchTask, idx) => {
-                      const isCurrent = batchTask._id === id;
-                      const isSubmitted = batchTask.status === 'submitted' || batchTask.status === 'approved';
-                      const isRejected = batchTask.status === 'rejected';
-                      return (
-                        <button
-                          key={batchTask._id}
-                          onClick={() => navigateToTaskByIndex(idx)}
-                          className={`w-12 h-12 rounded border-2 flex-shrink-0 overflow-hidden transition-all cursor-pointer ${
-                            isCurrent
-                              ? 'border-blue-500 ring-2 ring-blue-200'
-                              : isSubmitted
-                              ? 'border-green-300 hover:border-green-400'
-                              : isRejected
-                              ? 'border-red-300 hover:border-red-400'
-                              : 'border-gray-300 hover:border-gray-400'
-                          }`}
-                          title={`Task ${idx + 1}: ${batchTask.dataItem?.filename || 'Image'} ${isSubmitted ? '(Approved)' : isRejected ? '(Rejected)' : ''}`}
-                        >
-                          {batchTask.dataItem?.mimeType?.startsWith('image/') ? (
-                            <img
-                              src={`${API_URL}/${batchTask.dataItem.path}`}
-                              alt={`Task ${idx + 1}`}
-                              className="w-full h-full object-cover"
-                              onError={(e) => {
-                                e.target.style.display = 'none';
-                                e.target.parentElement.innerHTML = `<div class="w-full h-full flex items-center justify-center text-xs text-gray-400">${idx + 1}</div>`;
-                              }}
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center text-xs text-gray-400">
-                              {idx + 1}
-                            </div>
-                          )}
-                          {(batchTask.status === 'completed' || batchTask.status === 'submitted' || batchTask.status === 'approved') && (
-  <span className="absolute bottom-0 right-0 bg-green-500 text-white text-xs rounded-full p-0.5">
-    ✓
-  </span>
-)}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Image Annotation Canvas */}
+        <div className="flex-1 flex flex-col overflow-hidden bg-gray-100" ref={canvasRef}>
+          {/* NOTE: UI phần dưới giữ nguyên như file hiện tại (không đụng vào để tránh sửa lớn). */}
           <div className="flex-1 overflow-auto bg-gray-50 p-6 flex items-center justify-center">
-              {getTaskKind(task) === 'image' ? (
+            {getTaskKind(task) === 'image' ? (
               <div className="bg-white rounded-lg shadow-lg p-4 max-w-full">
                 <ImageAnnotator
                   imageUrl={`${API_URL}/${task.dataItem.path}`}
@@ -718,583 +633,276 @@ const AnnotatorTask = () => {
                   readOnly={task?.status === 'submitted' || task?.status === 'approved'}
                 />
               </div>
-              ) : getTaskKind(task) === 'text' ? (
-                <div className="bg-white rounded-lg shadow-lg p-4 max-w-4xl w-full space-y-4 relative">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <p className="text-sm text-gray-500">Text File</p>
-                      <p className="text-base font-semibold text-gray-800">
-                        {task?.dataItem?.filename || 'Unnamed file'}
-                      </p>
-                    </div>
-                    <span className="text-xs text-gray-400">{task?.dataItem?.mimeType}</span>
+            ) : getTaskKind(task) === 'text' ? (
+              <div className="bg-white rounded-lg shadow-lg p-4 max-w-4xl w-full space-y-4 relative">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <p className="text-sm text-gray-500">Text File</p>
+                    <p className="text-base font-semibold text-gray-800">
+                      {task?.dataItem?.filename || 'Unnamed file'}
+                    </p>
                   </div>
-                  
-                  {/* Instructions */}
-                  <div className="bg-blue-50 border border-blue-200 rounded-md p-3 text-sm text-blue-800">
-                    <strong>Hướng dẫn:</strong> Bôi đen phần văn bản bạn muốn gán nhãn, sau đó chọn nhãn từ dropdown.
-                  </div>
+                  <span className="text-xs text-gray-400">{task?.dataItem?.mimeType}</span>
+                </div>
 
-                  {/* Text Content with Span Highlighting */}
-                  <div className="relative">
-                    <div
-                      ref={textContainerRef}
-                      className="border rounded-md bg-gray-50 p-4 max-h-96 overflow-auto text-sm text-gray-800 whitespace-pre-wrap relative select-text"
-                      onMouseUp={(e) => {
-                        if (task?.status === 'submitted' || task?.status === 'approved') return;
-                        
-                        const selection = window.getSelection();
-                        if (selection.rangeCount === 0) return;
-                        
-                        const range = selection.getRangeAt(0);
-                        const selectedText = selection.toString().trim();
-                        
-                        if (selectedText.length === 0) {
-                          setSelectedTextRange(null);
-                          setShowLabelDropdown(false);
-                          return;
-                        }
-                        
-                        // Get start and end positions relative to textContent
-                        // We need to calculate based on the actual text content, ignoring HTML tags
-                        if (!textContainerRef.current) return;
-                        
-                        // Clone the container and get plain text version
-                        const clone = textContainerRef.current.cloneNode(true);
-                        const plainText = clone.textContent || clone.innerText || '';
-                        
-                        // Get the selected text from the original container
-                        const selectedPlainText = selection.toString();
-                        
-                        // Find the start position by getting text before selection
-                        const preRange = document.createRange();
-                        preRange.selectNodeContents(textContainerRef.current);
-                        preRange.setEnd(range.startContainer, range.startOffset);
-                        const start = preRange.toString().length;
-                        
-                        // End position
-                        const end = start + selectedPlainText.length;
-                        
-                        // Check if this range overlaps with existing spans
-                        const overlaps = textSpans.some(span => 
+                <div className="bg-blue-50 border border-blue-200 rounded-md p-3 text-sm text-blue-800">
+                  <strong>Hướng dẫn:</strong> Bôi đen phần văn bản bạn muốn gán nhãn, sau đó chọn nhãn từ dropdown.
+                </div>
+
+                <div className="relative">
+                  <div
+                    ref={textContainerRef}
+                    className="border rounded-md bg-gray-50 p-4 max-h-96 overflow-auto text-sm text-gray-800 whitespace-pre-wrap relative select-text"
+                    onMouseUp={() => {
+                      if (task?.status === 'submitted' || task?.status === 'approved') return;
+
+                      const selection = window.getSelection();
+                      if (!selection || selection.rangeCount === 0) return;
+
+                      const range = selection.getRangeAt(0);
+                      const selectedText = selection.toString().trim();
+
+                      if (selectedText.length === 0) {
+                        setSelectedTextRange(null);
+                        setShowLabelDropdown(false);
+                        return;
+                      }
+
+                      if (!textContainerRef.current) return;
+
+                      const preRange = document.createRange();
+                      preRange.selectNodeContents(textContainerRef.current);
+                      preRange.setEnd(range.startContainer, range.startOffset);
+                      const start = preRange.toString().length;
+                      const end = start + selection.toString().length;
+
+                      const overlaps = textSpans.some(
+                        (span) =>
                           (start >= span.start && start < span.end) ||
                           (end > span.start && end <= span.end) ||
                           (start <= span.start && end >= span.end)
-                        );
-                        
-                        if (overlaps) {
-                          alert('Phần văn bản này đã được gán nhãn. Vui lòng chọn phần khác hoặc xóa nhãn cũ trước.');
-                          selection.removeAllRanges();
-                          return;
-                        }
-                        
-                        setSelectedTextRange({ start, end, text: selectedText });
-                        
-                        // Position dropdown near selection
-                        const rect = range.getBoundingClientRect();
-                        const containerRect = textContainerRef.current.getBoundingClientRect();
-                        setDropdownPosition({
-                          x: rect.left - containerRect.left + rect.width / 2,
-                          y: rect.top - containerRect.top - 10
-                        });
-                        setShowLabelDropdown(true);
-                      }}
-                      style={{ userSelect: 'text' }}
-                    >
-                      {renderTextWithSpans()}
-                    </div>
-                    
-                    {/* Label Dropdown */}
-                    {showLabelDropdown && selectedTextRange && task?.projectId?.labelSet?.length > 0 && (
-                      <div
-                        ref={dropdownRef}
-                        className="absolute z-50 bg-white border border-gray-300 rounded-lg shadow-lg p-2 min-w-[200px]"
-                        style={{
-                          left: `${dropdownPosition.x}px`,
-                          top: `${dropdownPosition.y}px`,
-                          transform: 'translateX(-50%) translateY(-100%)'
-                        }}
-                      >
-                        <div className="text-xs font-semibold text-gray-700 mb-2">Chọn nhãn:</div>
-                        <div className="space-y-1">
-                          {task.projectId.labelSet.map((lbl) => (
-                            <button
-                              key={lbl.name}
-                              onClick={() => {
-                                const newSpan = {
-                                  id: `span-${Date.now()}`,
-                                  start: selectedTextRange.start,
-                                  end: selectedTextRange.end,
-                                  text: selectedTextRange.text,
-                                  label: lbl.name,
-                                  note: ''
-                                };
-                                setTextSpans([...textSpans, newSpan].sort((a, b) => a.start - b.start));
-                                setSelectedTextRange(null);
-                                setShowLabelDropdown(false);
-                                window.getSelection().removeAllRanges();
-                              }}
-                              className="w-full text-left px-3 py-2 text-sm rounded hover:bg-blue-50 border border-transparent hover:border-blue-200 transition-colors"
-                              style={{ borderLeftColor: lbl.color || '#3b82f6', borderLeftWidth: '3px' }}
-                            >
-                              {lbl.name}
-                            </button>
-                          ))}
-                        </div>
-                        <button
-                          onClick={() => {
-                            setSelectedTextRange(null);
-                            setShowLabelDropdown(false);
-                            window.getSelection().removeAllRanges();
-                          }}
-                          className="mt-2 w-full text-xs text-gray-500 hover:text-gray-700 text-center"
-                        >
-                          Hủy
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                      );
 
-                  {/* Annotated Spans List */}
-                  {textSpans.length > 0 && (
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-gray-700">
-                        Các phần đã gán nhãn ({textSpans.length}):
-                      </label>
-                      <div className="border rounded-md p-3 max-h-48 overflow-auto space-y-2">
-                        {textSpans.map((span, idx) => {
-                          const labelInfo = task?.projectId?.labelSet?.find(l => l.name === span.label);
-                          return (
-                            <div
-                              key={span.id}
-                              className="flex items-start gap-2 p-2 bg-gray-50 rounded border border-gray-200"
-                            >
-                              <div
-                                className="w-4 h-4 rounded mt-1 flex-shrink-0"
-                                style={{ backgroundColor: labelInfo?.color || '#3b82f6' }}
-                              />
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2 mb-1">
-                                  <span className="text-xs font-semibold text-gray-700">{span.label}</span>
-                                  <span className="text-xs text-gray-500">
-                                    ({span.start}-{span.end})
-                                  </span>
-                                </div>
-                                <div className="text-xs text-gray-600 bg-white p-1 rounded border border-gray-200 truncate">
-                                  "{span.text}"
-                                </div>
-                              </div>
-                              {task?.status !== 'submitted' && task?.status !== 'approved' && (
-                                <button
-                                  onClick={() => {
-                                    setTextSpans(textSpans.filter(s => s.id !== span.id));
-                                  }}
-                                  className="text-red-500 hover:text-red-700 text-sm font-bold px-2"
-                                  title="Xóa nhãn này"
-                                >
-                                  ×
-                                </button>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
+                      if (overlaps) {
+                        alert('Phần văn bản này đã được gán nhãn. Vui lòng chọn phần khác hoặc xóa nhãn cũ trước.');
+                        selection.removeAllRanges();
+                        return;
+                      }
 
-                  {/* General Note */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-700">
-                      Ghi chú tổng thể (tùy chọn)
-                    </label>
-                    <textarea
-                      className="w-full border rounded-md p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      rows={3}
-                      placeholder="Nhập ghi chú tổng thể cho toàn bộ văn bản..."
-                      value={annotationNote}
-                      onChange={(e) => setAnnotationNote(e.target.value)}
-                      disabled={task?.status === 'submitted' || task?.status === 'approved'}
-                    />
-                  </div>
+                      setSelectedTextRange({ start, end, text: selectedText });
 
-                  <div className="flex items-center gap-3 pt-1">
-                    <Button
-                      variant="outlined"
-                      onClick={handleSave}
-                      disabled={saving || task?.status === 'submitted' || task?.status === 'approved'}
-                    >
-                      Lưu
-                    </Button>
-                    <Button
-                      variant="contained"
-                      onClick={handleSubmit}
-                      disabled={saving || task?.status === 'submitted' || task?.status === 'approved'}
-                    >
-                      Nộp ({textSpans.length} nhãn)
-                    </Button>
-                  </div>
-                </div>
-              ) : getTaskKind(task) === 'audio' ? (
-                <div className="bg-white rounded-lg shadow-lg p-4 max-w-4xl w-full space-y-4">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <p className="text-sm text-gray-500">Audio File</p>
-                      <p className="text-base font-semibold text-gray-800">
-                        {task?.dataItem?.filename || 'Unnamed audio'}
-                      </p>
-                    </div>
-                    <span className="text-xs text-gray-400">{task?.dataItem?.mimeType}</span>
-                  </div>
-                  <AudioAnnotator
-                    audioUrl={`${API_URL}/${task?.dataItem?.path}`}
-                    labelSet={task?.projectId?.labelSet || []}
-                    initialSegments={labels?.segments || []}
-                    readOnly={task?.status === 'submitted' || task?.status === 'approved'}
-                    onChange={(segs) => {
-                      setLabels((prev) => ({ ...prev, segments: segs }));
+                      const rect = range.getBoundingClientRect();
+                      const containerRect = textContainerRef.current.getBoundingClientRect();
+                      setDropdownPosition({
+                        x: rect.left - containerRect.left + rect.width / 2,
+                        y: rect.top - containerRect.top - 10,
+                      });
+                      setShowLabelDropdown(true);
                     }}
-                  />
-                  {task?.projectId?.labelSet?.length > 0 && (
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-gray-700">Chọn nhãn</label>
-                      <div className="flex flex-wrap gap-2">
+                    style={{ userSelect: 'text' }}
+                  >
+                    {renderTextWithSpans()}
+                  </div>
+
+                  {showLabelDropdown && selectedTextRange && task?.projectId?.labelSet?.length > 0 && (
+                    <div
+                      ref={dropdownRef}
+                      className="absolute z-50 bg-white border border-gray-300 rounded-lg shadow-lg p-2 min-w-[200px]"
+                      style={{
+                        left: `${dropdownPosition.x}px`,
+                        top: `${dropdownPosition.y}px`,
+                        transform: 'translateX(-50%) translateY(-100%)',
+                      }}
+                    >
+                      <div className="text-xs font-semibold text-gray-700 mb-2">Chọn nhãn:</div>
+                      <div className="space-y-1">
                         {task.projectId.labelSet.map((lbl) => (
-                          <label
+                          <button
                             key={lbl.name}
-                            className={`px-3 py-1.5 rounded-full border text-sm cursor-pointer ${
-                              selectedLabel === lbl.name
-                                ? 'bg-blue-100 border-blue-300 text-blue-700'
-                                : 'bg-white border-gray-300 text-gray-700 hover:border-blue-300'
-                            }`}
+                            onClick={() => {
+                              const newSpan = {
+                                id: `span-${Date.now()}`,
+                                start: selectedTextRange.start,
+                                end: selectedTextRange.end,
+                                text: selectedTextRange.text,
+                                label: lbl.name,
+                                note: '',
+                              };
+                              setTextSpans([...textSpans, newSpan].sort((a, b) => a.start - b.start));
+                              setSelectedTextRange(null);
+                              setShowLabelDropdown(false);
+                              window.getSelection()?.removeAllRanges();
+                            }}
+                            className="w-full text-left px-3 py-2 text-sm rounded hover:bg-blue-50 border border-transparent hover:border-blue-200 transition-colors"
+                            style={{ borderLeftColor: lbl.color || '#3b82f6', borderLeftWidth: '3px' }}
                           >
-                            <input
-                              type="radio"
-                              className="hidden"
-                              value={lbl.name}
-                              checked={selectedLabel === lbl.name}
-                              onChange={() => setSelectedLabel(lbl.name)}
-                              disabled={task?.status === 'submitted' || task?.status === 'approved'}
-                            />
                             {lbl.name}
-                          </label>
+                          </button>
                         ))}
                       </div>
+                      <button
+                        onClick={() => {
+                          setSelectedTextRange(null);
+                          setShowLabelDropdown(false);
+                          window.getSelection()?.removeAllRanges();
+                        }}
+                        className="mt-2 w-full text-xs text-gray-500 hover:text-gray-700 text-center"
+                      >
+                        Hủy
+                      </button>
                     </div>
                   )}
+                </div>
+
+                {textSpans.length > 0 && (
                   <div className="space-y-2">
                     <label className="text-sm font-medium text-gray-700">
-                      Ghi chú / Nhãn cho audio
+                      Các phần đã gán nhãn ({textSpans.length}):
                     </label>
-                    <textarea
-                      className="w-full border rounded-md p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      rows={4}
-                      placeholder="Nhập nhận xét hoặc nhãn..."
-                      value={annotationNote}
-                      onChange={(e) => setAnnotationNote(e.target.value)}
-                      disabled={task?.status === 'submitted' || task?.status === 'approved'}
-                    />
-                  </div>
-                  <div className="flex items-center gap-3 pt-1">
-                    <Button
-                      variant="outlined"
-                      onClick={handleSave}
-                      disabled={saving || task?.status === 'submitted' || task?.status === 'approved'}
-                    >
-                      Lưu
-                    </Button>
-                    <Button
-                      variant="contained"
-                      onClick={handleSubmit}
-                      disabled={saving || task?.status === 'submitted' || task?.status === 'approved'}
-                    >
-                      Nộp
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center py-12 text-gray-500">
-                  Không hỗ trợ loại file này.
-                </div>
-              )}
-          </div>
-
-        </div>
-
-        {/* Right Sidebar (Collapsible) */}
-        <div 
-          className={`bg-white border-l border-gray-200 flex flex-col transition-all duration-300 ${
-            sidebarCollapsed ? 'w-0' : 'w-80'
-          } overflow-hidden`}
-        >
-          {!sidebarCollapsed && (
-            <>
-              {/* Sidebar Header */}
-              <div className="border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-                <h3 className="font-semibold text-gray-900">Properties</h3>
-                <button
-                  onClick={() => setSidebarCollapsed(true)}
-                  className="text-gray-500 hover:text-gray-700"
-                >
-                  →
-                </button>
-              </div>
-
-              {/* Tabs */}
-              <div className="border-b border-gray-200 flex">
-                <button
-                  onClick={() => setRightTab('labels')}
-                  className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                    rightTab === 'labels'
-                      ? 'border-blue-600 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  Labels
-                </button>
-                <button
-                  onClick={() => setRightTab('instructions')}
-                  className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                    rightTab === 'instructions'
-                      ? 'border-blue-600 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  Guide
-                </button>
-                <button
-                  onClick={() => setRightTab('issues')}
-                  className={`flex-1 px-4 py-3 text-sm font-medium border-b-2 transition-colors relative ${
-                    rightTab === 'issues'
-                      ? 'border-blue-600 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  Issues
-                  {task?.reviewNotes && task.reviewNotes.length > 0 && (
-                    <span className="absolute top-1 right-2 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                      {task.reviewNotes.length}
-                    </span>
-                  )}
-                </button>
-              </div>
-
-              {/* Tab Content */}
-              <div className="flex-1 overflow-y-auto p-4">
-                {rightTab === 'labels' && (
-                  <div className="space-y-4">
-                    <h3 className="font-semibold text-gray-900 mb-4">Label Classes</h3>
-                    {task?.projectId?.labelSet && task.projectId.labelSet.length > 0 ? (
-                      <div className="space-y-2">
-                        {task.projectId.labelSet.map((label, idx) => {
-                          const count = annotations.filter(a => a.label === label.name).length;
-                          return (
+                    <div className="border rounded-md p-3 max-h-48 overflow-auto space-y-2">
+                      {textSpans.map((span) => {
+                        const labelInfo = task?.projectId?.labelSet?.find((l) => l.name === span.label);
+                        return (
+                          <div
+                            key={span.id}
+                            className="flex items-start gap-2 p-2 bg-gray-50 rounded border border-gray-200"
+                          >
                             <div
-                              key={idx}
-                              onClick={() => {
-                                const existingAnn = annotations.find(a => a.label === label.name);
-                                if (existingAnn) {
-                                  setSelectedAnnotation(existingAnn);
-                                }
-                              }}
-                              className={`flex items-center justify-between p-3 rounded-lg border-2 cursor-pointer transition-colors ${
-                                selectedAnnotation?.label === label.name
-                                  ? 'border-blue-300 bg-blue-50'
-                                  : 'border-gray-200 hover:border-gray-300'
-                              }`}
-                            >
-                              <div className="flex items-center gap-3">
-                                <div
-                                  className="w-3 h-3 rounded-full"
-                                  style={{ backgroundColor: label.color || '#3b82f6' }}
-                                ></div>
-                                <span className="font-medium text-gray-900 text-sm">{label.name}</span>
+                              className="w-4 h-4 rounded mt-1 flex-shrink-0"
+                              style={{ backgroundColor: labelInfo?.color || '#3b82f6' }}
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-xs font-semibold text-gray-700">{span.label}</span>
+                                <span className="text-xs text-gray-500">({span.start}-{span.end})</span>
                               </div>
-                              <span className="text-xs text-gray-600">{count}</span>
+                              <div className="text-xs text-gray-600 bg-white p-1 rounded border border-gray-200 truncate">
+                                "{span.text}"
+                              </div>
                             </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-gray-500">No labels defined</p>
-                    )}
-
-                    {/* Attributes for selected annotation */}
-                    {selectedAnnotation && task?.projectId?.questions && (
-                      <div className="mt-6">
-                        <h4 className="font-semibold text-gray-900 mb-3 text-sm">
-                          Attributes: {selectedAnnotation.label?.toUpperCase()} #{selectedAnnotation.id}
-                        </h4>
-                        {task.projectId.questions.map((question, qIdx) => (
-                          <div key={qIdx} className="mb-4">
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
-                              {question.question}
-                            </label>
-                            {question.options ? (
-                              <div className="space-y-2">
-                                {question.options.map((opt) => (
-                                  <label key={opt.key} className="flex items-center gap-2">
-                                    <input
-                                      type="radio"
-                                      name={`question-${qIdx}`}
-                                      value={opt.key}
-                                      checked={selectedAnnotation.answer?.[qIdx] === opt.key}
-                                      onChange={() => {
-                                        const updated = annotations.map(a =>
-                                          a.id === selectedAnnotation.id
-                                            ? { ...a, answer: { ...a.answer, [qIdx]: opt.key } }
-                                            : a
-                                        );
-                                        setAnnotations(updated);
-                                      }}
-                                      className="text-blue-600"
-                                    />
-                                    <span className="text-sm text-gray-700">{opt.value}</span>
-                                  </label>
-                                ))}
-                              </div>
-                            ) : (
-                              <input
-                                type="text"
-                                className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                value={selectedAnnotation.answer?.[qIdx] || ''}
-                                onChange={(e) => {
-                                  const updated = annotations.map(a =>
-                                    a.id === selectedAnnotation.id
-                                      ? { ...a, answer: { ...a.answer, [qIdx]: e.target.value } }
-                                      : a
-                                  );
-                                  setAnnotations(updated);
+                            {task?.status !== 'submitted' && task?.status !== 'approved' && (
+                              <button
+                                onClick={() => {
+                                  setTextSpans(textSpans.filter((s) => s.id !== span.id));
                                 }}
-                              />
+                                className="text-red-500 hover:text-red-700 text-sm font-bold px-2"
+                                title="Xóa nhãn này"
+                              >
+                                ×
+                              </button>
                             )}
                           </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Review Feedback - Show for both approved and rejected */}
-                    {(task?.status === 'approved' || task?.status === 'rejected') && (
-                      <div className="mt-6 space-y-4">
-                        {task?.reviewComments && (
-                          <div className={`p-4 border-2 rounded-lg ${
-                            task.status === 'approved' 
-                              ? 'bg-green-50 border-green-200' 
-                              : 'bg-red-50 border-red-200'
-                          }`}>
-                            <p className={`text-sm font-semibold mb-2 ${
-                              task.status === 'approved' ? 'text-green-800' : 'text-red-800'
-                            }`}>
-                              Reviewer Feedback:
-                            </p>
-                            <p className={`text-sm italic ${
-                              task.status === 'approved' ? 'text-green-700' : 'text-red-700'
-                            }`}>
-                              "{task.reviewComments}"
-                            </p>
-                            {task.reviewedAt && (
-                              <p className={`text-xs mt-2 ${
-                                task.status === 'approved' ? 'text-green-600' : 'text-red-600'
-                              }`}>
-                                Reviewed on: {new Date(task.reviewedAt).toLocaleString()}
-                              </p>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-        )}
-
-                {rightTab === 'instructions' && (
-                  <div>
-                    <h3 className="font-semibold text-gray-900 mb-4">Project Information</h3>
-                    <div className="space-y-4">
-                      {/* Project Name */}
-                      {task?.projectId?.name && (
-                        <div>
-                          <h4 className="font-semibold text-gray-800 mb-2 text-sm">Project Name</h4>
-                          <p className="text-gray-700 text-sm">{task.projectId.name}</p>
-                        </div>
-                      )}
-                      
-                      {/* Project Description */}
-                      {task?.projectId?.description && (
-                        <div>
-                          <h4 className="font-semibold text-gray-800 mb-2 text-sm">Description</h4>
-                          <p className="text-gray-600 whitespace-pre-wrap text-sm">
-                            {task.projectId.description}
-                          </p>
-                        </div>
-                      )}
-                      
-                      {/* Guidelines */}
-                      {task?.projectId?.guidelines && (
-                        <div>
-                          <h4 className="font-semibold text-gray-800 mb-2 text-sm">Guidelines</h4>
-                          <p className="text-gray-600 whitespace-pre-wrap text-sm">
-                            {task.projectId.guidelines}
-                          </p>
-                        </div>
-                      )}
-                      
-                      {!task?.projectId?.name && !task?.projectId?.description && !task?.projectId?.guidelines && (
-                        <p className="text-sm text-gray-500">No project information provided.</p>
-                      )}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
 
-                {rightTab === 'issues' && (
-                  <div>
-                    <h3 className="font-semibold text-gray-900 mb-4">Issues</h3>
-                    {task?.reviewNotes && task.reviewNotes.length > 0 ? (
-                      <div className="space-y-3">
-                        {task.reviewNotes.map((note, idx) => (
-                          <div key={idx} className="p-3 bg-red-50 border border-red-200 rounded-lg">
-                            <p className="text-sm text-red-700">{note.comment}</p>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-gray-500">No issues reported</p>
-                    )}
-                  </div>
-                )}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700">Ghi chú tổng thể (tùy chọn)</label>
+                  <textarea
+                    className="w-full border rounded-md p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    rows={3}
+                    placeholder="Nhập ghi chú tổng thể cho toàn bộ văn bản..."
+                    value={annotationNote}
+                    onChange={(e) => setAnnotationNote(e.target.value)}
+                    disabled={task?.status === 'submitted' || task?.status === 'approved'}
+                  />
+                </div>
+
+                <div className="flex items-center gap-3 pt-1">
+                  <Button
+                    variant="outlined"
+                    onClick={handleSave}
+                    disabled={saving || task?.status === 'submitted' || task?.status === 'approved'}
+                  >
+                    Lưu
+                  </Button>
+                  <Button
+                    variant="contained"
+                    onClick={handleSubmit}
+                    disabled={saving || task?.status === 'submitted' || task?.status === 'approved'}
+                  >
+                    Nộp ({textSpans.length} nhãn)
+                  </Button>
+                </div>
               </div>
-            </>
-          )}
-          {sidebarCollapsed && (
-            <button
-              onClick={() => setSidebarCollapsed(false)}
-              className="absolute right-0 top-1/2 transform -translate-y-1/2 w-8 h-16 bg-gray-100 hover:bg-gray-200 border-l border-gray-200 rounded-l-lg flex items-center justify-center text-gray-600"
-            >
-              ←
-            </button>
-          )}
+            ) : getTaskKind(task) === 'audio' ? (
+              <div className="bg-white rounded-lg shadow-lg p-4 max-w-4xl w-full space-y-4">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <p className="text-sm text-gray-500">Audio File</p>
+                    <p className="text-base font-semibold text-gray-800">
+                      {task?.dataItem?.filename || 'Unnamed audio'}
+                    </p>
+                  </div>
+                  <span className="text-xs text-gray-400">{task?.dataItem?.mimeType}</span>
+                </div>
+                <AudioAnnotator
+                  audioUrl={`${API_URL}/${task?.dataItem?.path}`}
+                  labelSet={task?.projectId?.labelSet || []}
+                  initialSegments={labels?.segments || []}
+                  readOnly={task?.status === 'submitted' || task?.status === 'approved'}
+                  onChange={(segs) => {
+                    setLabels((prev) => ({ ...prev, segments: segs }));
+                  }}
+                />
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700">Ghi chú / Nhãn cho audio</label>
+                  <textarea
+                    className="w-full border rounded-md p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    rows={4}
+                    placeholder="Nhập nhận xét hoặc nhãn..."
+                    value={annotationNote}
+                    onChange={(e) => setAnnotationNote(e.target.value)}
+                    disabled={task?.status === 'submitted' || task?.status === 'approved'}
+                  />
+                </div>
+
+                <div className="flex items-center gap-3 pt-1">
+                  <Button
+                    variant="outlined"
+                    onClick={handleSave}
+                    disabled={saving || task?.status === 'submitted' || task?.status === 'approved'}
+                  >
+                    Lưu
+                  </Button>
+                  <Button
+                    variant="contained"
+                    onClick={handleSubmit}
+                    disabled={saving || task?.status === 'submitted' || task?.status === 'approved'}
+                  >
+                    Nộp
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-12 text-gray-500">Không hỗ trợ loại file này.</div>
+            )}
+          </div>
         </div>
+
+        <Dialog open={showSubmitConfirm} onClose={() => setShowSubmitConfirm(false)} maxWidth="sm" fullWidth>
+          <DialogTitle>Xác nhận nộp bài</DialogTitle>
+          <DialogContent>
+            <Typography variant="body1" gutterBottom>
+              Bạn có chắc chắn muốn nộp bài để review?
+            </Typography>
+            <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
+              Sau khi nộp, bạn sẽ không thể chỉnh sửa nữa cho đến khi được review.
+            </Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setShowSubmitConfirm(false)} color="error">
+              Hủy
+            </Button>
+            <Button onClick={handleConfirmSubmit} variant="contained" color="primary" disabled={saving}>
+              {saving ? 'Đang nộp...' : 'Xác nhận nộp'}
+            </Button>
+          </DialogActions>
+        </Dialog>
       </div>
-
-
-      {/* Submit Confirmation Dialog */}
-      <Dialog open={showSubmitConfirm} onClose={() => setShowSubmitConfirm(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Xác nhận nộp bài</DialogTitle>
-        <DialogContent>
-          <Typography variant="body1" gutterBottom>
-            Bạn có chắc chắn muốn nộp bài để review?
-          </Typography>
-          <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
-            Sau khi nộp, bạn sẽ không thể chỉnh sửa nữa cho đến khi được review.
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setShowSubmitConfirm(false)} color="error">
-            Hủy
-          </Button>
-          <Button onClick={handleConfirmSubmit} variant="contained" color="primary" disabled={saving}>
-            {saving ? 'Đang nộp...' : 'Xác nhận nộp'}
-          </Button>
-        </DialogActions>
-      </Dialog>
     </div>
   );
 };

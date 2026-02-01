@@ -13,6 +13,7 @@ import AnnotatorAuditDetail from './pages/Manager/AnnotatorAuditDetail';
 import CreateProject from './pages/Manager/CreateProject';
 import TeamManagement from './pages/Manager/TeamManagement';
 import Datasets from './pages/Manager/Datasets';
+import Penalties from './pages/Manager/Penalties';
 import AnnotatorDashboard from './pages/Annotator/Dashboard';
 import AnnotatorTask from './pages/Annotator/Task';
 import ReviewerDashboard from './pages/Reviewer/Dashboard';
@@ -82,6 +83,7 @@ function App() {
               <Route path="manager/projects/:projectId/annotator/:annotatorId" element={<AnnotatorAuditDetail />} />
               <Route path="manager/team" element={<TeamManagement />} />
               <Route path="manager/datasets" element={<Datasets />} />
+              <Route path="manager/penalties" element={<Penalties />} />
               <Route path="annotator/tasks" element={<AnnotatorDashboard />} />
               <Route path="annotator/tasks/:id" element={<AnnotatorTask />} />
               <Route path="reviewer/tasks" element={<ReviewerDashboard />} />

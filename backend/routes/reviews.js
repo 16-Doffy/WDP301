@@ -3,6 +3,9 @@ const { body, validationResult } = require('express-validator');
 const Task = require('../models/Task');
 const { auth, authorize } = require('../middleware/auth');
 const { createActivityLog } = require('./activityLogs');
+const Penalty = require('../models/Penalty');
+const Warning = require('../models/Warning');
+const UserScore = require('../models/UserScore');
 
 const router = express.Router();
 
@@ -181,6 +184,9 @@ router.post('/:id/approve', auth, authorize('reviewer', 'admin'), async (req, re
     await task.populate('annotatorId', 'username fullName');
     await task.populate('reviewerId', 'username fullName');
 
+    // Update annotator score positively (approval = good work)
+    await updateAnnotatorScoreOnApproval(task.annotatorId._id || task.annotatorId);
+
     // Log task approval
     await createActivityLog(
       req.user._id,
@@ -277,6 +283,16 @@ router.post('/:id/reject', auth, authorize('reviewer', 'admin'), [
     await task.populate('annotatorId', 'username fullName');
     await task.populate('reviewerId', 'username fullName');
 
+    // Check for repeat errors and apply penalties
+    await checkAndApplyPenaltyOnRejection(
+      task.annotatorId._id || task.annotatorId,
+      task._id,
+      task.projectId._id || task.projectId,
+      req.body.errorCategory,
+      req.body.reviewComments,
+      req.user._id
+    );
+
     // Log task rejection
     await createActivityLog(
       req.user._id,
@@ -327,5 +343,144 @@ router.get('/stats', auth, authorize('reviewer', 'manager', 'admin'), async (req
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
+
+// Helper function to update annotator score on approval
+async function updateAnnotatorScoreOnApproval(annotatorId) {
+  let userScore = await UserScore.findOne({ userId: annotatorId });
+  
+  if (!userScore) {
+    const User = require('../models/User');
+    const user = await User.findById(annotatorId);
+    userScore = new UserScore({
+      userId: annotatorId,
+      role: user.role,
+      qualityScore: 100
+    });
+  }
+
+  // Small positive boost for approval (max 100)
+  userScore.qualityScore = Math.min(100, userScore.qualityScore + 0.5);
+  userScore.approvedTasks = (userScore.approvedTasks || 0) + 1;
+  userScore.completedTasks = (userScore.completedTasks || 0) + 1;
+  userScore.lastUpdated = new Date();
+  
+  await userScore.save();
+}
+
+// Helper function to check and apply penalty on rejection
+async function checkAndApplyPenaltyOnRejection(annotatorId, taskId, projectId, errorCategory, reviewComments, reviewerId) {
+  // Get recent rejections for this annotator
+  const recentRejections = await Task.find({
+    annotatorId,
+    status: 'rejected',
+    reviewedAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } // Last 7 days
+  }).sort({ reviewedAt: -1 });
+
+  const rejectionCount = recentRejections.length;
+  
+  // Get existing penalties
+  const recentPenalties = await Penalty.find({
+    userId: annotatorId,
+    createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
+  }).sort({ createdAt: -1 });
+
+  // Map error category to error type
+  const errorTypeMap = {
+    'incorrect_label': 'wrong_label',
+    'missing_label': 'missed_guideline',
+    'poor_quality': 'sloppy_work',
+    'does_not_follow_guidelines': 'missed_guideline',
+    'other': 'repeat_error'
+  };
+  const errorType = errorTypeMap[errorCategory] || 'repeat_error';
+
+  // Determine penalty level based on rejection history
+  let penaltyLevel = 'warning';
+  let action = 'notification';
+  let scoreDeduction = 2;
+
+  if (rejectionCount >= 5 || recentPenalties.filter(p => p.level === 'heavy').length > 0) {
+    // Heavy penalty - too many rejections
+    penaltyLevel = 'heavy';
+    action = 'temporary_ban';
+    scoreDeduction = 10;
+  } else if (rejectionCount >= 3 || recentPenalties.filter(p => p.level === 'light').length > 0) {
+    // Light penalty - multiple rejections
+    penaltyLevel = 'light';
+    action = 'reduce_tasks';
+    scoreDeduction = 5;
+  } else if (rejectionCount >= 2) {
+    // Warning - second rejection
+    penaltyLevel = 'warning';
+    action = 'read_guideline';
+    scoreDeduction = 2;
+  } else {
+    // First time - just warning, no penalty yet
+    const warning = new Warning({
+      userId: annotatorId,
+      role: 'annotator',
+      type: 'first_time',
+      reason: `Task bị reject: ${reviewComments || errorCategory}`,
+      relatedTaskId: taskId,
+      relatedProjectId: projectId,
+      createdBy: reviewerId
+    });
+    await warning.save();
+    return; // No penalty for first rejection
+  }
+
+  // Create penalty
+  const penalty = new Penalty({
+    userId: annotatorId,
+    role: 'annotator',
+    level: penaltyLevel,
+    reason: `Task bị reject (lần ${rejectionCount}): ${reviewComments || errorCategory}`,
+    errorType,
+    relatedTaskId: taskId,
+    relatedProjectId: projectId,
+    scoreDeduction,
+    action,
+    createdBy: reviewerId,
+    metadata: {
+      rejectionCount,
+      errorCategory
+    }
+  });
+  await penalty.save();
+
+  // Update user score
+  let userScore = await UserScore.findOne({ userId: annotatorId });
+  if (!userScore) {
+    const User = require('../models/User');
+    const user = await User.findById(annotatorId);
+    userScore = new UserScore({
+      userId: annotatorId,
+      role: user.role,
+      qualityScore: 100
+    });
+  }
+
+  userScore.qualityScore = Math.max(0, userScore.qualityScore - scoreDeduction);
+  userScore.rejectedTasks = (userScore.rejectedTasks || 0) + 1;
+  userScore.currentPenaltyLevel = penaltyLevel;
+  userScore.lastUpdated = new Date();
+  await userScore.save();
+
+  // Apply penalty actions
+  if (action === 'reduce_tasks') {
+    if (!userScore.weeklyTaskLimit || userScore.weeklyTaskLimit > 10) {
+      userScore.weeklyTaskLimit = 10;
+    } else {
+      userScore.weeklyTaskLimit = Math.max(5, userScore.weeklyTaskLimit - 5);
+    }
+    await userScore.save();
+  } else if (action === 'temporary_ban') {
+    userScore.isRestricted = true;
+    const banDays = penaltyLevel === 'heavy' ? 7 : 3;
+    userScore.restrictionUntil = new Date();
+    userScore.restrictionUntil.setDate(userScore.restrictionUntil.getDate() + banDays);
+    await userScore.save();
+  }
+}
 
 module.exports = router;
