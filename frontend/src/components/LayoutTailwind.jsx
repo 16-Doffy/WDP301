@@ -50,6 +50,11 @@ const LayoutTailwind = () => {
         ),
         path: '/manager/datasets',
       });
+      baseItems.push({
+        text: 'Penalties & Scores',
+        icon: '⚖️',
+        path: '/manager/penalties',
+      });
     }
 
     if (user.role === 'annotator') {
