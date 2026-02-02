@@ -22,6 +22,7 @@ code {
     monospace;
 }
 
+
 /* Custom scrollbar hide */
 .scrollbar-hide {
   -ms-overflow-style: none;
@@ -50,4 +51,5 @@ code {
 /* Neon glow effect */
 .neon-glow {
   box-shadow: 0 0 20px rgba(16, 185, 129, 0.6), 0 0 40px rgba(16, 185, 129, 0.4);
+
 }

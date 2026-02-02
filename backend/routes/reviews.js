@@ -18,13 +18,13 @@ router.get('/pending', auth, authorize('reviewer', 'admin'), async (req, res) =>
       status: 'submitted',
       $or: [
         // Reviewer is in the reviewers array with status 'pending'
-        { 
-          reviewers: { 
-            $elemMatch: { 
+        {
+          reviewers: {
+            $elemMatch: {
               reviewerId: reviewerId,
-              status: 'pending' 
-            } 
-          } 
+              status: 'pending'
+            }
+          }
         },
         // Fallback: if reviewers array is empty or doesn't exist, show to all reviewers
         { reviewers: { $exists: true, $size: 0 } },
@@ -48,9 +48,9 @@ router.get('/pending', auth, authorize('reviewer', 'admin'), async (req, res) =>
 // Get all reviewed tasks (approved/rejected)
 router.get('/reviewed', auth, authorize('reviewer', 'admin'), async (req, res) => {
   try {
-    const tasks = await Task.find({ 
+    const tasks = await Task.find({
       status: { $in: ['approved', 'rejected'] },
-      reviewerId: req.user._id 
+      reviewerId: req.user._id
     })
       .populate('projectId', 'name labelSet guidelines questions')
       .populate('datasetId', 'name')
@@ -69,19 +69,19 @@ router.get('/all', auth, authorize('reviewer', 'admin'), async (req, res) => {
   try {
     const reviewerId = req.user._id;
     const reviewerIdString = reviewerId.toString();
-    
+
     // Query for pending tasks: status = 'submitted' AND reviewer is assigned with status 'pending'
     const pendingTasks = await Task.find({
       status: 'submitted',
       $or: [
         // Reviewer is in the reviewers array with status 'pending'
-        { 
-          reviewers: { 
-            $elemMatch: { 
+        {
+          reviewers: {
+            $elemMatch: {
               reviewerId: reviewerId,
-              status: 'pending' 
-            } 
-          } 
+              status: 'pending'
+            }
+          }
         },
         // Fallback: if reviewers array is empty or doesn't exist, show to all reviewers
         { reviewers: { $exists: true, $size: 0 } },
@@ -95,19 +95,19 @@ router.get('/all', auth, authorize('reviewer', 'admin'), async (req, res) => {
       .sort({ submittedAt: 1 });
 
     // Query for reviewed tasks: status = 'approved' or 'rejected' AND reviewer reviewed it
-    const reviewedTasks = await Task.find({ 
+    const reviewedTasks = await Task.find({
       status: { $in: ['approved', 'rejected'] },
       $or: [
         // Reviewer is the primary reviewer
         { reviewerId: reviewerId },
         // Or reviewer is in the reviewers array with status 'approved' or 'rejected'
-        { 
-          reviewers: { 
-            $elemMatch: { 
+        {
+          reviewers: {
+            $elemMatch: {
               reviewerId: reviewerId,
-              status: { $in: ['approved', 'rejected'] } 
-            } 
-          } 
+              status: { $in: ['approved', 'rejected'] }
+            }
+          }
         }
       ]
     })
@@ -135,15 +135,15 @@ router.post('/:id/approve', auth, authorize('reviewer', 'admin'), async (req, re
   try {
     const task = await Task.findById(req.params.id)
       .populate('projectId', 'name guidelines');
-    
+
     if (!task) {
       return res.status(404).json({ message: 'Task not found' });
     }
 
     // Validate task status
     if (task.status !== 'submitted') {
-      return res.status(400).json({ 
-        message: `Task cannot be approved. Current status: ${task.status}. Only submitted tasks can be approved.` 
+      return res.status(400).json({
+        message: `Task cannot be approved. Current status: ${task.status}. Only submitted tasks can be approved.`
       });
     }
 
@@ -195,7 +195,7 @@ router.post('/:id/approve', auth, authorize('reviewer', 'admin'), async (req, re
       'task',
       task._id,
       `Approved task submitted by ${task.annotatorId?.fullName || task.annotatorId?.username}`,
-      { 
+      {
         taskId: task._id.toString(),
         annotatorId: task.annotatorId?._id?.toString() || task.annotatorId?.toString()
       },
@@ -221,15 +221,15 @@ router.post('/:id/reject', auth, authorize('reviewer', 'admin'), [
 
     const task = await Task.findById(req.params.id)
       .populate('projectId', 'name guidelines');
-    
+
     if (!task) {
       return res.status(404).json({ message: 'Task not found' });
     }
 
     // Validate task status
     if (task.status !== 'submitted') {
-      return res.status(400).json({ 
-        message: `Task cannot be rejected. Current status: ${task.status}. Only submitted tasks can be rejected.` 
+      return res.status(400).json({
+        message: `Task cannot be rejected. Current status: ${task.status}. Only submitted tasks can be rejected.`
       });
     }
 
@@ -246,8 +246,8 @@ router.post('/:id/reject', auth, authorize('reviewer', 'admin'), [
     // Validate error category if provided
     const validErrorCategories = ['incorrect_label', 'missing_label', 'poor_quality', 'does_not_follow_guidelines', 'other'];
     if (req.body.errorCategory && !validErrorCategories.includes(req.body.errorCategory)) {
-      return res.status(400).json({ 
-        message: `Invalid error category. Valid categories are: ${validErrorCategories.join(', ')}` 
+      return res.status(400).json({
+        message: `Invalid error category. Valid categories are: ${validErrorCategories.join(', ')}`
       });
     }
 
@@ -301,7 +301,7 @@ router.post('/:id/reject', auth, authorize('reviewer', 'admin'), [
       'task',
       task._id,
       `Rejected task submitted by ${task.annotatorId?.fullName || task.annotatorId?.username}. Reason: ${task.errorCategory}`,
-      { 
+      {
         taskId: task._id.toString(),
         annotatorId: task.annotatorId?._id?.toString() || task.annotatorId?.toString(),
         errorCategory: task.errorCategory
@@ -578,5 +578,43 @@ async function checkAndApplyPenaltyOnRejection(annotatorId, taskId, projectId, e
     await userScore.save();
   }
 }
+
+// Handle sentence-level feedback (for text tasks)
+router.post('/:id/sentences', auth, authorize('reviewer', 'admin'), async (req, res) => {
+  try {
+    const { index, action, feedback } = req.body;
+
+    const task = await Task.findById(req.params.id);
+    if (!task) {
+      return res.status(404).json({ message: 'Task not found' });
+    }
+
+    // Initialize sentenceFeedbacks if it doesn't exist
+    if (!task.sentenceFeedbacks) {
+      task.sentenceFeedbacks = {};
+    }
+
+    // Store feedback for this sentence
+    const feedbackKey = `sentence_${index}`;
+    task.sentenceFeedbacks[feedbackKey] = {
+      action,
+      feedback,
+      reviewerId: req.user._id,
+      reviewedAt: new Date()
+    };
+
+    // CRITICAL: Since sentenceFeedbacks is a Mixed type, we must mark it as modified
+    task.markModified('sentenceFeedbacks');
+
+    await task.save();
+
+    res.json({
+      message: `Sentence ${index} marked as ${action}`,
+      sentenceFeedbacks: task.sentenceFeedbacks
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
 
 module.exports = router;
