@@ -8,23 +8,20 @@ import {
   Typography,
   Button,
   CircularProgress,
-  Avatar,
-  Chip,
-  LinearProgress,
   Stack,
-  TextField,
-  InputAdornment,
 } from '@mui/material';
-import {
-  Folder as FolderIcon,
-  Assignment as AssignmentIcon,
-  PlaylistAddCheck as PlaylistAddCheckIcon,
-  PendingActions as PendingActionsIcon,
-  Search as SearchIcon,
-} from '@mui/icons-material';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
 import { useAuth } from '../../context/AuthContext';
+
+const glassCardSx = {
+  borderRadius: 3,
+  boxShadow: '0 18px 45px rgba(0,0,0,0.18)',
+  background: 'rgba(255,255,255,0.10)',
+  border: '1px solid rgba(255,255,255,0.18)',
+  backdropFilter: 'blur(10px)',
+  color: 'rgba(255,255,255,0.92)',
+};
 
 const ManagerDashboard = () => {
   const [stats, setStats] = useState(null);
@@ -92,7 +89,6 @@ const ManagerDashboard = () => {
   };
 
   const {
-    totalProjects,
     activeProjects,
     totalTasks,
     pendingTasks,
@@ -108,433 +104,381 @@ const ManagerDashboard = () => {
   const totalReviewed = approvedTasks + rejectedTasks;
 
   return (
-    <Box
-      sx={{
-        py: 4,
-        px: { xs: 2, sm: 3, md: 4 },
-        bgcolor: '#f5f7fb',
-        minHeight: '100vh',
-      }}
-    >
-      {/* Top header: greeting + action buttons */}
+    <Box sx={{ p: { xs: 2, sm: 3, md: 4 }, minHeight: '100vh' }}>
+      {/* Mantle panel */}
       <Box
         sx={{
-          display: 'flex',
-          flexDirection: { xs: 'column', md: 'row' },
-          alignItems: { xs: 'flex-start', md: 'center' },
-          justifyContent: 'space-between',
-          mb: 4,
-          gap: 2,
+          borderRadius: 5,
+          p: { xs: 2, sm: 3, md: 4 },
+          background: 'linear-gradient(135deg, #24C6DC 0%, #514A9D 100%)',
+          boxShadow: '0 30px 80px rgba(0,0,0,0.28)',
+          border: '1px solid rgba(255,255,255,0.18)',
+          position: 'relative',
+          overflow: 'hidden',
         }}
       >
-        <Box>
-          <Typography variant="h4" fontWeight={700} sx={{ mb: 0.5 }}>
-            Hello, {managerName}
-          </Typography>
-          <Typography variant="body1" color="text.secondary">
-            Chào mừng trở lại với nền tảng quản lý nhân dữ liệu chuyên nghiệp.
-          </Typography>
+        {/* subtle glow */}
+        <Box
+          sx={{
+            position: 'absolute',
+            inset: 0,
+            background:
+              'radial-gradient(900px circle at 20% 10%, rgba(255,255,255,0.25), transparent 60%), radial-gradient(700px circle at 85% 30%, rgba(255,255,255,0.18), transparent 55%)',
+            pointerEvents: 'none',
+          }}
+        />
+
+        {/* Top header */}
+        <Box
+          sx={{
+            position: 'relative',
+            display: 'flex',
+            flexDirection: { xs: 'column', md: 'row' },
+            alignItems: { xs: 'flex-start', md: 'center' },
+            justifyContent: 'space-between',
+            mb: 3,
+            gap: 2,
+          }}
+        >
+          <Box>
+            <Typography
+              variant="h4"
+              fontWeight={800}
+              sx={{ mb: 0.5, color: 'rgba(255,255,255,0.96)', letterSpacing: -0.5 }}
+            >
+              Hello, {managerName}
+            </Typography>
+            <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.82)' }}>
+              Chào mừng trở lại với nền tảng quản lý nhân dữ liệu chuyên nghiệp.
+            </Typography>
+          </Box>
+          <Stack direction="row" spacing={1.5} sx={{ width: { xs: '100%', md: 'auto' } }}>
+            <Button
+              variant="outlined"
+              onClick={() => navigate('/manager/projects')}
+              sx={{
+                borderRadius: 3,
+                textTransform: 'none',
+                fontWeight: 700,
+                px: 3,
+                py: 1.2,
+                borderColor: 'rgba(255,255,255,0.65)',
+                color: 'rgba(255,255,255,0.92)',
+                bgcolor: 'rgba(255,255,255,0.08)',
+                '&:hover': {
+                  bgcolor: 'rgba(255,255,255,0.16)',
+                  borderColor: 'rgba(255,255,255,0.9)',
+                },
+              }}
+            >
+              QUẢN LÝ PROJECTS
+            </Button>
+            <Button
+              variant="contained"
+              onClick={() => navigate('/manager/datasets')}
+              sx={{
+                borderRadius: 3,
+                textTransform: 'none',
+                fontWeight: 800,
+                px: 3,
+                py: 1.2,
+                bgcolor: 'rgba(15,23,42,0.22)',
+                color: 'rgba(255,255,255,0.95)',
+                boxShadow: '0 12px 30px rgba(0,0,0,0.18)',
+                '&:hover': {
+                  bgcolor: 'rgba(15,23,42,0.30)',
+                },
+              }}
+            >
+              QUẢN LÝ DATASETS
+            </Button>
+          </Stack>
         </Box>
-        <Stack direction="row" spacing={1.5} sx={{ width: { xs: '100%', md: 'auto' } }}>
-          <Button
-            variant="outlined"
-            onClick={() => navigate('/manager/projects')}
-            sx={{
-              borderRadius: 2,
-              textTransform: 'none',
-              fontWeight: 600,
-              px: 3,
-              py: 1.5,
-              bgcolor: 'white',
-              borderColor: '#e5e7eb',
-              color: '#374151',
-              '&:hover': {
-                bgcolor: '#f9fafb',
-                borderColor: '#d1d5db',
-              },
-            }}
-          >
-            QUẢN LÝ PROJECTS
-          </Button>
-          <Button
-            variant="contained"
-            onClick={() => navigate('/manager/datasets')}
-            sx={{
-              borderRadius: 2,
-              textTransform: 'none',
-              fontWeight: 600,
-              px: 3,
-              py: 1.5,
-              bgcolor: '#1e40af',
-              '&:hover': {
-                bgcolor: '#1e3a8a',
-              },
-            }}
-          >
-            QUẢN LÝ DATASETS
-          </Button>
-        </Stack>
-      </Box>
 
-      {/* Top stats row */}
-      <Grid container spacing={2.5}>
-        <Grid item xs={12} sm={6} md={3}>
-          <Card sx={{ borderRadius: 3, boxShadow: '0 10px 30px rgba(15,23,42,0.04)', position: 'relative', overflow: 'hidden' }}>
-            <CardContent>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
-                <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 600 }}>
-                  PROJECTS ACTIVE
-                </Typography>
-                <Box sx={{ fontSize: 20, opacity: 0.3 }}>⋯</Box>
-              </Box>
-              <Typography variant="h3" fontWeight={700} sx={{ mb: 2 }}>
-                {activeProjects}
-              </Typography>
-              {/* Mini line graph */}
-              <Box sx={{ height: 40, position: 'relative', mt: 2 }}>
-                <svg width="100%" height="40" style={{ position: 'absolute', bottom: 0 }}>
-                  <polyline
-                    points="0,30 8,25 16,28 24,22 32,20 40,18 48,15"
-                    fill="none"
-                    stroke="#4F46E5"
-                    strokeWidth="2"
-                  />
-                </svg>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={3}>
-          <Card sx={{ borderRadius: 3, boxShadow: '0 10px 30px rgba(15,23,42,0.04)', position: 'relative', overflow: 'hidden' }}>
-            <CardContent>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
-                <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 600 }}>
-                  TASKS TOTAL
-                </Typography>
-                <Box sx={{ fontSize: 20, opacity: 0.3 }}>⋯</Box>
-              </Box>
-              <Typography variant="h3" fontWeight={700} sx={{ mb: 2 }}>
-                {totalTasks.toLocaleString()}
-              </Typography>
-              {/* Mini line graph */}
-              <Box sx={{ height: 40, position: 'relative', mt: 2 }}>
-                <svg width="100%" height="40" style={{ position: 'absolute', bottom: 0 }}>
-                  <polyline
-                    points="0,28 8,24 16,26 24,20 32,18 40,16 48,12"
-                    fill="none"
-                    stroke="#0369A1"
-                    strokeWidth="2"
-                  />
-                </svg>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={3}>
-          <Card sx={{ borderRadius: 3, boxShadow: '0 10px 30px rgba(15,23,42,0.04)', position: 'relative', overflow: 'hidden' }}>
-            <CardContent>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
-                <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 600 }}>
-                  APPROVAL RATE
-                </Typography>
-                <Box sx={{ fontSize: 20, opacity: 0.3 }}>⋯</Box>
-              </Box>
-              <Typography variant="h3" fontWeight={700} sx={{ mb: 2 }}>
-                {approvalRate}%
-              </Typography>
-              {/* Semi-circular gauge chart */}
-              <Box sx={{ height: 40, position: 'relative', mt: 2 }}>
-                <svg width="100%" height="40" style={{ position: 'absolute', bottom: 0 }}>
-                  <path
-                    d="M 0 20 Q 24 0, 48 20"
-                    fill="none"
-                    stroke="#e5e7eb"
-                    strokeWidth="3"
-                  />
-                  <path
-                    d={`M 0 20 Q 24 ${20 - (approvalRate / 100) * 20}, 48 20`}
-                    fill="none"
-                    stroke="#22C55E"
-                    strokeWidth="3"
-                  />
-                </svg>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={3}>
-          <Card sx={{ borderRadius: 3, boxShadow: '0 10px 30px rgba(15,23,42,0.04)', position: 'relative', overflow: 'hidden' }}>
-            <CardContent>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
-                <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 600 }}>
-                  REVIEW PENDING
-                </Typography>
-                <Box sx={{ fontSize: 20, opacity: 0.3 }}>⋯</Box>
-              </Box>
-              <Typography variant="h3" fontWeight={700} sx={{ mb: 2 }}>
-                {pendingTasks}
-              </Typography>
-              {/* Mini bar chart */}
-              <Box sx={{ height: 40, position: 'relative', mt: 2, display: 'flex', alignItems: 'flex-end', gap: 0.5 }}>
-                {[12, 18, 15, 22, 16, 20, 14].map((height, idx) => (
-                  <Box
-                    key={idx}
-                    sx={{
-                      flex: 1,
-                      height: `${height}px`,
-                      bgcolor: '#F59E0B',
-                      borderRadius: '2px 2px 0 0',
-                    }}
-                  />
-                ))}
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-
-      {/* Task distribution + review intelligence */}
-      <Grid container spacing={2.5} sx={{ mt: 3 }}>
-        <Grid item xs={12} md={8}>
-          <Card
-            sx={{
-              borderRadius: 3,
-              boxShadow: '0 18px 45px rgba(15,23,42,0.04)',
-              bgcolor: 'white',
-            }}
-          >
-            <CardContent>
-              <Typography variant="h6" fontWeight={600} sx={{ mb: 0.5 }}>
-                Task Distribution
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                Phân bổ tasks theo trạng thái hiện tại
-              </Typography>
-
-              {/* Bar chart with Y-axis */}
-              {totalActionTasks === 0 ? (
-                <Box sx={{ py: 6, textAlign: 'center', color: 'text.secondary' }}>
-                  Chưa có dữ liệu task để hiển thị biểu đồ.
-                </Box>
-              ) : (
-                <Box sx={{ mt: 3, position: 'relative', height: 280 }}>
-                  {/* Y-axis labels */}
-                  <Box sx={{ position: 'absolute', left: 0, top: 0, bottom: 40, width: 30, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', alignItems: 'flex-end', pr: 1 }}>
-                    {[250, 200, 150, 100, 50, 0].map((val) => (
-                      <Typography key={val} variant="caption" color="text.secondary" sx={{ fontSize: 10 }}>
-                        {val}
-                      </Typography>
-                    ))}
+        {/* Stats row */}
+        <Grid container spacing={2.5} sx={{ position: 'relative' }}>
+          {[
+            {
+              label: 'PROJECTS ACTIVE',
+              value: activeProjects,
+              accent: '#A78BFA',
+              spark: '0,30 10,25 20,28 30,22 40,20 50,18 60,15',
+            },
+            {
+              label: 'TASKS TOTAL',
+              value: totalTasks.toLocaleString(),
+              accent: '#38BDF8',
+              spark: '0,28 10,24 20,26 30,20 40,18 50,16 60,12',
+            },
+            {
+              label: 'APPROVAL RATE',
+              value: `${approvalRate}%`,
+              accent: '#34D399',
+              gauge: true,
+            },
+            {
+              label: 'REVIEW PENDING',
+              value: pendingTasks,
+              accent: '#F59E0B',
+              bars: true,
+            },
+          ].map((it) => (
+            <Grid key={it.label} item xs={12} sm={6} md={3}>
+              <Card sx={glassCardSx}>
+                <CardContent>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                    <Typography
+                      variant="overline"
+                      sx={{ fontWeight: 800, letterSpacing: 1.2, color: 'rgba(255,255,255,0.80)' }}
+                    >
+                      {it.label}
+                    </Typography>
+                    <Box sx={{ fontSize: 18, opacity: 0.5 }}>⋯</Box>
                   </Box>
-                  
-                  {/* Chart area */}
-                  <Box
-                    sx={{
-                      ml: 4,
-                      display: 'flex',
-                      alignItems: 'flex-end',
-                      justifyContent: 'space-around',
-                      height: 240,
-                      position: 'relative',
-                    }}
-                  >
-                    {[
-                      { label: 'Đang thực hiện', value: inProgressTasks, color: '#3B82F6' },
-                      { label: 'Chờ review', value: pendingTasks, color: '#9CA3AF' },
-                      { label: 'Đã approve', value: approvedTasks, color: '#22C55E' },
-                      { label: 'Bị reject', value: rejectedTasks, color: '#DC2626' },
-                    ].map((item) => {
-                      const maxValue = Math.max(inProgressTasks, pendingTasks, approvedTasks, rejectedTasks, 1);
-                      const normalizedValue = Math.min(item.value, 250);
-                      const height = (normalizedValue / 250) * 200;
-                      return (
+                  <Typography variant="h3" fontWeight={800} sx={{ mb: 2, color: 'rgba(255,255,255,0.95)' }}>
+                    {it.value}
+                  </Typography>
+
+                  {it.gauge ? (
+                    <Box sx={{ height: 40, position: 'relative', mt: 2 }}>
+                      <svg width="100%" height="40" style={{ position: 'absolute', bottom: 0 }}>
+                        <path d="M 0 20 Q 30 0, 60 20" fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="3" />
+                        <path
+                          d={`M 0 20 Q 30 ${20 - (Number(approvalRate) / 100) * 20}, 60 20`}
+                          fill="none"
+                          stroke={it.accent}
+                          strokeWidth="3"
+                        />
+                      </svg>
+                    </Box>
+                  ) : it.bars ? (
+                    <Box sx={{ height: 40, mt: 2, display: 'flex', alignItems: 'flex-end', gap: 0.5 }}>
+                      {[10, 14, 12, 16, 11, 15, 10].map((h, idx) => (
                         <Box
-                          key={item.label}
+                          key={idx}
                           sx={{
                             flex: 1,
-                            display: 'flex',
-                            flexDirection: 'column',
-                            alignItems: 'center',
-                            mx: 0.5,
-                            height: '100%',
-                            justifyContent: 'flex-end',
+                            height: `${h}px`,
+                            bgcolor: it.accent,
+                            borderRadius: '3px 3px 0 0',
+                            opacity: 0.9,
                           }}
-                        >
-                          <Typography variant="caption" fontWeight={600} sx={{ mb: 0.5, fontSize: 12 }}>
-                            {item.value}
-                          </Typography>
-                          <Box
-                            sx={{
-                              width: '70%',
-                              minWidth: 32,
-                              height: `${height}px`,
-                              bgcolor: item.color,
-                              borderRadius: '4px 4px 0 0',
-                              transition: 'height 0.3s ease-out',
-                            }}
-                          />
-                          <Typography
-                            variant="caption"
-                            color="text.secondary"
-                            sx={{ mt: 1, textAlign: 'center', fontSize: 11 }}
-                          >
-                            {item.label}
-                          </Typography>
-                        </Box>
-                      );
-                    })}
-                  </Box>
-                </Box>
-              )}
-            </CardContent>
-          </Card>
+                        />
+                      ))}
+                    </Box>
+                  ) : (
+                    <Box sx={{ height: 40, position: 'relative', mt: 2 }}>
+                      <svg width="100%" height="40" style={{ position: 'absolute', bottom: 0 }}>
+                        <polyline points={it.spark} fill="none" stroke={it.accent} strokeWidth="2" />
+                      </svg>
+                    </Box>
+                  )}
+                </CardContent>
+              </Card>
+            </Grid>
+          ))}
         </Grid>
 
-        <Grid item xs={12} md={4}>
-          <Card
-            sx={{
-              borderRadius: 3,
-              height: '100%',
-              bgcolor: 'white',
-              boxShadow: '0 10px 30px rgba(15,23,42,0.04)',
-              display: 'flex',
-              flexDirection: 'column',
-            }}
-          >
-            <CardContent sx={{ flex: 1, display: 'flex', flexDirection: 'column', p: 3 }}>
-              {/* Header with icon */}
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1 }}>
-                <Box
-                  sx={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: '50%',
-                    bgcolor: '#E0F2FE',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    position: 'relative',
-                    '&::after': {
-                      content: '""',
-                      position: 'absolute',
-                      width: '120%',
-                      height: '120%',
-                      borderRadius: '50%',
-                      border: '2px solid #BFDBFE',
-                      opacity: 0.3,
-                    },
-                  }}
-                >
+        {/* Distribution + Intelligence */}
+        <Grid container spacing={2.5} sx={{ mt: 3, position: 'relative' }}>
+          <Grid item xs={12} md={8}>
+            <Card sx={{ ...glassCardSx, height: '100%' }}>
+              <CardContent>
+                <Typography variant="h6" fontWeight={800} sx={{ mb: 0.5, color: 'rgba(255,255,255,0.95)' }}>
+                  Task Distribution
+                </Typography>
+                <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.75)' }}>
+                  Phân bổ tasks theo trạng thái hiện tại
+                </Typography>
+
+                {totalActionTasks === 0 ? (
+                  <Box sx={{ py: 6, textAlign: 'center', color: 'rgba(255,255,255,0.8)' }}>
+                    Chưa có dữ liệu task để hiển thị biểu đồ.
+                  </Box>
+                ) : (
+                  <Box sx={{ mt: 3, position: 'relative', height: 280 }}>
+                    <Box
+                      sx={{
+                        position: 'absolute',
+                        left: 0,
+                        top: 0,
+                        bottom: 40,
+                        width: 30,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        alignItems: 'flex-end',
+                        pr: 1,
+                        opacity: 0.85,
+                      }}
+                    >
+                      {[250, 200, 150, 100, 50, 0].map((val) => (
+                        <Typography key={val} variant="caption" sx={{ fontSize: 10, color: 'rgba(255,255,255,0.7)' }}>
+                          {val}
+                        </Typography>
+                      ))}
+                    </Box>
+
+                    <Box
+                      sx={{
+                        ml: 4,
+                        display: 'flex',
+                        alignItems: 'flex-end',
+                        justifyContent: 'space-around',
+                        height: 240,
+                      }}
+                    >
+                      {[
+                        { label: 'Đang thực hiện', value: inProgressTasks, color: '#38BDF8' },
+                        { label: 'Chờ review', value: pendingTasks, color: 'rgba(255,255,255,0.35)' },
+                        { label: 'Đã approve', value: approvedTasks, color: '#34D399' },
+                        { label: 'Bị reject', value: rejectedTasks, color: '#FB7185' },
+                      ].map((item) => {
+                        const normalizedValue = Math.min(item.value, 250);
+                        const height = (normalizedValue / 250) * 200;
+                        return (
+                          <Box
+                            key={item.label}
+                            sx={{
+                              flex: 1,
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              mx: 0.5,
+                              height: '100%',
+                              justifyContent: 'flex-end',
+                            }}
+                          >
+                            <Typography variant="caption" fontWeight={800} sx={{ mb: 0.5, fontSize: 12, color: 'rgba(255,255,255,0.92)' }}>
+                              {item.value}
+                            </Typography>
+                            <Box
+                              sx={{
+                                width: '70%',
+                                minWidth: 32,
+                                height: `${height}px`,
+                                bgcolor: item.color,
+                                borderRadius: '6px 6px 0 0',
+                                boxShadow: '0 12px 24px rgba(0,0,0,0.18)',
+                                transition: 'height 0.3s ease-out',
+                              }}
+                            />
+                            <Typography variant="caption" sx={{ mt: 1, textAlign: 'center', fontSize: 11, color: 'rgba(255,255,255,0.75)' }}>
+                              {item.label}
+                            </Typography>
+                          </Box>
+                        );
+                      })}
+                    </Box>
+                  </Box>
+                )}
+              </CardContent>
+            </Card>
+          </Grid>
+
+          <Grid item xs={12} md={4}>
+            <Card sx={{ ...glassCardSx, height: '100%', display: 'flex', flexDirection: 'column' }}>
+              <CardContent sx={{ flex: 1, display: 'flex', flexDirection: 'column', p: 3 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1 }}>
                   <Box
                     sx={{
-                      fontSize: 20,
-                      color: '#0369A1',
+                      width: 40,
+                      height: 40,
+                      borderRadius: '50%',
+                      bgcolor: 'rgba(255,255,255,0.14)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      border: '1px solid rgba(255,255,255,0.20)',
                     }}
                   >
-                    ⚙️
+                    <Box sx={{ fontSize: 18, color: 'rgba(255,255,255,0.92)' }}>⚙️</Box>
                   </Box>
-                </Box>
-                <Box>
-                  <Typography variant="h6" fontWeight={700} sx={{ color: '#0369A1', mb: 0 }}>
-                    Review Intelligence
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: 11 }}>
-                    Daily performance analysis summary.
-                  </Typography>
-                </Box>
-              </Box>
-
-              {/* INSIGHTS THIS MONTH section */}
-              <Box sx={{ mt: 1, mb: 1 }}>
-             
-                <Typography variant="h3" fontWeight={700} sx={{ mt: 1, color: '#1F2937' }}>
-                  {totalReviewed} <Typography component="span" variant="h5" sx={{ fontWeight: 400, color: '#6B7280' }}>Tasks Reviewed</Typography>
-                </Typography>
-              </Box>
-
-              {/* Breakdown metrics */}
-              <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, mb: 2 }}>
-                <Stack direction="row" justifyContent="space-between" alignItems="center">
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Box
-                      sx={{
-                        width: 8,
-                        height: 8,
-                        borderRadius: '50%',
-                        bgcolor: '#22C55E',
-                      }}
-                    />
-                    <Typography variant="body2" sx={{ color: '#374151', fontSize: 14 }}>
-                      Đã review
+                  <Box>
+                    <Typography variant="h6" fontWeight={900} sx={{ color: 'rgba(255,255,255,0.95)', mb: 0 }}>
+                      Review Intelligence
+                    </Typography>
+                    <Typography variant="caption" sx={{ fontSize: 11, color: 'rgba(255,255,255,0.72)' }}>
+                      Daily performance analysis summary.
                     </Typography>
                   </Box>
-                  <Typography variant="body1" fontWeight={600} sx={{ color: '#1F2937' }}>
-                    {totalReviewed}
-                  </Typography>
-                </Stack>
-                <Stack direction="row" justifyContent="space-between" alignItems="center">
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Box
-                      sx={{
-                        width: 8,
-                        height: 8,
-                        borderRadius: '50%',
-                        bgcolor: '#EF4444',
-                      }}
-                    />
-                    <Typography variant="body2" sx={{ color: '#374151', fontSize: 14 }}>
-                      Bị reject
+                </Box>
+
+                <Box sx={{ mt: 1, mb: 1 }}>
+                  <Typography variant="h3" fontWeight={900} sx={{ mt: 1, color: 'rgba(255,255,255,0.96)' }}>
+                    {totalReviewed}{' '}
+                    <Typography component="span" variant="h6" sx={{ fontWeight: 500, color: 'rgba(255,255,255,0.72)' }}>
+                      Tasks Reviewed
                     </Typography>
-                  </Box>
-                  <Typography variant="body1" fontWeight={600} sx={{ color: '#1F2937' }}>
-                    {rejectedTasks}
                   </Typography>
-                </Stack>
-              </Box>
+                </Box>
 
-              {/* Divider */}
-              <Box sx={{ width: '100%', height: 1, bgcolor: '#E5E7EB', my: 2 }} />
+                <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 2, mb: 2, mt: 2 }}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center">
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#34D399' }} />
+                      <Typography variant="body2" sx={{ fontSize: 14, color: 'rgba(255,255,255,0.82)' }}>
+                        Đã review
+                      </Typography>
+                    </Box>
+                    <Typography variant="body1" fontWeight={800} sx={{ color: 'rgba(255,255,255,0.95)' }}>
+                      {totalReviewed}
+                    </Typography>
+                  </Stack>
 
-              {/* Approval Rate */}
-              <Box sx={{ mb: 3 }}>
-                <Stack direction="row" justifyContent="space-between" alignItems="center">
-                  <Typography variant="body2" sx={{ color: '#6B7280', fontSize: 14 }}>
-                    Approval Rate
-                  </Typography>
-                  <Typography variant="h5" fontWeight={700} sx={{ color: '#0369A1' }}>
-                    {approvalRate}%
-                  </Typography>
-                </Stack>
-              </Box>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center">
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#FB7185' }} />
+                      <Typography variant="body2" sx={{ fontSize: 14, color: 'rgba(255,255,255,0.82)' }}>
+                        Bị reject
+                      </Typography>
+                    </Box>
+                    <Typography variant="body1" fontWeight={800} sx={{ color: 'rgba(255,255,255,0.95)' }}>
+                      {rejectedTasks}
+                    </Typography>
+                  </Stack>
+                </Box>
 
-              {/* Button */}
-              <Button
-                variant="contained"
-                fullWidth
-                sx={{
-                  mt: 'auto',
-                  borderRadius: 2,
-                  textTransform: 'none',
-                  fontWeight: 600,
-                  fontSize: 12,
-                  py: 1.5,
-                  bgcolor: '#DBEAFE',
-                  color: '#0369A1',
-                  '&:hover': {
-                    bgcolor: '#BFDBFE',
-                  },
-                }}
-                onClick={() => navigate('/manager/projects')}
-              >
-                VIEW FULL ANALYSIS
-              </Button>
-            </CardContent>
-          </Card>
+                <Box sx={{ width: '100%', height: 1, bgcolor: 'rgba(255,255,255,0.18)', my: 2 }} />
+
+                <Box sx={{ mb: 3 }}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center">
+                    <Typography variant="body2" sx={{ fontSize: 14, color: 'rgba(255,255,255,0.72)' }}>
+                      Approval Rate
+                    </Typography>
+                    <Typography variant="h5" fontWeight={900} sx={{ color: 'rgba(255,255,255,0.96)' }}>
+                      {approvalRate}%
+                    </Typography>
+                  </Stack>
+                </Box>
+
+                <Button
+                  variant="contained"
+                  fullWidth
+                  sx={{
+                    mt: 'auto',
+                    borderRadius: 3,
+                    textTransform: 'none',
+                    fontWeight: 900,
+                    fontSize: 12,
+                    py: 1.4,
+                    bgcolor: 'rgba(255,255,255,0.14)',
+                    color: 'rgba(255,255,255,0.92)',
+                    border: '1px solid rgba(255,255,255,0.20)',
+                    boxShadow: '0 12px 24px rgba(0,0,0,0.16)',
+                    '&:hover': {
+                      bgcolor: 'rgba(255,255,255,0.22)',
+                    },
+                  }}
+                  onClick={() => navigate('/manager/projects')}
+                >
+                  VIEW FULL ANALYSIS
+                </Button>
+              </CardContent>
+            </Card>
+          </Grid>
         </Grid>
-      </Grid>
+      </Box>
     </Box>
   );
 };
