@@ -1,10 +1,41 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CircularProgress } from '@mui/material';
-import { Add as AddIcon, Delete as DeleteIcon, Edit as EditIcon } from '@mui/icons-material';
+import { 
+  CircularProgress, 
+  Box, 
+  Typography, 
+  Button, 
+  TextField, 
+  Paper, 
+  Table, 
+  TableBody, 
+  TableCell, 
+  TableContainer, 
+  TableHead, 
+  TableRow, 
+  Chip, 
+  IconButton,
+  Stack,
+  Tooltip
+} from '@mui/material';
+import { 
+  Add as AddIcon, 
+  Delete as DeleteIcon, 
+  Edit as EditIcon,
+  Search as SearchIcon
+} from '@mui/icons-material';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
 import { useAuth } from '../../context/AuthContext';
+
+const glassCardSx = {
+  borderRadius: 3,
+  boxShadow: '0 18px 45px rgba(0,0,0,0.18)',
+  background: 'rgba(255,255,255,0.10)',
+  border: '1px solid rgba(255,255,255,0.18)',
+  backdropFilter: 'blur(10px)',
+  color: 'rgba(255,255,255,0.92)',
+};
 
 const ManagerProjects = () => {
   const { user } = useAuth();
@@ -23,41 +54,29 @@ const ManagerProjects = () => {
       const response = await axios.get(`${API_URL}/api/projects`);
       setProjects(response.data);
       
-      // Fetch tasks for each project to get annotators and reviewers
+      const tasksRes = await axios.get(`${API_URL}/api/tasks/my-tasks`);
+      const allTasks = tasksRes.data || [];
+      
       const tasksData = {};
       for (const project of response.data) {
-        try {
-          const tasksRes = await axios.get(`${API_URL}/api/tasks/my-tasks`);
-          const projectTasks = tasksRes.data.filter(t => 
-            (t.projectId?._id || t.projectId) === project._id
-          );
-          
-          const annotatorIds = [...new Set(
-            projectTasks.map(t => t.annotatorId?._id || t.annotatorId).filter(Boolean)
-          )];
-          const annotatorNames = [...new Set(
-            projectTasks.map(t => t.annotatorId?.fullName || t.annotatorId?.username).filter(Boolean)
-          )];
-          
-          const reviewerIds = [...new Set(
-            projectTasks.flatMap(t => 
-              (t.reviewers || []).map(r => r.reviewerId?._id || r.reviewerId).filter(Boolean)
-            )
-          )];
-          const reviewerNames = [...new Set(
-            projectTasks.flatMap(t => 
-              (t.reviewers || []).map(r => r.reviewerId?.fullName || r.reviewerId?.username).filter(Boolean)
-            )
-          )];
-          
-          tasksData[project._id] = {
-            annotators: annotatorNames,
-            reviewers: reviewerNames
-          };
-        } catch (err) {
-          console.error(`Error fetching tasks for project ${project._id}:`, err);
-          tasksData[project._id] = { annotators: [], reviewers: [] };
-        }
+        const projectTasks = allTasks.filter(t => 
+          (t.projectId?._id || t.projectId) === project._id
+        );
+        
+        const annotatorNames = [...new Set(
+          projectTasks.map(t => t.annotatorId?.fullName || t.annotatorId?.username).filter(Boolean)
+        )];
+        
+        const reviewerNames = [...new Set(
+          projectTasks.flatMap(t => 
+            (t.reviewers || []).map(r => r.reviewerId?.fullName || r.reviewerId?.username).filter(Boolean)
+          )
+        )];
+        
+        tasksData[project._id] = {
+          annotators: annotatorNames,
+          reviewers: reviewerNames
+        };
       }
       setProjectsWithTasks(tasksData);
     } catch (error) {
@@ -78,17 +97,17 @@ const ManagerProjects = () => {
     }
   };
 
-  const getStatusBadgeClasses = (status) => {
+  const getStatusChipStyles = (status) => {
     switch (status) {
       case 'active':
-        return 'bg-green-50 text-green-700 border border-green-200';
+        return { bgcolor: 'rgba(52,211,153,0.2)', color: '#34D399' };
       case 'completed':
-        return 'bg-blue-50 text-blue-700 border border-blue-200';
+        return { bgcolor: 'rgba(56,189,248,0.2)', color: '#38BDF8' };
       case 'archived':
-        return 'bg-gray-50 text-gray-600 border border-gray-200';
+        return { bgcolor: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.6)' };
       case 'draft':
       default:
-        return 'bg-yellow-50 text-yellow-800 border border-yellow-200';
+        return { bgcolor: 'rgba(245,158,11,0.2)', color: '#F59E0B' };
     }
   };
 
@@ -102,233 +121,283 @@ const ManagerProjects = () => {
     });
   }, [projects, searchTerm]);
 
-  const getHealthInfo = (status) => {
-    switch (status) {
-      case 'active':
-        return { label: '88%', color: 'border-green-500 text-green-600' };
-      case 'completed':
-        return { label: '100%', color: 'border-blue-500 text-blue-600' };
-      case 'archived':
-        return { label: '85%', color: 'border-gray-400 text-gray-500' };
-      case 'draft':
-      default:
-        return { label: '65%', color: 'border-yellow-500 text-yellow-600' };
-    }
-  };
-
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
         <CircularProgress />
-      </div>
+      </Box>
     );
   }
 
   return (
-    <div className="flex-1 overflow-y-auto bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-gray-900">Professional Projects List</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Quản lý tất cả project labeling của bạn ở một nơi.
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="relative hidden md:block">
-            <span className="absolute left-3 top-2.5 text-gray-400 text-sm">🔍</span>
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search projects..."
-              className="pl-9 pr-3 py-2 rounded-full border border-gray-200 bg-gray-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white min-w-[220px]"
-            />
-          </div>
-          {user?.role === 'manager' && (
-            <button
-              type="button"
-              onClick={() => navigate('/manager/projects/create')}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium bg-blue-600 text-white shadow-sm hover:bg-blue-700 transition-colors"
-            >
-              <AddIcon sx={{ fontSize: 18 }} />
-              <span>New Project</span>
-            </button>
-          )}
-        </div>
-      </div>
+    <Box sx={{ p: { xs: 2, sm: 3, md: 4 }, minHeight: '100vh' }}>
+      <Box
+        sx={{
+          borderRadius: 5,
+          p: { xs: 2, sm: 3, md: 4 },
+          background: 'linear-gradient(135deg, #24C6DC 0%, #514A9D 100%)',
+          boxShadow: '0 30px 80px rgba(0,0,0,0.28)',
+          border: '1px solid rgba(255,255,255,0.18)',
+          position: 'relative',
+          overflow: 'hidden',
+        }}
+      >
+        <Box
+          sx={{
+            position: 'absolute',
+            inset: 0,
+            background:
+              'radial-gradient(900px circle at 20% 10%, rgba(255,255,255,0.25), transparent 60%), radial-gradient(700px circle at 85% 30%, rgba(255,255,255,0.18), transparent 55%)',
+            pointerEvents: 'none',
+          }}
+        />
 
-      {/* Content */}
-      <div className="p-6">
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="px-6 py-3 border-b border-gray-100 flex text-xs font-semibold text-gray-500 uppercase tracking-wide">
-            <div className="w-3/12">Project Name</div>
-            <div className="w-2/12">Status</div>
-            <div className="w-2/12">Reviewer</div>
-            <div className="w-2/12">Annotator</div>
-            <div className="w-2/12">Last Updated</div>
-            <div className="w-1/12 text-right pr-2">Actions</div>
-          </div>
+        {/* Header */}
+        <Box
+          sx={{
+            position: 'relative',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: { xs: 'flex-start', md: 'center' },
+            flexDirection: { xs: 'column', md: 'row' },
+            mb: 4,
+            gap: 2,
+          }}
+        >
+          <Box>
+            <Typography variant="h4" fontWeight={900} sx={{ color: 'white', mb: 0.5 }}>
+              Projects
+            </Typography>
+            <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.8)' }}>
+              Quản lý tất cả project labeling của bạn ở một nơi.
+            </Typography>
+          </Box>
+          <Stack direction="row" spacing={2} alignItems="center">
+            <Box sx={{ position: 'relative', display: { xs: 'none', md: 'block' } }}>
+              <TextField
+                placeholder="Search projects..."
+                size="small"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: '999px',
+                    bgcolor: 'rgba(255,255,255,0.1)',
+                    color: 'white',
+                    '& fieldset': { borderColor: 'rgba(255,255,255,0.3)' },
+                    '&:hover fieldset': { borderColor: 'rgba(255,255,255,0.5)' },
+                    '&.Mui-focused fieldset': { borderColor: 'white' },
+                  },
+                  '& .MuiInputBase-input::placeholder': { color: 'rgba(255,255,255,0.6)' },
+                }}
+                InputProps={{
+                  startAdornment: <SearchIcon sx={{ color: 'rgba(255,255,255,0.6)', mr: 1 }} />,
+                }}
+              />
+            </Box>
+            {user?.role === 'manager' && (
+              <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                onClick={() => navigate('/manager/projects/create')}
+                sx={{
+                  borderRadius: '999px',
+                  textTransform: 'none',
+                  px: 3,
+                  fontWeight: 800,
+                  bgcolor: 'rgba(15,23,42,0.3)',
+                  color: 'white',
+                  '&:hover': { bgcolor: 'rgba(15,23,42,0.4)' },
+                }}
+              >
+                New Project
+              </Button>
+            )}
+          </Stack>
+        </Box>
 
-          {filteredProjects.length === 0 ? (
-            <div className="px-6 py-10 text-center text-sm text-gray-500">
-              Không có project nào phù hợp.
-            </div>
-          ) : (
-            <ul className="divide-y divide-gray-100">
-              {filteredProjects.map((project) => {
-                const updatedAt = project.updatedAt || project.createdAt;
-                const dateStr = updatedAt
-                  ? new Date(updatedAt).toLocaleDateString('en-GB', {
-                      day: '2-digit',
-                      month: 'short',
-                      year: 'numeric',
-                    })
-                  : '-';
+        <Box sx={{ position: 'relative' }}>
+          <TableContainer component={Paper} sx={{ ...glassCardSx, overflow: 'hidden' }}>
+            <Table sx={{ minWidth: 650 }}>
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ color: 'rgba(255,255,255,0.7)', fontWeight: 700 }}>Project Name</TableCell>
+                  <TableCell sx={{ color: 'rgba(255,255,255,0.7)', fontWeight: 700 }}>Status</TableCell>
+                  <TableCell sx={{ color: 'rgba(255,255,255,0.7)', fontWeight: 700 }}>Reviewer</TableCell>
+                  <TableCell sx={{ color: 'rgba(255,255,255,0.7)', fontWeight: 700 }}>Annotator</TableCell>
+                  <TableCell sx={{ color: 'rgba(255,255,255,0.7)', fontWeight: 700 }}>Last Updated</TableCell>
+                  <TableCell align="right" sx={{ color: 'rgba(255,255,255,0.7)', fontWeight: 700 }}>Actions</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {filteredProjects.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} align="center" sx={{ py: 10, color: 'rgba(255,255,255,0.5)' }}>
+                      Không có project nào phù hợp.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredProjects.map((project) => {
+                    const updatedAt = project.updatedAt || project.createdAt;
+                    const dateStr = updatedAt
+                      ? new Date(updatedAt).toLocaleDateString('en-GB', {
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric',
+                        })
+                      : '-';
+                    
+                    const projectData = projectsWithTasks[project._id] || { annotators: [], reviewers: [] };
+                    const statusStyle = getStatusChipStyles(project.status);
 
-                const initials =
-                  (user?.fullName || user?.username || 'PM')
-                    .split(' ')
-                    .map((n) => n[0])
-                    .join('')
-                    .toUpperCase();
-
-                return (
-                  <li
-                    key={project._id}
-                    className="px-6 py-4 flex items-center text-sm hover:bg-gray-50 transition-colors cursor-pointer"
-                    onClick={() => navigate(`/manager/projects/${project._id}`)}
-                  >
-                    {/* Project name */}
-                    <div className="w-3/12 flex flex-col">
-                      <span className="font-medium text-gray-900">{project.name}</span>
-                      {project.description && (
-                        <span className="text-xs text-gray-500 mt-0.5 line-clamp-1">
-                          {project.description}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Status */}
-                    <div className="w-2/12">
-                      <span
-                        className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${getStatusBadgeClasses(
-                          project.status
-                        )}`}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {project.status?.toUpperCase() || 'DRAFT'}
-                      </span>
-                    </div>
-
-                    {/* Reviewer */}
-                    <div className="w-2/12 flex items-center gap-1">
-                      {(() => {
-                        const projectData = projectsWithTasks[project._id] || { reviewers: [] };
-                        const reviewers = projectData.reviewers || [];
-                        if (reviewers.length === 0) {
-                          return <span className="text-xs text-gray-400">Unassigned</span>;
-                        }
-                        const firstReviewer = reviewers[0];
-                        const reviewerInitials = firstReviewer
-                          .split(' ')
-                          .map(n => n[0])
-                          .join('')
-                          .toUpperCase()
-                          .slice(0, 3);
-                        return (
-                          <>
-                            <div
-                              className="w-7 h-7 rounded-full bg-purple-50 text-purple-700 flex items-center justify-center text-[11px] font-semibold"
-                              onClick={(e) => e.stopPropagation()}
-                              title={firstReviewer}
-                            >
-                              {reviewerInitials}
-                            </div>
-                            {reviewers.length > 1 && (
-                              <span className="text-xs text-gray-500 font-medium">+{reviewers.length - 1}</span>
-                            )}
-                          </>
-                        );
-                      })()}
-                    </div>
-
-                    {/* Annotator */}
-                    <div className="w-2/12 flex items-center gap-1">
-                      {(() => {
-                        const projectData = projectsWithTasks[project._id] || { annotators: [] };
-                        const annotators = projectData.annotators || [];
-                        if (annotators.length === 0) {
-                          return <span className="text-xs text-gray-400">Unassigned</span>;
-                        }
-                        const firstAnnotator = annotators[0];
-                        const annotatorInitials = firstAnnotator
-                          .split(' ')
-                          .map(n => n[0])
-                          .join('')
-                          .toUpperCase()
-                          .slice(0, 3);
-                        return (
-                          <>
-                            <div
-                              className="w-7 h-7 rounded-full bg-blue-50 text-blue-700 flex items-center justify-center text-[11px] font-semibold"
-                              onClick={(e) => e.stopPropagation()}
-                              title={firstAnnotator}
-                            >
-                              {annotatorInitials}
-                            </div>
-                            {annotators.length > 1 && (
-                              <span className="text-xs text-gray-500 font-medium">+{annotators.length - 1}</span>
-                            )}
-                          </>
-                        );
-                      })()}
-                    </div>
-
-                    {/* Last updated */}
-                    <div className="w-2/12 text-gray-500 text-xs">{dateStr}</div>
-
-                    {/* Actions */}
-                    <div className="w-1/12 flex items-center justify-end gap-2 pr-2">
-                      <button
-                        type="button"
-                        className="text-gray-400 hover:text-blue-600 transition-colors"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          navigate(`/manager/projects/${project._id}`);
+                    return (
+                      <TableRow 
+                        key={project._id} 
+                        hover 
+                        sx={{ 
+                          cursor: 'pointer',
+                          '&:hover': { bgcolor: 'rgba(255,255,255,0.05)' } 
                         }}
-                        title="Chỉnh sửa project"
+                        onClick={() => navigate(`/manager/projects/${project._id}`)}
                       >
-                        <EditIcon sx={{ fontSize: 18 }} />
-                      </button>
-                      <button
-                        type="button"
-                        className="text-gray-400 hover:text-red-500 transition-colors"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDelete(project._id);
-                        }}
-                        title="Xóa project"
-                      >
-                        <DeleteIcon sx={{ fontSize: 18 }} />
-                      </button>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-
-          {/* Footer summary */}
-          <div className="px-6 py-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500 bg-gray-50">
-            <span>
+                        <TableCell>
+                          <Box>
+                            <Typography variant="body2" fontWeight={700} color="white">
+                              {project.name}
+                            </Typography>
+                            {project.description && (
+                              <Typography 
+                                variant="caption" 
+                                sx={{ color: 'rgba(255,255,255,0.5)', display: 'block', maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                              >
+                                {project.description}
+                              </Typography>
+                            )}
+                          </Box>
+                        </TableCell>
+                        <TableCell>
+                          <Chip
+                            label={project.status?.toUpperCase() || 'DRAFT'}
+                            size="small"
+                            sx={{ 
+                              bgcolor: statusStyle.bgcolor,
+                              color: statusStyle.color,
+                              fontWeight: 700,
+                              border: '1px solid rgba(255,255,255,0.1)'
+                            }}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Stack direction="row" spacing={0.5} alignItems="center">
+                            {projectData.reviewers.length === 0 ? (
+                              <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.4)', fontStyle: 'italic' }}>Unassigned</Typography>
+                            ) : (
+                              <>
+                                <Box 
+                                  sx={{ 
+                                    width: 28, 
+                                    height: 28, 
+                                    borderRadius: '50%', 
+                                    bgcolor: 'rgba(167,139,250,0.2)', 
+                                    color: '#A78BFA',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontSize: '10px',
+                                    fontWeight: 700,
+                                    border: '1px solid rgba(167,139,250,0.3)'
+                                  }}
+                                  title={projectData.reviewers[0]}
+                                >
+                                  {projectData.reviewers[0].split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+                                </Box>
+                                {projectData.reviewers.length > 1 && (
+                                  <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>
+                                    +{projectData.reviewers.length - 1}
+                                  </Typography>
+                                )}
+                              </>
+                            )}
+                          </Stack>
+                        </TableCell>
+                        <TableCell>
+                          <Stack direction="row" spacing={0.5} alignItems="center">
+                            {projectData.annotators.length === 0 ? (
+                              <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.4)', fontStyle: 'italic' }}>Unassigned</Typography>
+                            ) : (
+                              <>
+                                <Box 
+                                  sx={{ 
+                                    width: 28, 
+                                    height: 28, 
+                                    borderRadius: '50%', 
+                                    bgcolor: 'rgba(56,189,248,0.2)', 
+                                    color: '#38BDF8',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontSize: '10px',
+                                    fontWeight: 700,
+                                    border: '1px solid rgba(56,189,248,0.3)'
+                                  }}
+                                  title={projectData.annotators[0]}
+                                >
+                                  {projectData.annotators[0].split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+                                </Box>
+                                {projectData.annotators.length > 1 && (
+                                  <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>
+                                    +{projectData.annotators.length - 1}
+                                  </Typography>
+                                )}
+                              </>
+                            )}
+                          </Stack>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.6)' }}>
+                            {dateStr}
+                          </Typography>
+                        </TableCell>
+                        <TableCell align="right" onClick={(e) => e.stopPropagation()}>
+                          <Stack direction="row" spacing={1} justifyContent="flex-end">
+                            <Tooltip title="Edit">
+                              <IconButton 
+                                size="small" 
+                                sx={{ color: 'rgba(255,255,255,0.7)', '&:hover': { bgcolor: 'rgba(255,255,255,0.1)' } }}
+                                onClick={() => navigate(`/manager/projects/${project._id}`)}
+                              >
+                                <EditIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Delete">
+                              <IconButton 
+                                size="small" 
+                                sx={{ color: '#FB7185', '&:hover': { bgcolor: 'rgba(251,113,133,0.1)' } }}
+                                onClick={() => handleDelete(project._id)}
+                              >
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          </Stack>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+          <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 1 }}>
+            <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.5)' }}>
               Showing {filteredProjects.length} of {projects.length} projects
-            </span>
-            <span>Quản lý team & tiến độ labeling hiệu quả hơn.</span>
-          </div>
-        </div>
-      </div>
-    </div>
+            </Typography>
+            <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.5)', fontStyle: 'italic' }}>
+              Quản lý team & tiến độ labeling hiệu quả hơn.
+            </Typography>
+          </Box>
+        </Box>
+      </Box>
+    </Box>
   );
 };
 
