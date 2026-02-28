@@ -43,11 +43,27 @@ const AnnotatorTask = () => {
   const canvasRef = useRef(null);
 
   const getTaskKind = useCallback((t) => {
-    const mt = t?.dataItem?.mimeType || '';
+    const mt = (t?.dataItem?.mimeType || '').toLowerCase();
+    const fileName = (
+      t?.dataItem?.originalName ||
+      t?.dataItem?.filename ||
+      t?.dataItem?.path ||
+      ''
+    ).toLowerCase();
+
     if (mt.startsWith('image/')) return 'image';
     if (mt.startsWith('audio/')) return 'audio';
     if (mt.startsWith('text/')) return 'text';
+
+    // Fallback by extension / uncommon mime
+    if (/\.(jpg|jpeg|png|gif|bmp|webp|svg)$/i.test(fileName)) return 'image';
+    if (/\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(fileName)) return 'audio';
+    // Some audio files are uploaded as video/mp4 container
+    if (mt === 'video/mp4' && /\.(mp4|m4a)$/i.test(fileName)) return 'audio';
+
     if (['application/json', 'application/xml', 'text/csv'].includes(mt)) return 'text';
+    if (/\.(txt|csv|json|xml)$/i.test(fileName)) return 'text';
+
     return 'other';
   }, []);
 
@@ -801,7 +817,7 @@ const AnnotatorTask = () => {
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-gray-700">Ghi chú tổng thể (tùy chọn)</label>
                   <textarea
-                    className="w-full border rounded-md p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 rounded-md p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     rows={3}
                     placeholder="Nhập ghi chú tổng thể cho toàn bộ văn bản..."
                     value={annotationNote}
@@ -851,7 +867,7 @@ const AnnotatorTask = () => {
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-gray-700">Ghi chú / Nhãn cho audio</label>
                   <textarea
-                    className="w-full border rounded-md p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 rounded-md p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     rows={4}
                     placeholder="Nhập nhận xét hoặc nhãn..."
                     value={annotationNote}

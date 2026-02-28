@@ -50,7 +50,7 @@ const RoleDashboard = () => {
   }
 
   if (user.role === 'annotator') {
-    return <Navigate to="/annotator/tasks" replace />;
+    return <Navigate to="/annotator" replace />;
   }
 
   if (user.role === 'reviewer') {

@@ -145,11 +145,11 @@ const AudioAnnotator = ({ audioUrl, labelSet = [], initialSegments = [], readOnl
         <button
           onClick={() => wavesurferRef.current?.playPause()}
           disabled={!isReady}
-          className="px-3 py-1.5 bg-indigo-500 text-white rounded disabled:opacity-50"
+          className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded disabled:opacity-50"
         >
           {isPlaying ? '⏸ Pause' : '▶ Play'}
         </button>
-        <span className="text-sm tabular-nums">
+        <span className="text-sm tabular-nums text-gray-700 font-medium">
           {fmt(current)} / {fmt(dur)}
         </span>
         <input
@@ -172,8 +172,8 @@ const AudioAnnotator = ({ audioUrl, labelSet = [], initialSegments = [], readOnl
 
       {!readOnly && labelSet.length > 0 && (
         <div className="flex items-center gap-3">
-          <span className="text-sm">Nhãn đang chọn:</span>
-          <select value={selectedLabel} onChange={(e) => setSelectedLabel(e.target.value)} className="border rounded px-3 py-1 text-sm">
+          <span className="text-sm font-medium text-gray-700">Nhãn đang chọn:</span>
+          <select value={selectedLabel} onChange={(e) => setSelectedLabel(e.target.value)} className="border border-gray-300 rounded px-3 py-1 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
             {labelSet.map((l) => (
               <option key={l.name} value={l.name}>
                 {l.name}

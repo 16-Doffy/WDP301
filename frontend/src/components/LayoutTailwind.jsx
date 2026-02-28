@@ -23,7 +23,7 @@ const LayoutTailwind = () => {
             className="w-5 h-5"
           />
         ),
-        path: '/dashboard',
+        path: user.role === 'annotator' ? '/annotator' : '/dashboard',
       },
     ];
 
@@ -63,11 +63,11 @@ const LayoutTailwind = () => {
         icon: '📝',
         path: '/annotator/tasks',
       });
-      // baseItems.push({
-      //   text: 'Reviews',
-      //   icon: '✅',
-      //   path: '/annotator/reviews',
-      // });
+      baseItems.push({
+        text: 'Rules',
+        icon: '📘',
+        path: '/annotator/rules',
+      });
     }
 
     if (user.role === 'reviewer' || user.role === 'admin') {
@@ -182,7 +182,7 @@ const LayoutTailwind = () => {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden bg-[#2c3e50]">
+      <div className="flex-1 flex flex-col overflow-y-auto bg-[#2c3e50]">
         <Outlet />
       </div>
     </div>
