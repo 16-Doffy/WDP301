@@ -169,7 +169,25 @@ router.put('/:id', auth, authorize('manager', 'admin'), async (req, res) => {
     }
 
     const oldName = project.name;
-    Object.assign(project, req.body);
+
+    // Only allow updating safe editable fields.
+    // Never allow managerId or other protected fields to be overwritten from client payload.
+    const allowedUpdates = [
+      'name',
+      'description',
+      'guidelines',
+      'labelSet',
+      'questions',
+      'status',
+      'deadline',
+      'exportFormat'
+    ];
+
+    for (const field of allowedUpdates) {
+      if (Object.prototype.hasOwnProperty.call(req.body, field)) {
+        project[field] = req.body[field];
+      }
+    }
 
     if (req.body.reviewPolicy) {
       project.reviewPolicy = {

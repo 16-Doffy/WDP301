@@ -461,9 +461,23 @@ const AnnotatorTask = () => {
   }, [task, handleSave]);
 
   const handleConfirmSubmit = useCallback(async () => {
-    await handleBatchSubmit();
-    setShowSubmitConfirm(false);
-  }, [handleBatchSubmit]);
+    if (!task) return;
+
+    // Submit current task directly for image/text/audio,
+    // then return to annotator dashboard.
+    setSaving(true);
+    try {
+      await handleSave();
+      await axios.post(`${API_URL}/api/tasks/${task._id}/submit`);
+      setShowSubmitConfirm(false);
+      navigate('/annotator/tasks', { replace: true });
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || error.message;
+      alert('Lỗi khi nộp bài: ' + errorMessage);
+    } finally {
+      setSaving(false);
+    }
+  }, [task, handleSave, navigate]);
 
   const navigateToTask = async (taskId, saveCurrent = true) => {
     if (
