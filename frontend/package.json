@@ -8,10 +8,12 @@
     "@mui/icons-material": "^5.14.3",
     "@mui/material": "^5.14.5",
     "axios": "^1.5.0",
+    "data-labeling-system": "file:..",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-dropzone": "^14.2.3",
-    "react-router-dom": "^6.16.0"
+    "react-router-dom": "^6.16.0",
+    "wavesurfer.js": "^6.6.3"
   },
   "scripts": {
     "start": "react-scripts start",

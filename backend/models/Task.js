@@ -30,6 +30,10 @@ const taskSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.Mixed,
     default: {}
   },
+  sentenceFeedbacks: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
+  },
   submittedAt: {
     type: Date
   },

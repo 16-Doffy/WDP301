@@ -5,6 +5,16 @@ import { API_URL } from '../../config/api';
 
 const AnnotatorDashboard = () => {
   const [batches, setBatches] = useState([]);
+
+  const getTaskFormat = (task) => {
+    const mime = (task?.dataItem?.mimeType || '').toLowerCase();
+    const fileName = (task?.dataItem?.originalName || task?.dataItem?.filename || task?.dataItem?.path || '').toLowerCase();
+
+    if (mime.startsWith('image/') || /\.(jpg|jpeg|png|gif|bmp|webp|svg)$/i.test(fileName)) return 'image';
+    if (mime.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|aac|flac|mp4)$/i.test(fileName)) return 'audio';
+    if (mime.startsWith('text/') || ['application/json', 'application/xml', 'text/csv'].includes(mime) || /\.(txt|csv|json|xml)$/i.test(fileName)) return 'text';
+    return 'other';
+  };
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const navigate = useNavigate();
@@ -24,7 +34,8 @@ const AnnotatorDashboard = () => {
         const datasetId = task.datasetId?._id || task.datasetId || 'unknown';
         const datasetName = task.datasetId?.name || 'Unknown Dataset';
         const projectName = task.projectId?.name || 'Unknown Project';
-        
+        const taskFormat = getTaskFormat(task);
+
         if (!batchMap.has(datasetId)) {
           batchMap.set(datasetId, {
             id: datasetId,
@@ -37,10 +48,15 @@ const AnnotatorDashboard = () => {
             status: 'new',
             assignedDate: task.createdAt || new Date(),
             previewImage: task.dataItem?.path || null,
+            deadline: task.projectId?.deadline || null,
+            format: taskFormat,
           });
         }
-        
+
         const batch = batchMap.get(datasetId);
+        if (batch.format !== taskFormat) {
+          batch.format = 'mixed';
+        }
         batch.tasks.push(task);
         batch.totalTasks++;
         
@@ -59,6 +75,13 @@ const AnnotatorDashboard = () => {
           batch.status = 'completed';
         } else if (batch.inProgressTasks > 0 || batch.completedTasks > 0) {
           batch.status = 'in_progress';
+        } else {
+          batch.status = 'new';
+        }
+
+        // Check overdue by deadline
+        if (batch.deadline && new Date(batch.deadline) < new Date() && batch.status !== 'completed') {
+          batch.status = 'overdue';
         }
         
         // Get earliest assigned date
@@ -91,6 +114,7 @@ const AnnotatorDashboard = () => {
       new: { text: 'NEW', color: 'bg-green-100 text-green-800' },
       in_progress: { text: 'IN PROGRESS', color: 'bg-blue-100 text-blue-800' },
       completed: { text: 'COMPLETED', color: 'bg-gray-100 text-gray-800' },
+      overdue: { text: 'OVERDUE', color: 'bg-red-100 text-red-800' },
       urgent: { text: 'URGENT', color: 'bg-orange-100 text-orange-800' },
     };
     return badges[status] || badges.new;
@@ -101,38 +125,92 @@ const AnnotatorDashboard = () => {
     return Math.round((batch.completedTasks / batch.totalTasks) * 100);
   };
 
-  const getTimeRemaining = (batch) => {
-    // Calculate estimated time based on average completion rate
-    const remaining = batch.totalTasks - batch.completedTasks;
-    if (remaining === 0) return 'Completed';
-    if (batch.totalTasks === 0) return 'No limit';
-    
-    // Estimate: 2 minutes per image on average
-    const minutes = remaining * 2;
-    if (minutes < 60) return `${minutes}m left`;
-    const hours = Math.floor(minutes / 60);
-    return `${hours}h left`;
-  };
+  // Filter & Sort controls
+  const [filterStatus, setFilterStatus] = useState('all'); // all | active | completed | overdue
+  const [sortDir] = useState('asc'); // asc => Active>Completed>Overdue, desc => reverse
 
-  // Separate batches into active and completed
-  const activeBatches = batches.filter(batch => {
+  // Apply search, filter and sort
+  const statusOrder = { in_progress: 0, new: 0, completed: 1, overdue: 2 };
+
+  const filteredSorted = batches
+    .filter(batch => {
+      const matchesSearch = batch.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        batch.project.toLowerCase().includes(searchTerm.toLowerCase());
+
+      const filterMatch = filterStatus === 'all' ||
+        (filterStatus === 'active' && batch.status !== 'completed' && batch.status !== 'overdue') ||
+        (filterStatus === 'completed' && batch.status === 'completed') ||
+        (filterStatus === 'overdue' && batch.status === 'overdue');
+
+      return matchesSearch && filterMatch;
+    })
+    .sort((a, b) => {
+      const diff = statusOrder[a.status] - statusOrder[b.status];
+      return sortDir === 'asc' ? diff : -diff;
+    });
+
+  // Separate batches into overdue, active and completed
+  const overdueBatches = filteredSorted.filter(batch => {
     const matchesSearch = batch.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       batch.project.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesSearch && batch.status !== 'completed';
+    return matchesSearch && batch.status === 'overdue';
   });
 
-  const completedBatches = batches.filter(batch => {
+  const activeBatches = filteredSorted.filter(batch => {
+    const matchesSearch = batch.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      batch.project.toLowerCase().includes(searchTerm.toLowerCase());
+    return matchesSearch && batch.status !== 'completed' && batch.status !== 'overdue';
+  });
+
+  const completedBatches = filteredSorted.filter(batch => {
     const matchesSearch = batch.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       batch.project.toLowerCase().includes(searchTerm.toLowerCase());
     return matchesSearch && batch.status === 'completed';
   });
 
+  const getFormatUi = (format) => {
+    const map = {
+      image: {
+        icon: '🖼️',
+        label: 'Image Project',
+        pill: 'bg-sky-100 text-sky-800',
+        border: 'border-sky-200',
+      },
+      audio: {
+        icon: '🎧',
+        label: 'Audio Project',
+        pill: 'bg-violet-100 text-violet-800',
+        border: 'border-violet-200',
+      },
+      text: {
+        icon: '📄',
+        label: 'Text Project',
+        pill: 'bg-emerald-100 text-emerald-800',
+        border: 'border-emerald-200',
+      },
+      mixed: {
+        icon: '🧩',
+        label: 'Mixed Project',
+        pill: 'bg-amber-100 text-amber-800',
+        border: 'border-amber-200',
+      },
+      other: {
+        icon: '📦',
+        label: 'Other Format',
+        pill: 'bg-gray-100 text-gray-800',
+        border: 'border-gray-200',
+      },
+    };
+
+    return map[format] || map.other;
+  };
+
   // Helper function to render batch card
   const renderBatchCard = (batch) => {
     const progress = getProgressPercentage(batch);
     const statusBadge = getStatusBadge(batch.status);
-    const timeRemaining = getTimeRemaining(batch);
     const firstTask = batch.tasks[0];
+    const formatUi = getFormatUi(batch.format);
 
     return (
       <div
@@ -144,25 +222,34 @@ const AnnotatorDashboard = () => {
           }
         }}
       >
-        {/* Image Preview */}
-        <div className="relative h-48 bg-gray-100 overflow-hidden">
-          {batch.previewImage ? (
+        {/* Media Preview (format-based) */}
+        <div className={`relative h-48 overflow-hidden ${formatUi.border} border-b`}>
+          {batch.format === 'image' && batch.previewImage ? (
             <img
               src={`${API_URL}/${batch.previewImage}`}
               alt={batch.name}
               className="w-full h-full object-cover"
               onError={(e) => {
                 e.target.style.display = 'none';
-                if (e.target.nextSibling) {
-                  e.target.nextSibling.style.display = 'flex';
-                }
               }}
             />
-          ) : null}
+          ) : (
+            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100">
+              <div className="text-center">
+                <div className="text-5xl mb-2">{formatUi.icon}</div>
+                <div className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${formatUi.pill}`}>
+                  {formatUi.label}
+                </div>
+              </div>
+            </div>
+          )}
+          <div className={`absolute top-3 left-3 px-2 py-1 rounded text-xs font-semibold ${formatUi.pill}`}>
+            {formatUi.label}
+          </div>
           <div className={`absolute top-3 right-3 px-2 py-1 rounded text-xs font-medium ${statusBadge.color}`}>
             {statusBadge.text}
           </div>
-          <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"></div>
+          <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent"></div>
         </div>
 
         {/* Batch Info */}
@@ -201,16 +288,17 @@ const AnnotatorDashboard = () => {
             </div>
           </div>
 
-          {/* Stats */}
-          <div className="flex items-center justify-between text-sm text-gray-600 mb-4">
-            <div className="flex items-center gap-1">
-              <span>🖼️</span>
-              <span>{batch.totalTasks} Images</span>
+
+          {/* Assigned time & Deadline */}
+          <div className="text-xs text-gray-500 mb-4 space-y-1">
+            <div>
+              Assigned: {batch.assignedDate ? new Date(batch.assignedDate).toLocaleString('vi-VN') : '-'}
             </div>
-            <div className="flex items-center gap-1">
-              <span>⏰</span>
-              <span>{timeRemaining}</span>
-            </div>
+            {batch.deadline && (
+              <div className="text-red-600 font-semibold">
+                Deadline: {new Date(batch.deadline).toLocaleString('vi-VN')}
+              </div>
+            )}
           </div>
 
           {/* Action Button */}
@@ -263,19 +351,21 @@ const AnnotatorDashboard = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+      <div className="flex items-center justify-center min-h-screen bg-transparent">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
       </div>
     );
   }
 
   return (
-    <div className="flex-1 overflow-y-auto bg-gray-50 p-6">
-      {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">My Tasks</h1>
-        <p className="text-gray-600">Manage and track your assigned data collection batches.</p>
-      </div>
+    <div className="h-full overflow-y-auto p-6 md:p-8">
+      <div className="rounded-[28px] p-6 md:p-8 bg-gradient-to-br from-cyan-500 via-blue-600 to-indigo-700 shadow-[0_30px_80px_rgba(0,0,0,0.28)] border border-white/20 relative overflow-hidden">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(255,255,255,0.25),transparent_50%),radial-gradient(circle_at_85%_30%,rgba(255,255,255,0.18),transparent_45%)] pointer-events-none" />
+
+        <div className="relative mb-6">
+          <h1 className="text-3xl font-extrabold text-white mb-2 tracking-tight">My Tasks</h1>
+          <p className="text-white/80">Manage and track your assigned data collection batches.</p>
+        </div>
 
       {/* Search and Filter */}
       <div className="mb-6 flex items-center gap-4">
@@ -285,21 +375,48 @@ const AnnotatorDashboard = () => {
             placeholder="Search batches..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-lg bg-white text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">🔍</span>
         </div>
-        <button className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2">
-          <span>Filter</span>
-          <span>🔽</span>
-        </button>
-        <button className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-2">
-          <span>Sort</span>
-          <span>⇅</span>
-        </button>
+
+        <select
+          value={filterStatus}
+          onChange={(e) => setFilterStatus(e.target.value)}
+          className="px-4 py-2 border border-white/50 rounded-lg bg-white text-gray-900 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          style={{ color: '#111827' }}
+        >
+          <option value="all" style={{ color: '#111827', backgroundColor: '#ffffff' }}>All</option>
+          <option value="active" style={{ color: '#111827', backgroundColor: '#ffffff' }}>Active Projects</option>
+          <option value="completed" style={{ color: '#111827', backgroundColor: '#ffffff' }}>Completed Projects</option>
+          <option value="overdue" style={{ color: '#111827', backgroundColor: '#ffffff' }}>Overdue Tasks</option>
+        </select>
+
       </div>
 
-      {/* Active Batches Section */}
+      {/* --OVERDUE-SECTION-REMOVED-- */}
+      {false && overdueBatches.length > 0 && (
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-2xl font-bold text-red-800">Overdue Tasks</h2>
+              <p className="text-sm text-red-600 mt-1">Các project đã quá hạn deadline cần ưu tiên</p>
+            </div>
+            <span className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm font-medium">
+              {overdueBatches.length} Overdue
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {overdueBatches.map((batch) => {
+              return renderBatchCard(batch);
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* --SECTIONS-START-- */}
+      {(filterStatus==='all' || filterStatus==='active') &&
       <div className="mb-8">
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -318,7 +435,7 @@ const AnnotatorDashboard = () => {
             </p>
             {!searchTerm && (
               <button
-                onClick={() => navigate('/manager/projects')}
+                onClick={() => alert('Vui lòng liên hệ Manager để được phân thêm batch.')}
                 className="px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
               >
                 Request Batch
@@ -347,9 +464,9 @@ const AnnotatorDashboard = () => {
           </div>
         )}
       </div>
+      }
 
-      {/* Completed Batches Section */}
-      {completedBatches.length > 0 && (
+      {(filterStatus === 'all' || filterStatus === 'completed') && completedBatches.length > 0 && (
         <div className="mb-8">
           <div className="flex items-center justify-between mb-4">
             <div>
@@ -369,6 +486,27 @@ const AnnotatorDashboard = () => {
         </div>
       )}
 
+      {/* --OVERDUE-SECTION-NEW-- */}
+      {overdueBatches.length > 0 && (
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-2xl font-bold text-red-800">Overdue Tasks</h2>
+              <p className="text-sm text-red-600 mt-1">Các project đã quá hạn deadline cần ưu tiên</p>
+            </div>
+            <span className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm font-medium">
+              {overdueBatches.length} Overdue
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {overdueBatches.map((batch) => {
+              return renderBatchCard(batch);
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Show empty state only if both sections are empty */}
       {activeBatches.length === 0 && completedBatches.length === 0 && !searchTerm && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
@@ -376,13 +514,14 @@ const AnnotatorDashboard = () => {
             Bạn chưa có batches nào được phân công. Vui lòng liên hệ Manager để được phân công tasks.
           </p>
           <button
-            onClick={() => navigate('/manager/projects')}
+            onClick={() => alert('Vui lòng liên hệ Manager để được phân thêm batch.')}
             className="px-6 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
           >
             Request Batch
           </button>
         </div>
       )}
+      </div>
     </div>
   );
 };

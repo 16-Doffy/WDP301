@@ -1,28 +1,28 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  CircularProgress, 
-  Box, 
-  Typography, 
-  Button, 
-  TextField, 
-  Paper, 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableContainer, 
-  TableHead, 
-  TableRow, 
-  Chip, 
+import {
+  CircularProgress,
+  Box,
+  Typography,
+  Button,
+  TextField,
+  Paper,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Chip,
   IconButton,
   Stack,
-  Tooltip
+  Tooltip,
 } from '@mui/material';
-import { 
-  Add as AddIcon, 
-  Delete as DeleteIcon, 
+import {
+  Add as AddIcon,
+  Delete as DeleteIcon,
   Edit as EditIcon,
-  Search as SearchIcon
+  Search as SearchIcon,
 } from '@mui/icons-material';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
@@ -40,7 +40,7 @@ const glassCardSx = {
 const ManagerProjects = () => {
   const { user } = useAuth();
   const [projects, setProjects] = useState([]);
-  const [projectsWithTasks, setProjectsWithTasks] = useState({}); // projectId -> { annotators: [], reviewers: [] }
+  const [projectsWithTasks, setProjectsWithTasks] = useState({});
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const navigate = useNavigate();
@@ -53,29 +53,29 @@ const ManagerProjects = () => {
     try {
       const response = await axios.get(`${API_URL}/api/projects`);
       setProjects(response.data);
-      
+
       const tasksRes = await axios.get(`${API_URL}/api/tasks/my-tasks`);
       const allTasks = tasksRes.data || [];
-      
+
       const tasksData = {};
       for (const project of response.data) {
-        const projectTasks = allTasks.filter(t => 
+        const projectTasks = allTasks.filter((t) =>
           (t.projectId?._id || t.projectId) === project._id
         );
-        
+
         const annotatorNames = [...new Set(
-          projectTasks.map(t => t.annotatorId?.fullName || t.annotatorId?.username).filter(Boolean)
+          projectTasks.map((t) => t.annotatorId?.fullName || t.annotatorId?.username).filter(Boolean)
         )];
-        
+
         const reviewerNames = [...new Set(
-          projectTasks.flatMap(t => 
-            (t.reviewers || []).map(r => r.reviewerId?.fullName || r.reviewerId?.username).filter(Boolean)
+          projectTasks.flatMap((t) =>
+            (t.reviewers || []).map((r) => r.reviewerId?.fullName || r.reviewerId?.username).filter(Boolean)
           )
         )];
-        
+
         tasksData[project._id] = {
           annotators: annotatorNames,
-          reviewers: reviewerNames
+          reviewers: reviewerNames,
         };
       }
       setProjectsWithTasks(tasksData);
@@ -152,7 +152,6 @@ const ManagerProjects = () => {
           }}
         />
 
-        {/* Header */}
         <Box
           sx={{
             position: 'relative',
@@ -246,17 +245,17 @@ const ManagerProjects = () => {
                           year: 'numeric',
                         })
                       : '-';
-                    
+
                     const projectData = projectsWithTasks[project._id] || { annotators: [], reviewers: [] };
                     const statusStyle = getStatusChipStyles(project.status);
 
                     return (
-                      <TableRow 
-                        key={project._id} 
-                        hover 
-                        sx={{ 
+                      <TableRow
+                        key={project._id}
+                        hover
+                        sx={{
                           cursor: 'pointer',
-                          '&:hover': { bgcolor: 'rgba(255,255,255,0.05)' } 
+                          '&:hover': { bgcolor: 'rgba(255,255,255,0.05)' },
                         }}
                         onClick={() => navigate(`/manager/projects/${project._id}`)}
                       >
@@ -266,8 +265,8 @@ const ManagerProjects = () => {
                               {project.name}
                             </Typography>
                             {project.description && (
-                              <Typography 
-                                variant="caption" 
+                              <Typography
+                                variant="caption"
                                 sx={{ color: 'rgba(255,255,255,0.5)', display: 'block', maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                               >
                                 {project.description}
@@ -279,11 +278,11 @@ const ManagerProjects = () => {
                           <Chip
                             label={project.status?.toUpperCase() || 'DRAFT'}
                             size="small"
-                            sx={{ 
+                            sx={{
                               bgcolor: statusStyle.bgcolor,
                               color: statusStyle.color,
                               fontWeight: 700,
-                              border: '1px solid rgba(255,255,255,0.1)'
+                              border: '1px solid rgba(255,255,255,0.1)',
                             }}
                           />
                         </TableCell>
@@ -293,23 +292,23 @@ const ManagerProjects = () => {
                               <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.4)', fontStyle: 'italic' }}>Unassigned</Typography>
                             ) : (
                               <>
-                                <Box 
-                                  sx={{ 
-                                    width: 28, 
-                                    height: 28, 
-                                    borderRadius: '50%', 
-                                    bgcolor: 'rgba(167,139,250,0.2)', 
+                                <Box
+                                  sx={{
+                                    width: 28,
+                                    height: 28,
+                                    borderRadius: '50%',
+                                    bgcolor: 'rgba(167,139,250,0.2)',
                                     color: '#A78BFA',
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
                                     fontSize: '10px',
                                     fontWeight: 700,
-                                    border: '1px solid rgba(167,139,250,0.3)'
+                                    border: '1px solid rgba(167,139,250,0.3)',
                                   }}
                                   title={projectData.reviewers[0]}
                                 >
-                                  {projectData.reviewers[0].split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+                                  {projectData.reviewers[0].split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)}
                                 </Box>
                                 {projectData.reviewers.length > 1 && (
                                   <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>
@@ -326,23 +325,23 @@ const ManagerProjects = () => {
                               <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.4)', fontStyle: 'italic' }}>Unassigned</Typography>
                             ) : (
                               <>
-                                <Box 
-                                  sx={{ 
-                                    width: 28, 
-                                    height: 28, 
-                                    borderRadius: '50%', 
-                                    bgcolor: 'rgba(56,189,248,0.2)', 
+                                <Box
+                                  sx={{
+                                    width: 28,
+                                    height: 28,
+                                    borderRadius: '50%',
+                                    bgcolor: 'rgba(56,189,248,0.2)',
                                     color: '#38BDF8',
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
                                     fontSize: '10px',
                                     fontWeight: 700,
-                                    border: '1px solid rgba(56,189,248,0.3)'
+                                    border: '1px solid rgba(56,189,248,0.3)',
                                   }}
                                   title={projectData.annotators[0]}
                                 >
-                                  {projectData.annotators[0].split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+                                  {projectData.annotators[0].split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2)}
                                 </Box>
                                 {projectData.annotators.length > 1 && (
                                   <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>
@@ -361,8 +360,8 @@ const ManagerProjects = () => {
                         <TableCell align="right" onClick={(e) => e.stopPropagation()}>
                           <Stack direction="row" spacing={1} justifyContent="flex-end">
                             <Tooltip title="Edit">
-                              <IconButton 
-                                size="small" 
+                              <IconButton
+                                size="small"
                                 sx={{ color: 'rgba(255,255,255,0.7)', '&:hover': { bgcolor: 'rgba(255,255,255,0.1)' } }}
                                 onClick={() => navigate(`/manager/projects/${project._id}`)}
                               >
@@ -370,8 +369,8 @@ const ManagerProjects = () => {
                               </IconButton>
                             </Tooltip>
                             <Tooltip title="Delete">
-                              <IconButton 
-                                size="small" 
+                              <IconButton
+                                size="small"
                                 sx={{ color: '#FB7185', '&:hover': { bgcolor: 'rgba(251,113,133,0.1)' } }}
                                 onClick={() => handleDelete(project._id)}
                               >

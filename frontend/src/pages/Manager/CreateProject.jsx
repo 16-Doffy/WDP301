@@ -152,20 +152,6 @@ const CreateProject = () => {
       return;
     }
 
-    // Validate deadline: nếu nhập thì phải lớn hơn thời gian hiện tại
-    if (formData.deadline) {
-      const deadlineDate = new Date(formData.deadline);
-      const now = new Date();
-      if (Number.isNaN(deadlineDate.getTime())) {
-        alert('Giá trị deadline không hợp lệ. Vui lòng chọn lại.');
-        return;
-      }
-      if (deadlineDate <= now) {
-        alert('Deadline phải lớn hơn thời gian hiện tại. Vui lòng chọn ngày giờ trong tương lai.');
-        return;
-      }
-    }
-
     setSaving(true);
     try {
       await axios.post(`${API_URL}/api/projects`, {
@@ -223,20 +209,6 @@ const CreateProject = () => {
     if (selectedReviewers.length === 0) {
       alert('Vui lòng chọn ít nhất một reviewer');
       return;
-    }
-
-    // Validate deadline: nếu nhập thì phải lớn hơn thời gian hiện tại
-    if (formData.deadline) {
-      const deadlineDate = new Date(formData.deadline);
-      const now = new Date();
-      if (Number.isNaN(deadlineDate.getTime())) {
-        alert('Giá trị deadline không hợp lệ. Vui lòng chọn lại.');
-        return;
-      }
-      if (deadlineDate <= now) {
-        alert('Deadline phải lớn hơn thời gian hiện tại. Vui lòng chọn ngày giờ trong tương lai.');
-        return;
-      }
     }
 
     setSaving(true);
@@ -608,30 +580,18 @@ const CreateProject = () => {
                       </Typography>
                     </MenuItem>
                   ) : (
-                    datasets.map((dataset) => {
-                      const datasetType = dataset.type || (dataset.files?.[0]?.mimeType?.startsWith('audio/') ? 'audio' : dataset.files?.[0]?.mimeType?.startsWith('image/') ? 'image' : 'text');
-                      return (
-                        <MenuItem key={dataset._id} value={dataset._id}>
-                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                              <span>{dataset.name}</span>
-                              <Chip 
-                                label={datasetType.toUpperCase()} 
-                                size="small" 
-                                color={datasetType === 'image' ? 'primary' : datasetType === 'audio' ? 'secondary' : 'default'}
-                                sx={{ fontSize: '0.7rem', height: 20 }}
-                              />
-                            </Box>
-                            <Chip 
-                              label={`${dataset.totalItems || 0} files`} 
-                              size="small" 
-                              variant="outlined"
-                              sx={{ ml: 1 }}
-                            />
-                          </Box>
-                        </MenuItem>
-                      );
-                    })
+                    datasets.map((dataset) => (
+                      <MenuItem key={dataset._id} value={dataset._id}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+                          <span>{dataset.name}</span>
+                          <Chip 
+                            label={`${dataset.totalItems || 0} files`} 
+                            size="small" 
+                            sx={{ ml: 1 }}
+                          />
+                        </Box>
+                      </MenuItem>
+                    ))
                   )}
                 </Select>
               </FormControl>
