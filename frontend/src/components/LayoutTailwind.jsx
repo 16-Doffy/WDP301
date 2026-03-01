@@ -16,13 +16,7 @@ const LayoutTailwind = () => {
     const baseItems = [
       {
         text: 'Dashboard',
-        icon: (
-          <img
-            src={dashboardIcon}
-            alt="Dashboard"
-            className="w-5 h-5"
-          />
-        ),
+        icon: <img src={dashboardIcon} alt="Dashboard" className="h-5 w-5" />,
         path: user.role === 'annotator' ? '/annotator' : '/dashboard',
       },
     ];
@@ -30,24 +24,12 @@ const LayoutTailwind = () => {
     if (user.role === 'manager' || user.role === 'admin') {
       baseItems.push({
         text: 'Projects',
-        icon: (
-          <img
-            src={projectsIcon}
-            alt="Projects"
-            className="w-5 h-5"
-          />
-        ),
+        icon: <img src={projectsIcon} alt="Projects" className="h-5 w-5" />,
         path: '/manager/projects',
       });
       baseItems.push({
         text: 'Datasets',
-        icon: (
-          <img
-            src={datasetsIcon}
-            alt="Datasets"
-            className="w-5 h-5"
-          />
-        ),
+        icon: <img src={datasetsIcon} alt="Datasets" className="h-5 w-5" />,
         path: '/manager/datasets',
       });
       baseItems.push({
@@ -58,42 +40,18 @@ const LayoutTailwind = () => {
     }
 
     if (user.role === 'annotator') {
-      baseItems.push({
-        text: 'My Tasks',
-        icon: '📝',
-        path: '/annotator/tasks',
-      });
-      baseItems.push({
-        text: 'Rules',
-        icon: '📘',
-        path: '/annotator/rules',
-      });
+      baseItems.push({ text: 'My Tasks', icon: '📝', path: '/annotator/tasks' });
+      baseItems.push({ text: 'Rules', icon: '📘', path: '/annotator/rules' });
     }
 
     if (user.role === 'reviewer' || user.role === 'admin') {
-      baseItems.push({
-        text: 'Reviews',
-        icon: '🔍',
-        path: '/reviewer/tasks',
-      });
+      baseItems.push({ text: 'Reviews', icon: '🔍', path: '/reviewer/tasks' });
     }
 
     if (user.role === 'admin') {
-      baseItems.push({
-        text: 'Users',
-        icon: '👤',
-        path: '/admin/users',
-      });
-      baseItems.push({
-        text: 'Activity Logs',
-        icon: '📜',
-        path: '/admin/activity-logs',
-      });
-      baseItems.push({
-        text: 'Settings',
-        icon: '⚙️',
-        path: '/admin/settings',
-      });
+      baseItems.push({ text: 'Users', icon: '👤', path: '/admin/users' });
+      baseItems.push({ text: 'Activity Logs', icon: '📜', path: '/admin/activity-logs' });
+      baseItems.push({ text: 'Settings', icon: '⚙️', path: '/admin/settings' });
     }
 
     return baseItems;
@@ -106,7 +64,7 @@ const LayoutTailwind = () => {
 
   const getRoleDisplay = () => {
     const roleMap = {
-      manager: ' Manager',
+      manager: 'Manager',
       annotator: 'Annotator',
       reviewer: 'Reviewer',
       admin: 'Administrator',
@@ -115,76 +73,70 @@ const LayoutTailwind = () => {
   };
 
   return (
-    <div className="flex h-screen bg-[#2c3e50] text-slate-100">
-      {/* Left Sidebar */}
-      <div className="w-64 bg-gradient-to-b from-[#1488CC] to-[#2B32B2] text-white flex flex-col shadow-xl border-r border-white/10">
-        {/* Logo */}
-        <div className="p-6 border-b border-white/10 bg-white/5 backdrop-blur-sm">
+    <div className="flex min-h-screen bg-slate-900 text-gray-200">
+      <aside className="w-64 bg-gray-900 border-r border-gray-800 flex flex-col">
+        <div className="border-b border-gray-800 px-5 py-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center shadow-inner">
-              <span className="text-xl">📊</span>
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gray-800 border border-gray-700">
+              <span className="text-base">📊</span>
             </div>
             <div>
-              <h1 className="text-lg font-bold tracking-tight text-white">LabelFlow</h1>
-              <p className="text-[10px] text-blue-100 uppercase font-bold tracking-widest opacity-80">
-                {user?.role === 'manager' ? 'Manager' : 
-                 user?.role === 'annotator' ? 'Annotator' :
-                 user?.role === 'reviewer' ? 'Reviewer' : 'Admin'}
+              <h1 className="text-lg font-semibold text-gray-100">LabelFlow</h1>
+              <p className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">
+                {getRoleDisplay()}
               </p>
             </div>
           </div>
         </div>
 
-        {/* Navigation Menu */}
-        <nav className="flex-1 p-4 space-y-1.5 overflow-y-auto">
+        <nav className="flex-1 space-y-1 p-3">
           {getMenuItems().map((item) => {
-            const isActive = location.pathname === item.path || 
+            const isActive =
+              location.pathname === item.path ||
               (item.path !== '/dashboard' && location.pathname.startsWith(item.path));
+
             return (
               <button
                 key={item.path}
                 onClick={() => navigate(item.path)}
-                className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 group ${
+                className={`w-full rounded-lg px-3 py-2.5 transition text-left flex items-center gap-3 ${
                   isActive
-                    ? 'bg-white text-[#1488CC] shadow-lg shadow-black/10 font-semibold scale-[1.02]'
-                    : 'text-white/80 hover:bg-white/10 hover:text-white'
+                    ? 'bg-gray-800 text-gray-100 border border-gray-700'
+                    : 'text-gray-400 hover:bg-gray-800 hover:text-gray-100'
                 }`}
               >
-                <span className={`text-xl transition-transform group-hover:scale-110 ${isActive ? '' : 'opacity-90'}`}>
-                  {item.icon}
-                </span>
-                <span className="text-sm">{item.text}</span>
+                <span className="inline-flex h-5 w-5 items-center justify-center">{item.icon}</span>
+                <span className="text-sm font-medium">{item.text}</span>
               </button>
             );
           })}
         </nav>
 
-        {/* User Profile */}
-        <div className="p-4 border-t border-white/10 bg-black/5">
-          <div className="flex items-center gap-3 mb-3 p-2 rounded-xl hover:bg-white/5 transition-colors">
-            <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center border border-white/30 shadow-sm">
-              <span className="text-sm font-bold text-white">
-                {user?.fullName?.split(' ').map(n => n[0]).join('').toUpperCase() || 'U'}
+        <div className="border-t border-gray-800 p-3">
+          <div className="mb-3 flex items-center gap-3 rounded-lg border border-gray-800 bg-gray-900 p-2">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-800 border border-gray-700">
+              <span className="text-xs font-bold text-gray-200">
+                {user?.fullName?.split(' ').map((n) => n[0]).join('').toUpperCase() || 'U'}
               </span>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm text-white font-semibold truncate">{user?.fullName || 'User'}</p>
-              <p className="text-xs text-blue-100/70 truncate uppercase tracking-tighter">{getRoleDisplay()}</p>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-gray-200">{user?.fullName || 'User'}</p>
+              <p className="truncate text-xs text-gray-400">{getRoleDisplay()}</p>
             </div>
           </div>
+
           <button
             onClick={handleLogout}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold text-white bg-white/10 hover:bg-red-500/20 hover:text-red-100 rounded-lg border border-white/10 transition-all duration-200"
+            className="w-full rounded-lg bg-gray-800 px-4 py-2 text-sm font-semibold text-gray-200 transition hover:bg-gray-700"
           >
-            <span>Đăng xuất</span>
+            Đăng xuất
           </button>
         </div>
-      </div>
+      </aside>
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-y-auto bg-[#2c3e50]">
+      <main className="flex-1 overflow-y-auto bg-slate-900">
         <Outlet />
-      </div>
+      </main>
     </div>
   );
 };

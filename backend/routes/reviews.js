@@ -3,10 +3,6 @@ const { body, validationResult } = require('express-validator');
 const Task = require('../models/Task');
 const { auth, authorize } = require('../middleware/auth');
 const { createActivityLog } = require('./activityLogs');
-const Penalty = require('../models/Penalty');
-const Warning = require('../models/Warning');
-const UserScore = require('../models/UserScore');
-const Reward = require('../models/Reward');
 
 const router = express.Router();
 
@@ -18,13 +14,13 @@ router.get('/pending', auth, authorize('reviewer', 'admin'), async (req, res) =>
       status: 'submitted',
       $or: [
         // Reviewer is in the reviewers array with status 'pending'
-        { 
-          reviewers: { 
-            $elemMatch: { 
+        {
+          reviewers: {
+            $elemMatch: {
               reviewerId: reviewerId,
-              status: 'pending' 
-            } 
-          } 
+              status: 'pending'
+            }
+          }
         },
         // Fallback: if reviewers array is empty or doesn't exist, show to all reviewers
         { reviewers: { $exists: true, $size: 0 } },
@@ -48,9 +44,9 @@ router.get('/pending', auth, authorize('reviewer', 'admin'), async (req, res) =>
 // Get all reviewed tasks (approved/rejected)
 router.get('/reviewed', auth, authorize('reviewer', 'admin'), async (req, res) => {
   try {
-    const tasks = await Task.find({ 
+    const tasks = await Task.find({
       status: { $in: ['approved', 'rejected'] },
-      reviewerId: req.user._id 
+      reviewerId: req.user._id
     })
       .populate('projectId', 'name labelSet guidelines questions')
       .populate('datasetId', 'name')
@@ -69,19 +65,19 @@ router.get('/all', auth, authorize('reviewer', 'admin'), async (req, res) => {
   try {
     const reviewerId = req.user._id;
     const reviewerIdString = reviewerId.toString();
-    
+
     // Query for pending tasks: status = 'submitted' AND reviewer is assigned with status 'pending'
     const pendingTasks = await Task.find({
       status: 'submitted',
       $or: [
         // Reviewer is in the reviewers array with status 'pending'
-        { 
-          reviewers: { 
-            $elemMatch: { 
+        {
+          reviewers: {
+            $elemMatch: {
               reviewerId: reviewerId,
-              status: 'pending' 
-            } 
-          } 
+              status: 'pending'
+            }
+          }
         },
         // Fallback: if reviewers array is empty or doesn't exist, show to all reviewers
         { reviewers: { $exists: true, $size: 0 } },
@@ -95,19 +91,19 @@ router.get('/all', auth, authorize('reviewer', 'admin'), async (req, res) => {
       .sort({ submittedAt: 1 });
 
     // Query for reviewed tasks: status = 'approved' or 'rejected' AND reviewer reviewed it
-    const reviewedTasks = await Task.find({ 
+    const reviewedTasks = await Task.find({
       status: { $in: ['approved', 'rejected'] },
       $or: [
         // Reviewer is the primary reviewer
         { reviewerId: reviewerId },
         // Or reviewer is in the reviewers array with status 'approved' or 'rejected'
-        { 
-          reviewers: { 
-            $elemMatch: { 
+        {
+          reviewers: {
+            $elemMatch: {
               reviewerId: reviewerId,
-              status: { $in: ['approved', 'rejected'] } 
-            } 
-          } 
+              status: { $in: ['approved', 'rejected'] }
+            }
+          }
         }
       ]
     })
@@ -135,15 +131,15 @@ router.post('/:id/approve', auth, authorize('reviewer', 'admin'), async (req, re
   try {
     const task = await Task.findById(req.params.id)
       .populate('projectId', 'name guidelines');
-    
+
     if (!task) {
       return res.status(404).json({ message: 'Task not found' });
     }
 
     // Validate task status
     if (task.status !== 'submitted') {
-      return res.status(400).json({ 
-        message: `Task cannot be approved. Current status: ${task.status}. Only submitted tasks can be approved.` 
+      return res.status(400).json({
+        message: `Task cannot be approved. Current status: ${task.status}. Only submitted tasks can be approved.`
       });
     }
 
@@ -185,9 +181,6 @@ router.post('/:id/approve', auth, authorize('reviewer', 'admin'), async (req, re
     await task.populate('annotatorId', 'username fullName');
     await task.populate('reviewerId', 'username fullName');
 
-    // Update annotator score positively (approval = good work)
-    await updateAnnotatorScoreOnApproval(task.annotatorId._id || task.annotatorId, task._id, task.projectId._id || task.projectId, req.user._id);
-
     // Log task approval
     await createActivityLog(
       req.user._id,
@@ -195,7 +188,7 @@ router.post('/:id/approve', auth, authorize('reviewer', 'admin'), async (req, re
       'task',
       task._id,
       `Approved task submitted by ${task.annotatorId?.fullName || task.annotatorId?.username}`,
-      { 
+      {
         taskId: task._id.toString(),
         annotatorId: task.annotatorId?._id?.toString() || task.annotatorId?.toString()
       },
@@ -221,15 +214,15 @@ router.post('/:id/reject', auth, authorize('reviewer', 'admin'), [
 
     const task = await Task.findById(req.params.id)
       .populate('projectId', 'name guidelines');
-    
+
     if (!task) {
       return res.status(404).json({ message: 'Task not found' });
     }
 
     // Validate task status
     if (task.status !== 'submitted') {
-      return res.status(400).json({ 
-        message: `Task cannot be rejected. Current status: ${task.status}. Only submitted tasks can be rejected.` 
+      return res.status(400).json({
+        message: `Task cannot be rejected. Current status: ${task.status}. Only submitted tasks can be rejected.`
       });
     }
 
@@ -246,8 +239,8 @@ router.post('/:id/reject', auth, authorize('reviewer', 'admin'), [
     // Validate error category if provided
     const validErrorCategories = ['incorrect_label', 'missing_label', 'poor_quality', 'does_not_follow_guidelines', 'other'];
     if (req.body.errorCategory && !validErrorCategories.includes(req.body.errorCategory)) {
-      return res.status(400).json({ 
-        message: `Invalid error category. Valid categories are: ${validErrorCategories.join(', ')}` 
+      return res.status(400).json({
+        message: `Invalid error category. Valid categories are: ${validErrorCategories.join(', ')}`
       });
     }
 
@@ -284,16 +277,6 @@ router.post('/:id/reject', auth, authorize('reviewer', 'admin'), [
     await task.populate('annotatorId', 'username fullName');
     await task.populate('reviewerId', 'username fullName');
 
-    // Check for repeat errors and apply penalties
-    await checkAndApplyPenaltyOnRejection(
-      task.annotatorId._id || task.annotatorId,
-      task._id,
-      task.projectId._id || task.projectId,
-      req.body.errorCategory,
-      req.body.reviewComments,
-      req.user._id
-    );
-
     // Log task rejection
     await createActivityLog(
       req.user._id,
@@ -301,7 +284,7 @@ router.post('/:id/reject', auth, authorize('reviewer', 'admin'), [
       'task',
       task._id,
       `Rejected task submitted by ${task.annotatorId?.fullName || task.annotatorId?.username}. Reason: ${task.errorCategory}`,
-      { 
+      {
         taskId: task._id.toString(),
         annotatorId: task.annotatorId?._id?.toString() || task.annotatorId?.toString(),
         errorCategory: task.errorCategory
@@ -345,238 +328,42 @@ router.get('/stats', auth, authorize('reviewer', 'manager', 'admin'), async (req
   }
 });
 
-// Helper function to update annotator score on approval
-async function updateAnnotatorScoreOnApproval(annotatorId, taskId, projectId, reviewerId) {
-  let userScore = await UserScore.findOne({ userId: annotatorId });
-  const User = require('../models/User');
-  
-  if (!userScore) {
-    const user = await User.findById(annotatorId);
-    userScore = new UserScore({
-      userId: annotatorId,
-      role: user.role,
-      qualityScore: 100
-    });
-  }
+// Handle sentence-level feedback (for text tasks)
+router.post('/:id/sentences', auth, authorize('reviewer', 'admin'), async (req, res) => {
+  try {
+    const { index, action, feedback } = req.body;
 
-  // Get recent approvals for streak calculation
-  const recentApprovals = await Task.find({
-    annotatorId,
-    status: 'approved',
-    reviewedAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } // Last 7 days
-  }).sort({ reviewedAt: -1 });
-
-  const approvalStreak = recentApprovals.length;
-  let scoreBonus = 0.5; // Base bonus
-  let rewardType = 'approval_streak';
-  let rewardReason = 'Task được approve';
-
-  // Bonus for streaks
-  if (approvalStreak >= 10) {
-    scoreBonus = 3; // Big bonus for 10+ approvals
-    rewardType = 'approval_streak';
-    rewardReason = `Chuỗi ${approvalStreak} tasks được approve liên tiếp!`;
-  } else if (approvalStreak >= 5) {
-    scoreBonus = 2; // Medium bonus for 5+ approvals
-    rewardType = 'approval_streak';
-    rewardReason = `Chuỗi ${approvalStreak} tasks được approve!`;
-  }
-
-  // Check if user had penalties and reduce them on good performance
-  const activePenalties = await Penalty.find({
-    userId: annotatorId,
-    status: 'active',
-    level: { $in: ['warning', 'light'] }
-  });
-
-  // If user has active penalties and gets 3+ approvals, reduce penalty
-  if (activePenalties.length > 0 && approvalStreak >= 3) {
-    // Resolve oldest warning
-    const oldestWarning = activePenalties
-      .filter(p => p.level === 'warning')
-      .sort((a, b) => a.createdAt - b.createdAt)[0];
-    
-    if (oldestWarning) {
-      oldestWarning.status = 'resolved';
-      oldestWarning.resolvedAt = new Date();
-      oldestWarning.resolvedBy = reviewerId;
-      await oldestWarning.save();
-      
-      // Restore some score
-      scoreBonus += 2;
-      rewardReason += ' - Đã cải thiện, penalty cảnh báo đã được gỡ!';
+    const task = await Task.findById(req.params.id);
+    if (!task) {
+      return res.status(404).json({ message: 'Task not found' });
     }
-  }
 
-  // Update score
-  userScore.qualityScore = Math.min(100, userScore.qualityScore + scoreBonus);
-  userScore.approvedTasks = (userScore.approvedTasks || 0) + 1;
-  userScore.completedTasks = (userScore.completedTasks || 0) + 1;
-  
-  // Update error rate
-  const allTasks = await Task.find({ annotatorId });
-  if (allTasks.length > 0) {
-    const rejectedCount = allTasks.filter(t => t.status === 'rejected').length;
-    userScore.errorRate = (rejectedCount / allTasks.length) * 100;
-    userScore.rejectedTasks = rejectedCount;
-  }
-
-  // If error rate drops below 5% and had penalties, reduce penalty level
-  if (userScore.errorRate < 5 && userScore.currentPenaltyLevel !== 'none') {
-    if (userScore.currentPenaltyLevel === 'warning') {
-      userScore.currentPenaltyLevel = 'none';
-      rewardReason += ' - Error rate thấp, đã gỡ cảnh báo!';
-    } else if (userScore.currentPenaltyLevel === 'light' && approvalStreak >= 5) {
-      userScore.currentPenaltyLevel = 'warning';
-      rewardReason += ' - Đã cải thiện từ phạt nhẹ xuống cảnh báo!';
+    // Initialize sentenceFeedbacks if it doesn't exist
+    if (!task.sentenceFeedbacks) {
+      task.sentenceFeedbacks = {};
     }
-  }
 
-  // Remove restrictions if score is high enough
-  if (userScore.qualityScore >= 80 && userScore.isRestricted) {
-    userScore.isRestricted = false;
-    userScore.restrictionUntil = null;
-    userScore.weeklyTaskLimit = null;
-    rewardReason += ' - Score cao, đã gỡ hạn chế!';
-  }
+    // Store feedback for this sentence
+    const feedbackKey = `sentence_${index}`;
+    task.sentenceFeedbacks[feedbackKey] = {
+      action,
+      feedback,
+      reviewerId: req.user._id,
+      reviewedAt: new Date()
+    };
 
-  userScore.lastUpdated = new Date();
-  await userScore.save();
+    // CRITICAL: Since sentenceFeedbacks is a Mixed type, we must mark it as modified
+    task.markModified('sentenceFeedbacks');
 
-  // Create reward record if bonus is significant
-  if (scoreBonus >= 2) {
-    const reward = new Reward({
-      userId: annotatorId,
-      role: 'annotator',
-      type: rewardType,
-      reason: rewardReason,
-      scoreBonus,
-      relatedTaskId: taskId,
-      relatedProjectId: projectId,
-      createdBy: reviewerId,
-      metadata: {
-        approvalStreak,
-        previousScore: userScore.qualityScore - scoreBonus
-      }
+    await task.save();
+
+    res.json({
+      message: `Sentence ${index} marked as ${action}`,
+      sentenceFeedbacks: task.sentenceFeedbacks
     });
-    await reward.save();
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
   }
-}
-
-// Helper function to check and apply penalty on rejection
-async function checkAndApplyPenaltyOnRejection(annotatorId, taskId, projectId, errorCategory, reviewComments, reviewerId) {
-  // Get recent rejections for this annotator
-  const recentRejections = await Task.find({
-    annotatorId,
-    status: 'rejected',
-    reviewedAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } // Last 7 days
-  }).sort({ reviewedAt: -1 });
-
-  const rejectionCount = recentRejections.length;
-  
-  // Get existing penalties
-  const recentPenalties = await Penalty.find({
-    userId: annotatorId,
-    createdAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
-  }).sort({ createdAt: -1 });
-
-  // Map error category to error type
-  const errorTypeMap = {
-    'incorrect_label': 'wrong_label',
-    'missing_label': 'missed_guideline',
-    'poor_quality': 'sloppy_work',
-    'does_not_follow_guidelines': 'missed_guideline',
-    'other': 'repeat_error'
-  };
-  const errorType = errorTypeMap[errorCategory] || 'repeat_error';
-
-  // Determine penalty level based on rejection history
-  let penaltyLevel = 'warning';
-  let action = 'notification';
-  let scoreDeduction = 2;
-
-  if (rejectionCount >= 5 || recentPenalties.filter(p => p.level === 'heavy').length > 0) {
-    // Heavy penalty - too many rejections
-    penaltyLevel = 'heavy';
-    action = 'temporary_ban';
-    scoreDeduction = 10;
-  } else if (rejectionCount >= 3 || recentPenalties.filter(p => p.level === 'light').length > 0) {
-    // Light penalty - multiple rejections
-    penaltyLevel = 'light';
-    action = 'reduce_tasks';
-    scoreDeduction = 5;
-  } else if (rejectionCount >= 2) {
-    // Warning - second rejection
-    penaltyLevel = 'warning';
-    action = 'read_guideline';
-    scoreDeduction = 2;
-  } else {
-    // First time - just warning, no penalty yet
-    const warning = new Warning({
-      userId: annotatorId,
-      role: 'annotator',
-      type: 'first_time',
-      reason: `Task bị reject: ${reviewComments || errorCategory}`,
-      relatedTaskId: taskId,
-      relatedProjectId: projectId,
-      createdBy: reviewerId
-    });
-    await warning.save();
-    return; // No penalty for first rejection
-  }
-
-  // Create penalty
-  const penalty = new Penalty({
-    userId: annotatorId,
-    role: 'annotator',
-    level: penaltyLevel,
-    reason: `Task bị reject (lần ${rejectionCount}): ${reviewComments || errorCategory}`,
-    errorType,
-    relatedTaskId: taskId,
-    relatedProjectId: projectId,
-    scoreDeduction,
-    action,
-    createdBy: reviewerId,
-    metadata: {
-      rejectionCount,
-      errorCategory
-    }
-  });
-  await penalty.save();
-
-  // Update user score
-  let userScore = await UserScore.findOne({ userId: annotatorId });
-  if (!userScore) {
-    const User = require('../models/User');
-    const user = await User.findById(annotatorId);
-    userScore = new UserScore({
-      userId: annotatorId,
-      role: user.role,
-      qualityScore: 100
-    });
-  }
-
-  userScore.qualityScore = Math.max(0, userScore.qualityScore - scoreDeduction);
-  userScore.rejectedTasks = (userScore.rejectedTasks || 0) + 1;
-  userScore.currentPenaltyLevel = penaltyLevel;
-  userScore.lastUpdated = new Date();
-  await userScore.save();
-
-  // Apply penalty actions
-  if (action === 'reduce_tasks') {
-    if (!userScore.weeklyTaskLimit || userScore.weeklyTaskLimit > 10) {
-      userScore.weeklyTaskLimit = 10;
-    } else {
-      userScore.weeklyTaskLimit = Math.max(5, userScore.weeklyTaskLimit - 5);
-    }
-    await userScore.save();
-  } else if (action === 'temporary_ban') {
-    userScore.isRestricted = true;
-    const banDays = penaltyLevel === 'heavy' ? 7 : 3;
-    userScore.restrictionUntil = new Date();
-    userScore.restrictionUntil.setDate(userScore.restrictionUntil.getDate() + banDays);
-    await userScore.save();
-  }
-}
+});
 
 module.exports = router;

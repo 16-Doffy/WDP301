@@ -23,10 +23,14 @@ const taskSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['assigned', 'in_progress', 'completed', 'submitted', 'approved', 'rejected', 'revised'],
+    enum: ['assigned', 'in_progress', 'submitted', 'approved', 'rejected', 'revised'],
     default: 'assigned'
   },
   labels: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
+  },
+  sentenceFeedbacks: {
     type: mongoose.Schema.Types.Mixed,
     default: {}
   },
