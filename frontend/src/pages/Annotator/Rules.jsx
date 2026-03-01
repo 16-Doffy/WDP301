@@ -82,16 +82,16 @@ const AnnotatorRules = () => {
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(255,255,255,0.25),transparent_50%),radial-gradient(circle_at_85%_30%,rgba(255,255,255,0.18),transparent_45%)] pointer-events-none" />
 
         <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
+            <div>
             <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-white">Quy định thưởng & phạt</h1>
-            <p className="mt-1 text-white/80">Dành cho role Annotator (tóm tắt cơ chế hiện tại trong hệ thống)</p>
-          </div>
-          <button
-            onClick={() => navigate('/annotator/tasks')}
+              <p className="mt-1 text-white/80">Dành cho role Annotator (tóm tắt cơ chế hiện tại trong hệ thống)</p>
+            </div>
+            <button
+              onClick={() => navigate('/annotator/tasks')}
             className="px-5 py-2.5 rounded-xl bg-white/15 hover:bg-white/25 border border-white/30 text-white font-semibold transition-colors"
-          >
+            >
             MỞ MY TASKS
-          </button>
+            </button>
         </div>
 
         <div className="relative mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4">

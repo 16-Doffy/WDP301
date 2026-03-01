@@ -35,7 +35,7 @@ const AnnotatorDashboard = () => {
         const datasetName = task.datasetId?.name || 'Unknown Dataset';
         const projectName = task.projectId?.name || 'Unknown Project';
         const taskFormat = getTaskFormat(task);
-
+        
         if (!batchMap.has(datasetId)) {
           batchMap.set(datasetId, {
             id: datasetId,
@@ -52,7 +52,7 @@ const AnnotatorDashboard = () => {
             format: taskFormat,
           });
         }
-
+        
         const batch = batchMap.get(datasetId);
         if (batch.format !== taskFormat) {
           batch.format = 'mixed';
@@ -60,27 +60,38 @@ const AnnotatorDashboard = () => {
         batch.tasks.push(task);
         batch.totalTasks++;
         
-        if (task.status === 'approved') {
+        // Determine review stages
+        const isApproved = task.status === 'approved';
+        const isPendingReview = task.status === 'submitted';
+        const isWorking = ['in_progress', 'rejected', 'assigned', 'new', undefined, null].includes(task.status);
+
+        if (isApproved) {
           batch.completedTasks++;
-        } else if (task.status === 'submitted') {
-          batch.completedTasks++; // Count submitted as completed (waiting review)
-        } else if (task.status === 'in_progress') {
-          batch.inProgressTasks++;
-        } else if (task.status === 'rejected') {
-          batch.inProgressTasks++; // Rejected tasks need to be redone
         }
-        
-        // Determine batch status
-        if (batch.completedTasks === batch.totalTasks && batch.totalTasks > 0) {
+        if (isPendingReview) {
+          batch.completedTasks++;
+        }
+        if (isWorking) {
+          batch.inProgressTasks++;
+        }
+
+        // Determine batch status by reviewer stage
+        const approvedCount = batch.tasks.filter((t) => t.status === 'approved').length;
+        const submittedCount = batch.tasks.filter((t) => t.status === 'submitted').length;
+        const totalCount = batch.totalTasks;
+
+        if (approvedCount === totalCount && totalCount > 0) {
           batch.status = 'completed';
+        } else if (approvedCount + submittedCount === totalCount && submittedCount > 0) {
+          batch.status = 'pending';
         } else if (batch.inProgressTasks > 0 || batch.completedTasks > 0) {
           batch.status = 'in_progress';
         } else {
           batch.status = 'new';
         }
 
-        // Check overdue by deadline
-        if (batch.deadline && new Date(batch.deadline) < new Date() && batch.status !== 'completed') {
+        // Check overdue by deadline (only lock unfinished/non-reviewed items)
+        if (batch.deadline && new Date(batch.deadline) < new Date() && !['completed', 'pending'].includes(batch.status)) {
           batch.status = 'overdue';
         }
         
@@ -113,6 +124,7 @@ const AnnotatorDashboard = () => {
     const badges = {
       new: { text: 'NEW', color: 'bg-green-100 text-green-800' },
       in_progress: { text: 'IN PROGRESS', color: 'bg-blue-100 text-blue-800' },
+      pending: { text: 'PENDING REVIEW', color: 'bg-yellow-100 text-yellow-800' },
       completed: { text: 'COMPLETED', color: 'bg-gray-100 text-gray-800' },
       overdue: { text: 'OVERDUE', color: 'bg-red-100 text-red-800' },
       urgent: { text: 'URGENT', color: 'bg-orange-100 text-orange-800' },
@@ -126,47 +138,57 @@ const AnnotatorDashboard = () => {
   };
 
   // Filter & Sort controls
-  const [filterStatus, setFilterStatus] = useState('all'); // all | active | completed | overdue
-  const [sortDir] = useState('asc'); // asc => Active>Completed>Overdue, desc => reverse
+  const [filterStatus, setFilterStatus] = useState('all'); // all | active | pending | completed | overdue
+  const [sortDir] = useState('asc'); // asc => Active>Pending>Completed>Overdue, desc => reverse
+
+  const isPendingReviewBatch = (batch) => {
+    const hasSubmittedTask = batch.tasks.some((task) => task.status === 'submitted');
+    const isAllDoneByAnnotator = batch.tasks.every((task) => task.status === 'submitted' || task.status === 'approved');
+    return hasSubmittedTask && isAllDoneByAnnotator;
+  };
+
+  const isCompletedReviewedBatch = (batch) => {
+    return batch.tasks.length > 0 && batch.tasks.every((task) => task.status === 'approved');
+  };
 
   // Apply search, filter and sort
-  const statusOrder = { in_progress: 0, new: 0, completed: 1, overdue: 2 };
+  const statusOrder = { in_progress: 0, new: 0, pending_review: 1, completed: 2, overdue: 3 };
 
   const filteredSorted = batches
     .filter(batch => {
       const matchesSearch = batch.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         batch.project.toLowerCase().includes(searchTerm.toLowerCase());
 
+      const pendingReview = isPendingReviewBatch(batch);
+      const reviewedCompleted = isCompletedReviewedBatch(batch);
+
       const filterMatch = filterStatus === 'all' ||
-        (filterStatus === 'active' && batch.status !== 'completed' && batch.status !== 'overdue') ||
-        (filterStatus === 'completed' && batch.status === 'completed') ||
+        (filterStatus === 'active' && !pendingReview && !reviewedCompleted && batch.status !== 'overdue') ||
+        (filterStatus === 'pending' && pendingReview) ||
+        (filterStatus === 'completed' && reviewedCompleted) ||
         (filterStatus === 'overdue' && batch.status === 'overdue');
 
       return matchesSearch && filterMatch;
     })
     .sort((a, b) => {
-      const diff = statusOrder[a.status] - statusOrder[b.status];
+      const statusA = isPendingReviewBatch(a) ? 'pending_review' : a.status;
+      const statusB = isPendingReviewBatch(b) ? 'pending_review' : b.status;
+      const diff = statusOrder[statusA] - statusOrder[statusB];
       return sortDir === 'asc' ? diff : -diff;
     });
 
-  // Separate batches into overdue, active and completed
-  const overdueBatches = filteredSorted.filter(batch => {
-    const matchesSearch = batch.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      batch.project.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesSearch && batch.status === 'overdue';
-  });
+  // Separate batches by section
+  const overdueBatches = filteredSorted.filter(batch => batch.status === 'overdue');
 
   const activeBatches = filteredSorted.filter(batch => {
-    const matchesSearch = batch.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      batch.project.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesSearch && batch.status !== 'completed' && batch.status !== 'overdue';
+    const pendingReview = isPendingReviewBatch(batch);
+    const reviewedCompleted = isCompletedReviewedBatch(batch);
+    return !pendingReview && !reviewedCompleted && batch.status !== 'overdue';
   });
 
-  const completedBatches = filteredSorted.filter(batch => {
-    const matchesSearch = batch.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      batch.project.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesSearch && batch.status === 'completed';
-  });
+  const pendingReviewBatches = filteredSorted.filter(batch => isPendingReviewBatch(batch));
+
+  const completedBatches = filteredSorted.filter(batch => isCompletedReviewedBatch(batch));
 
   const getFormatUi = (format) => {
     const map = {
@@ -215,8 +237,9 @@ const AnnotatorDashboard = () => {
     return (
       <div
         key={batch.id}
-        className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow cursor-pointer"
+        className={`bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden transition-shadow ${batch.status === 'overdue' ? 'cursor-not-allowed opacity-95' : 'hover:shadow-md cursor-pointer'}`}
         onClick={() => {
+          if (batch.status === 'overdue') return;
           if (firstTask) {
             navigate(`/annotator/tasks/${firstTask._id}`);
           }
@@ -330,6 +353,19 @@ const AnnotatorDashboard = () => {
               buttonColor = 'bg-green-500 text-white hover:bg-green-600';
             }
             
+            if (batch.status === 'overdue') {
+              return (
+                <button
+                  type="button"
+                  disabled
+                  className="w-full py-2 rounded-lg font-medium bg-gray-200 text-gray-500 cursor-not-allowed"
+                  title="Project đã quá hạn, không thể thực hiện lại"
+                >
+                  Overdue - Locked
+                </button>
+              );
+            }
+
             return (
               <button
                 onClick={(e) => {
@@ -365,7 +401,7 @@ const AnnotatorDashboard = () => {
         <div className="relative mb-6">
           <h1 className="text-3xl font-extrabold text-white mb-2 tracking-tight">My Tasks</h1>
           <p className="text-white/80">Manage and track your assigned data collection batches.</p>
-        </div>
+      </div>
 
       {/* Search and Filter */}
       <div className="mb-6 flex items-center gap-4">
@@ -388,6 +424,7 @@ const AnnotatorDashboard = () => {
         >
           <option value="all" style={{ color: '#111827', backgroundColor: '#ffffff' }}>All</option>
           <option value="active" style={{ color: '#111827', backgroundColor: '#ffffff' }}>Active Projects</option>
+          <option value="pending" style={{ color: '#111827', backgroundColor: '#ffffff' }}>Pending Review Projects</option>
           <option value="completed" style={{ color: '#111827', backgroundColor: '#ffffff' }}>Completed Projects</option>
           <option value="overdue" style={{ color: '#111827', backgroundColor: '#ffffff' }}>Overdue Tasks</option>
         </select>
@@ -400,7 +437,7 @@ const AnnotatorDashboard = () => {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="text-2xl font-bold text-red-800">Overdue Tasks</h2>
-              <p className="text-sm text-red-600 mt-1">Các project đã quá hạn deadline cần ưu tiên</p>
+              <p className="text-sm text-red-600 mt-1">Các project đã quá hạn deadline</p>
             </div>
             <span className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm font-medium">
               {overdueBatches.length} Overdue
@@ -466,12 +503,32 @@ const AnnotatorDashboard = () => {
       </div>
       }
 
+      {(filterStatus === 'all' || filterStatus === 'pending') && pendingReviewBatches.length > 0 && (
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900">Pending Review Projects</h2>
+              <p className="text-sm text-gray-600 mt-1">Các project đã nộp và đang chờ reviewer chấm</p>
+            </div>
+            <span className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded-full text-sm font-medium">
+              {pendingReviewBatches.length} Pending
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {pendingReviewBatches.map((batch) => {
+              return renderBatchCard(batch);
+            })}
+          </div>
+        </div>
+      )}
+
       {(filterStatus === 'all' || filterStatus === 'completed') && completedBatches.length > 0 && (
         <div className="mb-8">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="text-2xl font-bold text-gray-900">Completed Projects</h2>
-              <p className="text-sm text-gray-600 mt-1">Các project đã hoàn thành và được phê duyệt</p>
+              <p className="text-sm text-gray-600 mt-1">Các project đã được reviewer chấm xong</p>
             </div>
             <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium">
               {completedBatches.length} Completed
@@ -492,7 +549,7 @@ const AnnotatorDashboard = () => {
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="text-2xl font-bold text-red-800">Overdue Tasks</h2>
-              <p className="text-sm text-red-600 mt-1">Các project đã quá hạn deadline cần ưu tiên</p>
+              <p className="text-sm text-red-600 mt-1">Các project đã quá hạn deadline</p>
             </div>
             <span className="px-3 py-1 bg-red-100 text-red-800 rounded-full text-sm font-medium">
               {overdueBatches.length} Overdue
@@ -507,8 +564,8 @@ const AnnotatorDashboard = () => {
         </div>
       )}
 
-      {/* Show empty state only if both sections are empty */}
-      {activeBatches.length === 0 && completedBatches.length === 0 && !searchTerm && (
+      {/* Show empty state only if all sections are empty */}
+      {activeBatches.length === 0 && pendingReviewBatches.length === 0 && completedBatches.length === 0 && !searchTerm && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
           <p className="text-gray-600 mb-4">
             Bạn chưa có batches nào được phân công. Vui lòng liên hệ Manager để được phân công tasks.

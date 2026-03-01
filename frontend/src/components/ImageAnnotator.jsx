@@ -683,23 +683,23 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
   };
 
   return (
-    <Box>
-      <Paper sx={{ p: 2, mb: 2 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+    <Box sx={{ width: '100%', overflowX: 'hidden' }}>
+      <Paper sx={{ p: { xs: 1.5, md: 2 }, mb: 2, width: '65%', overflow: 'hidden' }}>
+        <Box
+          sx={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: { xs: 'flex-start', md: 'center' },
+            flexDirection: { xs: 'column', md: 'row' },
+            gap: 1.5,
+            mb: 2,
+          }}
+        >
           <Typography variant="h6">Image Annotation Tool</Typography>
-          <Box sx={{ display: 'flex', gap: 1 }}>
-            <Typography variant="body2" sx={{ alignSelf: 'center' }}>
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', width: { xs: '100%', md: 'auto' }, justifyContent: { xs: 'flex-start', md: 'flex-end' } }}>
+            <Typography variant="body2" sx={{ alignSelf: 'center', whiteSpace: 'nowrap' }}>
               Kéo chuột để khoanh vùng
             </Typography>
-            <IconButton onClick={handleZoomOut} size="small">
-              <ZoomOutIcon />
-            </IconButton>
-            <Typography variant="body2" sx={{ alignSelf: 'center', minWidth: '60px', textAlign: 'center' }}>
-              {Math.round(zoom * 100)}%
-            </Typography>
-            <IconButton onClick={handleZoomIn} size="small">
-              <ZoomInIcon />
-            </IconButton>
             <Button 
               size="small" 
               onClick={handleUndo}
@@ -716,6 +716,7 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
             >
               Reset
             </Button>
+
             {onSubmit && (
               <Button 
                 variant="contained" 

@@ -88,7 +88,7 @@ const AnnotatorOverview = () => {
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(255,255,255,0.25),transparent_50%),radial-gradient(circle_at_85%_30%,rgba(255,255,255,0.18),transparent_45%)] pointer-events-none" />
 
         <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
+            <div>
             <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-white">Hello, Annotator</h1>
             <p className="mt-1 text-white/80">Overview of your task workload and progress.</p>
           </div>
@@ -129,16 +129,16 @@ const AnnotatorOverview = () => {
         </div>
 
         <div className="relative mt-6 rounded-2xl p-5 bg-white/10 border border-white/25 backdrop-blur-md text-white flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
+            <div>
             <h2 className="text-lg font-bold">Next step</h2>
             <p className="text-sm text-white/80 mt-1">Continue labeling the most relevant task in your queue.</p>
-          </div>
-          <button
-            onClick={() => navigate('/annotator/tasks')}
+            </div>
+            <button
+              onClick={() => navigate('/annotator/tasks')}
             className="px-5 py-2.5 rounded-xl bg-white/20 hover:bg-white/30 border border-white/30 font-semibold"
-          >
+            >
             GO TO MY TASKS
-          </button>
+            </button>
         </div>
 
         <div className="relative mt-6 grid grid-cols-1 lg:grid-cols-2 gap-4">

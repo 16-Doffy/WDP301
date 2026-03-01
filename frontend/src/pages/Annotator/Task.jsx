@@ -630,7 +630,7 @@ const AnnotatorTask = () => {
   };
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-gray-50 h-screen">
+    <div className="flex-1 flex flex-col overflow-hidden overflow-x-hidden bg-gray-50 h-screen">
       {getStatusBadge() && <div className="px-6 pt-4">{getStatusBadge()}</div>}
 
       <div className="flex-1 flex overflow-hidden">
@@ -638,16 +638,71 @@ const AnnotatorTask = () => {
           {/* NOTE: UI phần dưới giữ nguyên như file hiện tại (không đụng vào để tránh sửa lớn). */}
           <div className="flex-1 overflow-auto bg-gray-50 p-6 flex items-center justify-center">
             {getTaskKind(task) === 'image' ? (
-              <div className="bg-white rounded-lg shadow-lg p-4 max-w-full">
+              <div className="bg-white rounded-lg shadow-lg p-4 max-w-full w-full">
+                <div className="mb-4 rounded-lg border border-blue-100 bg-blue-50 p-3">
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold text-blue-900">Image Progress in Project</p>
+                      <p className="text-sm text-blue-700">
+                        Ảnh {Math.max(1, currentTaskIndex + 1)} / {Math.max(1, batchTasks.length)}
+                        {' '}• Hoàn thành {batchTasks.filter((t) => t.status === 'completed' || t.status === 'submitted' || t.status === 'approved').length}/{Math.max(1, batchTasks.length)}
+                      </p>
+                    </div>
+                    <div className="w-full md:w-72 bg-blue-100 rounded-full h-2.5">
+                      <div
+                        className="bg-blue-600 h-2.5 rounded-full transition-all"
+                        style={{ width: `${Math.min(100, Math.round(batchProgress || 0))}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
                 <ImageAnnotator
                   imageUrl={`${API_URL}/${task.dataItem.path}`}
                   labelSet={task?.projectId?.labelSet || []}
                   questions={task?.projectId?.questions || []}
                   onAnnotationsChange={handleAnnotationsChange}
                   initialAnnotations={annotations}
-                  onSubmit={handleCompleteImage}
                   readOnly={task?.status === 'submitted' || task?.status === 'approved'}
                 />
+
+                <div className="mt-4 flex flex-wrap gap-3 justify-between">
+                  <div className="flex flex-wrap gap-3">
+                    <Button
+                      variant="outlined"
+                      onClick={navigateToPrevious}
+                      disabled={saving || currentTaskIndex <= 0}
+                    >
+                      Back
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      onClick={navigateToNext}
+                      disabled={saving || currentTaskIndex >= batchTasks.length - 1}
+                    >
+                      Next
+                    </Button>
+                  </div>
+
+                  <div className="flex flex-wrap gap-3">
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      onClick={handleCompleteImage}
+                      disabled={saving || task?.status === 'submitted' || task?.status === 'approved'}
+                    >
+                      Submit Image
+                    </Button>
+                    <Button
+                      variant="contained"
+                      color="success"
+                      onClick={handleBatchSubmit}
+                      disabled={!allCompletedInBatch || saving || task?.status === 'submitted' || task?.status === 'approved'}
+                    >
+                      Submit Project
+                    </Button>
+                  </div>
+                </div>
               </div>
             ) : getTaskKind(task) === 'text' ? (
               <div className="bg-white rounded-lg shadow-lg p-4 max-w-4xl w-full space-y-4 relative">
