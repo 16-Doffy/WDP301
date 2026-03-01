@@ -10,24 +10,21 @@ const AnnotatorRules = () => {
       score: '-2 điểm',
       when: 'Thường áp dụng khi bị reject lần 2 trong 7 ngày',
       action: 'Bắt đọc guideline / Thông báo',
-      color: 'from-amber-300/35 to-orange-300/20 border-amber-200/40',
-      chipBg: 'bg-amber-100 text-amber-800',
+      chipBg: 'bg-amber-500/10 text-amber-400',
     },
     {
       level: 'Light',
       score: '-5 điểm',
       when: 'Thường áp dụng khi bị reject từ 3 lần trong 7 ngày hoặc đã có penalty Light gần đây',
       action: 'Giảm số task/tuần',
-      color: 'from-sky-300/35 to-blue-300/20 border-sky-200/40',
-      chipBg: 'bg-sky-100 text-sky-800',
+      chipBg: 'bg-sky-500/10 text-sky-400',
     },
     {
       level: 'Heavy',
       score: '-10 điểm',
       when: 'Thường áp dụng khi bị reject từ 5 lần trong 7 ngày hoặc đã có penalty Heavy gần đây',
       action: 'Ban tạm thời (3-7 ngày tuỳ mức)',
-      color: 'from-rose-300/35 to-pink-300/20 border-rose-200/40',
-      chipBg: 'bg-rose-100 text-rose-800',
+      chipBg: 'bg-rose-500/10 text-rose-400',
     },
   ];
 
@@ -69,68 +66,65 @@ const AnnotatorRules = () => {
     },
   ];
 
-  const GlassCard = ({ title, children }) => (
-    <div className="rounded-2xl border border-white/25 bg-white/10 backdrop-blur-md p-5 text-white shadow-[0_18px_45px_rgba(0,0,0,0.16)]">
-      <h2 className="text-lg font-extrabold tracking-tight text-white/95">{title}</h2>
-      <div className="mt-3 text-sm text-white/85">{children}</div>
+  const SectionCard = ({ title, children, hint }) => (
+    <div className="rounded-xl border border-gray-700 bg-gray-800 p-6 shadow-lg">
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-lg font-semibold text-gray-100">{title}</h2>
+        {hint ? <span className="text-xs text-gray-400">{hint}</span> : null}
+      </div>
+      <div className="space-y-3">{children}</div>
     </div>
   );
 
   return (
-    <div className="p-6 md:p-8 min-h-screen">
-      <div className="rounded-[28px] p-6 md:p-8 bg-gradient-to-br from-cyan-500 via-blue-600 to-indigo-700 shadow-[0_30px_80px_rgba(0,0,0,0.28)] border border-white/20 relative overflow-hidden">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(255,255,255,0.25),transparent_50%),radial-gradient(circle_at_85%_30%,rgba(255,255,255,0.18),transparent_45%)] pointer-events-none" />
-
-        <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+    <div className="min-h-screen bg-slate-900 p-6 text-gray-200">
+      <div className="mx-auto w-full max-w-7xl space-y-6">
+        <div className="rounded-xl border border-gray-700 bg-gray-800 p-6 shadow-lg">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
-            <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-white">Quy định thưởng & phạt</h1>
-              <p className="mt-1 text-white/80">Dành cho role Annotator (tóm tắt cơ chế hiện tại trong hệ thống)</p>
+              <h1 className="text-2xl font-bold text-gray-100">Quy định thưởng & phạt</h1>
+              <p className="mt-1 text-sm text-gray-400">Dành cho role Annotator (tóm tắt cơ chế hiện tại trong hệ thống)</p>
             </div>
             <button
               onClick={() => navigate('/annotator/tasks')}
-            className="px-5 py-2.5 rounded-xl bg-white/15 hover:bg-white/25 border border-white/30 text-white font-semibold transition-colors"
+              className="rounded-lg bg-blue-600 px-4 py-2 text-white transition hover:bg-blue-700"
             >
-            MỞ MY TASKS
+              Mở My Tasks
             </button>
+          </div>
         </div>
 
-        <div className="relative mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <GlassCard title="Thưởng (Rewards)">
-            <div className="space-y-3">
-              {rewardRules.map((r) => (
-                <div key={r.title} className="p-3 rounded-xl bg-white/10 border border-white/20">
-                  <div className="font-semibold text-white/95">{r.title}</div>
-                  <div className="text-sm text-white/75 mt-1">{r.detail}</div>
-                </div>
-              ))}
-            </div>
-          </GlassCard>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <SectionCard title="Thưởng (Rewards)" hint="Cập nhật theo chính sách hệ thống">
+            {rewardRules.map((r) => (
+              <div key={r.title} className="rounded-lg border border-gray-700 bg-gray-900 p-3">
+                <div className="font-semibold text-gray-100">{r.title}</div>
+                <div className="mt-1 text-sm text-gray-400">{r.detail}</div>
+              </div>
+            ))}
+          </SectionCard>
 
-          <GlassCard title="Phạt (Penalty levels)">
-            <div className="space-y-3">
-              {penaltyLevels.map((p) => (
-                <div key={p.level} className={`p-3 rounded-xl border bg-gradient-to-r ${p.color}`}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="font-semibold text-white">{p.level}</div>
-                    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${p.chipBg}`}>{p.score}</span>
-                  </div>
-                  <div className="text-sm text-white/80 mt-2">{p.when}</div>
-                  <div className="text-xs text-white/70 mt-1">Action: {p.action}</div>
+          <SectionCard title="Phạt (Penalty levels)" hint="Theo mức độ vi phạm">
+            {penaltyLevels.map((p) => (
+              <div key={p.level} className="rounded-lg border border-gray-700 bg-gray-900 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="font-semibold text-gray-100">{p.level}</div>
+                  <span className={`rounded px-2 py-1 text-xs font-semibold ${p.chipBg}`}>{p.score}</span>
                 </div>
-              ))}
-            </div>
-          </GlassCard>
+                <div className="mt-2 text-sm text-gray-400">{p.when}</div>
+                <div className="mt-1 text-xs text-gray-500">Action: {p.action}</div>
+              </div>
+            ))}
+          </SectionCard>
 
-          <GlassCard title="Cơ chế khi bị reject (7 ngày)">
-            <div className="space-y-3">
-              {rejectionPolicy.map((p) => (
-                <div key={p.title} className="p-3 rounded-xl bg-white/10 border border-white/20">
-                  <div className="font-semibold text-white/95">{p.title}</div>
-                  <div className="text-sm text-white/75 mt-1">{p.detail}</div>
-                </div>
-              ))}
-            </div>
-          </GlassCard>
+          <SectionCard title="Cơ chế khi bị reject (7 ngày)" hint="Timeline xử lý">
+            {rejectionPolicy.map((p) => (
+              <div key={p.title} className="rounded-lg border border-gray-700 bg-gray-900 p-3">
+                <div className="font-semibold text-gray-100">{p.title}</div>
+                <div className="mt-1 text-sm text-gray-400">{p.detail}</div>
+              </div>
+            ))}
+          </SectionCard>
         </div>
       </div>
     </div>
