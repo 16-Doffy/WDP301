@@ -32,16 +32,11 @@ const LayoutTailwind = () => {
         icon: <img src={datasetsIcon} alt="Datasets" className="h-5 w-5" />,
         path: '/manager/datasets',
       });
-      baseItems.push({
-        text: 'Penalties & Scores',
-        icon: '⚖️',
-        path: '/manager/penalties',
-      });
+
     }
 
     if (user.role === 'annotator') {
       baseItems.push({ text: 'My Tasks', icon: '📝', path: '/annotator/tasks' });
-      baseItems.push({ text: 'Rules', icon: '📘', path: '/annotator/rules' });
     }
 
     if (user.role === 'reviewer' || user.role === 'admin') {

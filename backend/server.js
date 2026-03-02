@@ -32,7 +32,6 @@ app.use('/api/labels', require('./routes/labels'));
 app.use('/api/reviews', require('./routes/reviews'));
 app.use('/api/activity-logs', require('./routes/activityLogs').router);
 app.use('/api/settings', require('./routes/settings'));
-app.use('/api/penalties', require('./routes/penalties'));
 
 // Serve static files from React app in production
 if (process.env.NODE_ENV === 'production') {

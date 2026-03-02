@@ -12694,7 +12694,7 @@ const ManagerProjectDetail = () => {
 
 
 
-              <Button variant="contained" startIcon={<AssignmentIcon />} onClick={() => setAssignDialogOpen(true)} sx={primaryBtnSx}>Assign New Tasks</Button>
+              <Button variant="contained" startIcon={<AssignmentIcon />} onClick={() => setAssignDialogOpen(true)} sx={primaryBtnSx}>Phân công task từ dataset</Button>
 
 
 

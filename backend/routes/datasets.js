@@ -6,6 +6,7 @@ const unzipper = require('unzipper');
 const mime = require('mime-types');
 const Dataset = require('../models/Dataset');
 const Project = require('../models/Project');
+const Task = require('../models/Task');
 const { auth, authorize } = require('../middleware/auth');
 const { createActivityLog } = require('./activityLogs');
 
@@ -44,11 +45,18 @@ const validateFilesForDatasetType = (datasetType, files) => {
   return errors;
 };
 
-const isZipUpload = (file) => {
+const isArchiveUpload = (file) => {
   if (!file) return false;
   const ext = path.extname(file.originalname || '').toLowerCase();
   const mt = (file.mimetype || '').toLowerCase();
-  return ext === '.zip' || mt === 'application/zip' || mt === 'application/x-zip-compressed';
+  return (
+    ext === '.zip' ||
+    ext === '.rar' ||
+    mt === 'application/zip' ||
+    mt === 'application/x-zip-compressed' ||
+    mt === 'application/vnd.rar' ||
+    mt === 'application/x-rar-compressed'
+  );
 };
 
 const ensureDir = (dirPath) => {
@@ -258,26 +266,37 @@ router.post('/', auth, authorize('manager', 'admin'), upload.array('files', 100)
 
     let files = [];
 
-    // ZIP upload (single file) → auto-extract
-    if (req.files?.length === 1 && isZipUpload(req.files[0])) {
-      const zipFile = req.files[0];
+    // Archive upload (single file). ZIP is auto-extracted; RAR is accepted but requires unpack before upload.
+    if (req.files?.length === 1 && isArchiveUpload(req.files[0])) {
+      const archiveFile = req.files[0];
+      const archiveExt = path.extname(archiveFile.originalname || '').toLowerCase();
+
+      if (archiveExt === '.rar') {
+        // Cleanup uploaded rar before returning validation error.
+        if (archiveFile.path && fs.existsSync(archiveFile.path)) {
+          try { fs.unlinkSync(archiveFile.path); } catch (e) { /* ignore */ }
+        }
+        return res.status(400).json({
+          message: 'RAR đã được nhận diện nhưng hiện hệ thống chỉ tự giải nén ZIP. Vui lòng giải nén RAR rồi upload file bên trong, hoặc nén lại thành ZIP.',
+        });
+      }
+
       const extractDir = path.join('uploads/datasets', `extracted-${Date.now()}-${Math.round(Math.random() * 1e6)}`);
       try {
         files = await extractZipAndCollectFiles({
-          zipPath: zipFile.path,
+          zipPath: archiveFile.path,
           destRoot: extractDir,
           datasetType,
         });
       } finally {
-        // cleanup zip regardless of outcome
-        if (zipFile.path && fs.existsSync(zipFile.path)) {
-          try { fs.unlinkSync(zipFile.path); } catch (e) { /* ignore */ }
+        if (archiveFile.path && fs.existsSync(archiveFile.path)) {
+          try { fs.unlinkSync(archiveFile.path); } catch (e) { /* ignore */ }
         }
       }
 
       if (!files || files.length === 0) {
         return res.status(400).json({
-          message: `ZIP không có file hợp lệ cho dataset type "${datasetType}". Vui lòng kiểm tra nội dung ZIP.`,
+          message: `Archive không có file hợp lệ cho dataset type "${datasetType}". Vui lòng kiểm tra nội dung file nén.`,
         });
       }
     } else {
@@ -375,6 +394,92 @@ router.put('/:id', auth, authorize('manager', 'admin'), async (req, res) => {
 
     await dataset.save();
     res.json(dataset);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Get dataset labeling status (raw vs final)
+router.get('/:id/status', auth, authorize('manager', 'admin'), async (req, res) => {
+  try {
+    const dataset = await Dataset.findById(req.params.id);
+    if (!dataset) {
+      return res.status(404).json({ message: 'Dataset not found' });
+    }
+
+    if (dataset.managerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    const tasks = await Task.find({ datasetId: dataset._id }).select('status dataItem labels reviewedAt');
+    const approvedTasks = tasks.filter((t) => t.status === 'approved');
+    const pendingTasks = tasks.filter((t) => ['assigned', 'in_progress', 'submitted', 'rejected', 'revised'].includes(t.status));
+
+    const finalItems = approvedTasks.map((t) => ({
+      taskId: t._id,
+      dataItem: t.dataItem,
+      labels: t.labels,
+      reviewedAt: t.reviewedAt,
+    }));
+
+    res.json({
+      datasetId: dataset._id,
+      datasetName: dataset.name,
+      type: dataset.type,
+      totalRawItems: dataset.totalItems || dataset.files?.length || 0,
+      totalTasks: tasks.length,
+      totalFinalItems: finalItems.length,
+      totalPendingItems: pendingTasks.length,
+      completionRate: tasks.length > 0 ? Number(((finalItems.length / tasks.length) * 100).toFixed(2)) : 0,
+      finalItems,
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Export final dataset (only majority-approved items)
+router.get('/:id/final-export', auth, authorize('manager', 'admin'), async (req, res) => {
+  try {
+    const dataset = await Dataset.findById(req.params.id);
+    if (!dataset) {
+      return res.status(404).json({ message: 'Dataset not found' });
+    }
+
+    if (dataset.managerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    const approvedTasks = await Task.find({ datasetId: dataset._id, status: 'approved' })
+      .populate('annotatorId', 'username fullName')
+      .select('dataItem labels reviewedAt annotatorId');
+
+    if (approvedTasks.length === 0) {
+      return res.status(400).json({
+        message: 'Dataset chưa có item nào được đa số reviewer đồng ý (approved).',
+      });
+    }
+
+    const payload = {
+      dataset: {
+        id: dataset._id,
+        name: dataset.name,
+        type: dataset.type,
+        totalRawItems: dataset.totalItems || dataset.files?.length || 0,
+        totalFinalItems: approvedTasks.length,
+      },
+      items: approvedTasks.map((t) => ({
+        dataItem: t.dataItem,
+        labels: t.labels,
+        reviewedAt: t.reviewedAt,
+        annotator: t.annotatorId?.username || t.annotatorId?.fullName || 'unknown',
+      })),
+      exportedAt: new Date(),
+    };
+
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="final_dataset_${dataset._id}_${Date.now()}.json"`);
+    res.send(JSON.stringify(payload, null, 2));
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
