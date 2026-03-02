@@ -456,7 +456,7 @@ router.post('/:id/complete', auth, authorize('annotator'), async (req, res) => {
       return res.status(400).json({ message: 'Cannot complete task without labels. Please add labels first.' });
     }
 
-    task.status = 'completed';
+    task.status = 'in_progress';
     task.updatedAt = new Date();
     await task.save();
 
@@ -494,12 +494,13 @@ router.post('/submit-batch', auth, authorize('annotator'), async (req, res) => {
       }
     }
 
-    // Validate all tasks are completed and have labels
-    const notCompleted = tasks.filter(t => t.status !== 'completed');
-    if (notCompleted.length > 0) {
+    // Validate all tasks are ready for submission and have labels
+    const invalidStatuses = ['assigned', 'approved', 'submitted'];
+    const notReady = tasks.filter((t) => invalidStatuses.includes(t.status));
+    if (notReady.length > 0) {
       return res.status(400).json({
-        message: 'Please complete all images before submitting the batch.',
-        remaining: notCompleted.map(t => t._id.toString()),
+        message: 'Please finish all tasks in this batch before submitting.',
+        remaining: notReady.map(t => t._id.toString()),
       });
     }
 

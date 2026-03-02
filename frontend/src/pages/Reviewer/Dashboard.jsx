@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Visibility as ViewIcon,
@@ -17,6 +17,7 @@ const ReviewerDashboard = () => {
   const [reviewedTasks, setReviewedTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tabValue, setTabValue] = useState(0); // 0: Pending, 1: Reviewed
+  const [selectedDataType, setSelectedDataType] = useState('all');
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -35,7 +36,37 @@ const ReviewerDashboard = () => {
     }
   };
 
-  const currentTasks = tabValue === 0 ? pendingTasks : reviewedTasks;
+  const dataTypeTabs = useMemo(() => {
+    const allTasks = [...pendingTasks, ...reviewedTasks];
+
+    const byType = (type) => {
+      if (type === 'image') return allTasks.filter((t) => (t.dataItem?.mimeType || '').startsWith('image/')).length;
+      if (type === 'text') return allTasks.filter((t) => (t.dataItem?.mimeType || '').startsWith('text/') || !!t.dataItem?.text).length;
+      if (type === 'audio') return allTasks.filter((t) => (t.dataItem?.mimeType || '').startsWith('audio/')).length;
+      return allTasks.length;
+    };
+
+    return [
+      { id: 'all', label: 'All', count: byType('all') },
+      { id: 'image', label: 'Image', count: byType('image') },
+      { id: 'text', label: 'Text', count: byType('text') },
+      { id: 'audio', label: 'Audio', count: byType('audio') },
+    ];
+  }, [pendingTasks, reviewedTasks]);
+
+  const matchesDataType = (task) => {
+    if (selectedDataType === 'all') return true;
+    const mime = (task.dataItem?.mimeType || '').toLowerCase();
+    if (selectedDataType === 'image') return mime.startsWith('image/');
+    if (selectedDataType === 'text') return mime.startsWith('text/') || !!task.dataItem?.text;
+    if (selectedDataType === 'audio') return mime.startsWith('audio/');
+    return true;
+  };
+
+  const filteredPending = useMemo(() => pendingTasks.filter(matchesDataType), [pendingTasks, selectedDataType]);
+  const filteredReviewed = useMemo(() => reviewedTasks.filter(matchesDataType), [reviewedTasks, selectedDataType]);
+
+  const currentTasks = tabValue === 0 ? filteredPending : filteredReviewed;
 
   if (loading) {
     return (
@@ -136,21 +167,21 @@ const ReviewerDashboard = () => {
         />
         <StatCard
           title="Pending"
-          value={pendingTasks.length}
+          value={filteredPending.length}
           icon={PendingIcon}
           colorClass="bg-amber-50 text-amber-600"
           subtext="Action required soon"
         />
         <StatCard
           title="Approved"
-          value={reviewedTasks.filter(t => t.status === 'approved').length}
+          value={filteredReviewed.filter(t => t.status === 'approved').length}
           icon={CheckCircleIcon}
           colorClass="bg-emerald-50 text-emerald-600"
           subtext="High quality labels"
         />
         <StatCard
           title="Rejected"
-          value={reviewedTasks.filter(t => t.status === 'rejected').length}
+          value={filteredReviewed.filter(t => t.status === 'rejected').length}
           icon={RejectedIcon}
           colorClass="bg-rose-50 text-rose-600"
           subtext="Need re-annotation"
@@ -159,8 +190,26 @@ const ReviewerDashboard = () => {
 
       {/* Content Section */}
       <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
-        {/* Tabs */}
-        <div className="flex border-b border-gray-100 px-6 pt-6">
+        {/* Data type tabs */}
+        <div className="px-6 pt-5">
+          <div className="mb-4 flex flex-wrap gap-2">
+            {dataTypeTabs.map((typeTab) => (
+              <button
+                key={typeTab.id}
+                onClick={() => setSelectedDataType(typeTab.id)}
+                className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${selectedDataType === typeTab.id
+                  ? 'bg-blue-100 text-blue-700 border-blue-200'
+                  : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'
+                  }`}
+              >
+                {typeTab.label} <span className="ml-1 opacity-80">({typeTab.count})</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Review status tabs */}
+        <div className="flex border-b border-gray-100 px-6">
           <button
             onClick={() => setTabValue(0)}
             className={`pb-4 px-4 text-sm font-semibold transition-all relative ${tabValue === 0 ? 'text-blue-600' : 'text-gray-400 hover:text-gray-600'
@@ -168,7 +217,7 @@ const ReviewerDashboard = () => {
           >
             Pending Reviews
             <span className={`ml-2 px-2 py-0.5 rounded-full text-[10px] ${tabValue === 0 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>
-              {pendingTasks.length}
+              {filteredPending.length}
             </span>
             {tabValue === 0 && (
               <div className="absolute bottom-0 left-0 w-full h-0.5 bg-blue-600 animate-in slide-in-from-left-full duration-300"></div>
@@ -181,7 +230,7 @@ const ReviewerDashboard = () => {
           >
             Reviewed History
             <span className={`ml-2 px-2 py-0.5 rounded-full text-[10px] ${tabValue === 1 ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>
-              {reviewedTasks.length}
+              {filteredReviewed.length}
             </span>
             {tabValue === 1 && (
               <div className="absolute bottom-0 left-0 w-full h-0.5 bg-blue-600 animate-in slide-in-from-left-full duration-300"></div>

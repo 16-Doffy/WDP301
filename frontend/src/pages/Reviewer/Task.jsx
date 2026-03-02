@@ -3,10 +3,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
 import ImageViewer from '../../components/ImageViewer';
+import { useAuth } from '../../context/AuthContext';
 
 const ReviewerTask = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [task, setTask] = useState(null);
   const [reviewComments, setReviewComments] = useState('');
   const [errorCategory, setErrorCategory] = useState('');
@@ -121,17 +123,32 @@ const ReviewerTask = () => {
       }
 
       setTask(taskData);
-      setReviewNotes(taskData.reviewNotes || []);
-      setReviewComments(taskData.reviewComments || '');
 
-      // Load existing sentence feedbacks
+      const myReviewerEntry = Array.isArray(taskData.reviewers)
+        ? taskData.reviewers.find((r) => {
+          const rid = r?.reviewerId?._id || r?.reviewerId;
+          return rid?.toString?.() === user?._id?.toString?.();
+        })
+        : null;
+
+      // Blind-review mode: each reviewer only sees own vote/comment before finalization.
+      const isFinalized = taskData.status === 'approved' || taskData.status === 'rejected';
+      if (isFinalized) {
+        setReviewNotes(taskData.reviewNotes || []);
+        setReviewComments(taskData.reviewComments || '');
+      } else {
+        setReviewNotes([]);
+        setReviewComments(myReviewerEntry?.comment || '');
+      }
+
+      // Load existing sentence feedbacks (blind-review aware)
       setSentenceFeedbacks({});
       setSentenceStatus({});
       if (taskData.sentenceFeedbacks) {
         const feedbacks = {};
         const statuses = {};
+
         Object.entries(taskData.sentenceFeedbacks).forEach(([key, fb]) => {
-          // Extract index from keys like "sentence_0", "span_0", "audio_0", "segment_0", or just "0"
           const index = key.toString()
             .replace('sentence_', '')
             .replace('span_', '')
@@ -139,10 +156,16 @@ const ReviewerTask = () => {
             .replace('segment_', '');
 
           const uiKey = `${id}-${index}`;
+          const feedbackBy = fb?.reviewerId?.toString?.();
+          const isMine = feedbackBy && feedbackBy === user?._id?.toString?.();
+          const isFinalized = taskData.status === 'approved' || taskData.status === 'rejected';
+
+          if (!isFinalized && !isMine) {
+            return;
+          }
 
           feedbacks[uiKey] = fb.feedback || '';
 
-          // Map both 'approve' and 'approved' to 'approved' for UI consistency
           const backendAction = (fb.action || fb.status || '').toLowerCase();
           if (backendAction === 'approve' || backendAction === 'approved') {
             statuses[uiKey] = 'approved';
@@ -152,6 +175,7 @@ const ReviewerTask = () => {
             statuses[uiKey] = backendAction;
           }
         });
+
         setSentenceFeedbacks(feedbacks);
         setSentenceStatus(statuses);
       }
@@ -162,7 +186,16 @@ const ReviewerTask = () => {
     }
   };
 
-  const isReviewed = task?.status === 'approved' || task?.status === 'rejected';
+  const myReviewerEntry = Array.isArray(task?.reviewers)
+    ? task.reviewers.find((r) => {
+      const rid = r?.reviewerId?._id || r?.reviewerId;
+      return rid?.toString?.() === user?._id?.toString?.();
+    })
+    : null;
+
+  const hasMyDecision = myReviewerEntry && myReviewerEntry.status !== 'pending';
+  const isFinalized = task?.status === 'approved' || task?.status === 'rejected';
+  const isReviewed = isFinalized || hasMyDecision;
 
   const handleApprove = useCallback(async () => {
     // Check if task has already been reviewed
