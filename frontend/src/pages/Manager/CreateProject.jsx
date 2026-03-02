@@ -18,6 +18,7 @@ import {
   IconButton,
   Alert,
   CircularProgress,
+  Snackbar,
 } from '@mui/material';
 import {
   ArrowBack as ArrowBackIcon,
@@ -55,6 +56,15 @@ const CreateProject = () => {
   const [reviewerSearch, setReviewerSearch] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [notification, setNotification] = useState({
+    open: false,
+    message: '',
+    severity: 'info',
+  });
+
+  const showNotification = (message, severity = 'info') => {
+    setNotification({ open: true, message, severity });
+  };
 
   useEffect(() => {
     fetchUsers();
@@ -144,11 +154,11 @@ const CreateProject = () => {
 
   const handleSaveDraft = async () => {
     if (!formData.name.trim()) {
-      alert('Vui lòng nhập tên project');
+      showNotification('Vui lòng nhập tên project', 'warning');
       return;
     }
     if (!formData.guidelines.trim()) {
-      alert('Vui lòng nhập guidelines');
+      showNotification('Vui lòng nhập guidelines', 'warning');
       return;
     }
 
@@ -169,11 +179,11 @@ const CreateProject = () => {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
       });
-      alert('Đã lưu draft thành công!');
+      showNotification('Đã lưu draft thành công!');
       navigate('/manager/projects');
     } catch (error) {
       console.error('Error saving draft:', error);
-      alert('Lỗi khi lưu draft: ' + (error.response?.data?.message || error.message));
+      showNotification('Lỗi khi lưu draft: ' + (error.response?.data?.message || error.message));
     } finally {
       setSaving(false);
     }
@@ -182,32 +192,36 @@ const CreateProject = () => {
   const handleCreateProject = async () => {
     // Validation
     if (!formData.name.trim()) {
-      alert('Vui lòng nhập tên project');
+      showNotification('Vui lòng nhập tên project', 'warning');
       return;
     }
     if (!formData.guidelines.trim()) {
-      alert('Vui lòng nhập guidelines');
+      showNotification('Vui lòng nhập guidelines', 'warning');
       return;
     }
     if (!formData.labelSet || formData.labelSet.length === 0) {
-      alert('Vui lòng thêm ít nhất một label để annotator có thể chọn khi gán nhãn');
+      showNotification('Vui lòng thêm ít nhất một label để annotator có thể chọn khi gán nhãn');
       return;
     }
     const invalidLabels = formData.labelSet.filter(l => !l.name || !l.name.trim());
     if (invalidLabels.length > 0) {
-      alert('Tất cả labels phải có tên. Vui lòng kiểm tra lại.');
+      showNotification('Tất cả labels phải có tên. Vui lòng kiểm tra lại.');
       return;
     }
     if (selectedDatasets.length === 0) {
-      alert('Vui lòng chọn ít nhất một dataset');
+      showNotification('Vui lòng chọn ít nhất một dataset');
       return;
     }
     if (selectedAnnotators.length === 0) {
-      alert('Vui lòng chọn ít nhất một annotator');
+      showNotification('Vui lòng chọn ít nhất một annotator');
       return;
     }
     if (selectedReviewers.length === 0) {
-      alert('Vui lòng chọn ít nhất một reviewer');
+      showNotification('Vui lòng chọn ít nhất một reviewer');
+      return;
+    }
+    if (selectedReviewers.length % 2 === 0) {
+      showNotification('Số reviewer phải là số lẻ (1, 3, 5, ...). Vui lòng bỏ bớt hoặc thêm 1 reviewer.');
       return;
     }
 
@@ -257,7 +271,7 @@ const CreateProject = () => {
         });
       }
 
-      alert('Tạo project và phân công thành công!');
+      showNotification('Tạo project và phân công thành công!');
       navigate(`/manager/projects/${projectId}`);
     } catch (error) {
       console.error('Error creating project:', error);
@@ -278,7 +292,7 @@ const CreateProject = () => {
       }
       
       setError(`Lỗi: ${errorMsg}`);
-      alert(`Lỗi khi tạo project: ${errorMsg}`);
+      showNotification(`Lỗi khi tạo project: ${errorMsg}`);
     } finally {
       setSaving(false);
     }
@@ -770,6 +784,22 @@ const CreateProject = () => {
           </Grid>
         </Grid>
       </Paper>
+
+      <Snackbar
+        open={notification.open}
+        autoHideDuration={3000}
+        onClose={() => setNotification((prev) => ({ ...prev, open: false }))}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      >
+        <Alert
+          onClose={() => setNotification((prev) => ({ ...prev, open: false }))}
+          severity={notification.severity}
+          variant="filled"
+          sx={{ width: '100%', mt: 2 }}
+        >
+          {notification.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };

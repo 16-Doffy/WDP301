@@ -691,6 +691,15 @@ const ReviewerTask = () => {
                   ANNOTATOR OUTPUT
                 </h3>
 
+                <div className={`mb-4 rounded-xl border p-3 ${darkMode ? 'border-gray-700 bg-gray-900/50' : 'border-gray-200 bg-gray-50'}`}>
+                  <div className={`mb-2 text-xs font-semibold uppercase tracking-wider ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                    Chi tiết kết quả gán nhãn của annotator
+                  </div>
+                  <div className={`max-h-56 overflow-auto rounded-lg p-2 text-xs ${darkMode ? 'bg-gray-950 text-gray-200' : 'bg-white text-gray-700'}`}>
+                    <pre className="whitespace-pre-wrap break-words">{JSON.stringify(task?.labels || {}, null, 2)}</pre>
+                  </div>
+                </div>
+
                 {task?.dataItem?.mimeType?.startsWith('image/') ? (
                   <>
                     <div className={`mb-4 rounded-xl overflow-hidden transition-all duration-300 ${hoveredObjectIndex !== null

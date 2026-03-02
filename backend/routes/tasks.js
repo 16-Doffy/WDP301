@@ -56,11 +56,19 @@ router.get('/my-tasks', auth, async (req, res) => {
     if (req.user.role === 'annotator') {
       query.annotatorId = req.user._id;
     } else if (req.user.role === 'reviewer') {
+      const reviewerIdString = req.user._id.toString();
       query.status = 'submitted';
       query.$or = [
         { reviewers: { $exists: true, $size: 0 } },
         { reviewers: { $exists: false } },
-        { reviewers: { $elemMatch: { reviewerId: req.user._id, status: 'pending' } } }
+        {
+          reviewers: {
+            $elemMatch: {
+              reviewerId: { $in: [req.user._id, reviewerIdString] },
+              status: 'pending',
+            },
+          },
+        },
       ];
     } else if (req.user.role === 'manager') {
       // Managers can see all tasks in their projects
@@ -199,6 +207,9 @@ router.post('/assign', auth, authorize('manager', 'admin'), async (req, res) => 
     const normalizedReviewerIds = Array.isArray(reviewerIds) ? reviewerIds.filter(Boolean) : [];
     if (normalizedReviewerIds.length === 0) {
       return res.status(400).json({ message: 'At least one reviewer is required' });
+    }
+    if (normalizedReviewerIds.length % 2 === 0) {
+      return res.status(400).json({ message: 'Number of reviewers must be odd (1, 3, 5, ...)' });
     }
 
     // Check if annotators exist and are active
@@ -456,7 +467,7 @@ router.post('/:id/complete', auth, authorize('annotator'), async (req, res) => {
       return res.status(400).json({ message: 'Cannot complete task without labels. Please add labels first.' });
     }
 
-    task.status = 'in_progress';
+    task.status = 'completed';
     task.updatedAt = new Date();
     await task.save();
 

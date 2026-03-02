@@ -25,9 +25,21 @@ const applyMajorityDecision = (task) => {
     };
   }
 
-  const majorityThreshold = Math.floor(totalReviewers / 2) + 1;
+  // Require all assigned reviewers to vote before finalizing.
+  // This ensures manager-assigned reviewers all see and can grade the task.
+  if (decidedCount < totalReviewers) {
+    return {
+      finalized: false,
+      finalStatus: 'submitted',
+      winningVote: null,
+      approveCount,
+      rejectCount,
+      decidedCount,
+      totalReviewers,
+    };
+  }
 
-  if (approveCount >= majorityThreshold) {
+  if (approveCount > rejectCount) {
     return {
       finalized: true,
       finalStatus: 'approved',
@@ -39,34 +51,11 @@ const applyMajorityDecision = (task) => {
     };
   }
 
-  if (rejectCount >= majorityThreshold) {
-    return {
-      finalized: true,
-      finalStatus: 'rejected',
-      winningVote: 'rejected',
-      approveCount,
-      rejectCount,
-      decidedCount,
-      totalReviewers,
-    };
-  }
-
-  if (decidedCount === totalReviewers && approveCount === rejectCount) {
-    return {
-      finalized: true,
-      finalStatus: 'rejected',
-      winningVote: 'rejected',
-      approveCount,
-      rejectCount,
-      decidedCount,
-      totalReviewers,
-    };
-  }
-
+  // Tie or reject majority => rejected
   return {
-    finalized: false,
-    finalStatus: 'submitted',
-    winningVote: null,
+    finalized: true,
+    finalStatus: 'rejected',
+    winningVote: 'rejected',
     approveCount,
     rejectCount,
     decidedCount,

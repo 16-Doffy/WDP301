@@ -19,6 +19,7 @@ const AnnotatorDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [filterFormat, setFilterFormat] = useState('all');
   const [sortDir] = useState('asc');
   const navigate = useNavigate();
 
@@ -156,7 +157,9 @@ const AnnotatorDashboard = () => {
         (filterStatus === 'completed' && reviewedCompleted) ||
         (filterStatus === 'overdue' && batch.status === 'overdue');
 
-      return matchesSearch && filterMatch;
+      const formatMatch = filterFormat === 'all' || batch.format === filterFormat;
+
+      return matchesSearch && filterMatch && formatMatch;
     })
     .sort((a, b) => {
       const statusA = isPendingReviewBatch(a) ? 'pending_review' : a.status;
@@ -386,6 +389,18 @@ const AnnotatorDashboard = () => {
                 <option value="pending">Pending Review Projects</option>
                 <option value="completed">Completed Projects</option>
                 <option value="overdue">Overdue Tasks</option>
+              </select>
+
+              <select
+                value={filterFormat}
+                onChange={(e) => setFilterFormat(e.target.value)}
+                className="rounded-lg border border-gray-600 bg-gray-900 px-4 py-2 text-gray-200 focus:border-blue-500 focus:outline-none"
+              >
+                <option value="all">All Types</option>
+                <option value="image">Image</option>
+                <option value="audio">Audio</option>
+                <option value="text">Text</option>
+                <option value="mixed">Mixed</option>
               </select>
             </div>
           </div>

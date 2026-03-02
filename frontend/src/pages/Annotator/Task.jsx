@@ -350,6 +350,16 @@ const AnnotatorTask = () => {
       return;
     }
 
+    if (getTaskKind(task) === 'text' && (!textSpans || textSpans.length === 0) && !annotationNote?.trim()) {
+      alert('Vui lòng gán ít nhất một nhãn hoặc thêm ghi chú trước khi hoàn thành.');
+      return;
+    }
+
+    if (getTaskKind(task) === 'audio' && (!labels.segments || labels.segments.length === 0) && !annotationNote?.trim()) {
+      alert('Vui lòng gán ít nhất một đoạn nhãn hoặc thêm ghi chú trước khi hoàn thành.');
+      return;
+    }
+
     setSaving(true);
     try {
       await handleSave();
@@ -397,7 +407,7 @@ const AnnotatorTask = () => {
       (t) => t.status === 'completed' || t.status === 'submitted' || t.status === 'approved'
     );
     if (!allCompleted) {
-      alert('Vui lòng hoàn thành tất cả các ảnh trong batch trước khi nộp bài.');
+      alert('Vui lòng hoàn thành tất cả task trong project trước khi nộp project.');
       return;
     }
 
@@ -720,6 +730,24 @@ const AnnotatorTask = () => {
               </div>
             ) : getTaskKind(task) === 'text' ? (
               <div className="bg-white rounded-lg shadow-lg p-4 max-w-4xl w-full space-y-4 relative">
+                <div className="mb-2 rounded-lg border border-blue-100 bg-blue-50 p-3">
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold text-blue-900">Text Progress in Project</p>
+                      <p className="text-sm text-blue-700">
+                        File {Math.max(1, currentTaskIndex + 1)} / {Math.max(1, batchTasks.length)}
+                        {' '}• Hoàn thành {batchTasks.filter((t) => t.status === 'completed' || t.status === 'submitted' || t.status === 'approved').length}/{Math.max(1, batchTasks.length)}
+                      </p>
+                    </div>
+                    <div className="w-full md:w-72 bg-blue-100 rounded-full h-2.5">
+                      <div
+                        className="bg-blue-600 h-2.5 rounded-full transition-all"
+                        style={{ width: `${Math.min(100, Math.round(batchProgress || 0))}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
                 <div className="flex justify-between items-center">
                   <div>
                     <p className="text-sm text-gray-500">Text File</p>
@@ -895,25 +923,71 @@ const AnnotatorTask = () => {
                   />
                 </div>
 
-                <div className="flex items-center gap-3 pt-1">
-                  <Button
-                    variant="outlined"
-                    onClick={handleSave}
-                    disabled={saving || task?.status === 'submitted' || task?.status === 'approved'}
-                  >
-                    Lưu
-                  </Button>
-                  <Button
-                    variant="contained"
-                    onClick={handleSubmit}
-                    disabled={saving || task?.status === 'submitted' || task?.status === 'approved'}
-                  >
-                    Nộp ({textSpans.length} nhãn)
-                  </Button>
+                <div className="mt-4 flex flex-wrap gap-3 justify-between">
+                  <div className="flex flex-wrap gap-3">
+                    <Button
+                      variant="outlined"
+                      onClick={navigateToPrevious}
+                      disabled={saving || currentTaskIndex <= 0}
+                    >
+                      Back
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      onClick={navigateToNext}
+                      disabled={saving || currentTaskIndex >= batchTasks.length - 1}
+                    >
+                      Next
+                    </Button>
+                  </div>
+
+                  <div className="flex items-center gap-3 pt-1">
+                    <Button
+                      variant="outlined"
+                      onClick={handleSave}
+                      disabled={saving || task?.status === 'submitted' || task?.status === 'approved'}
+                    >
+                      Lưu
+                    </Button>
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      onClick={handleCompleteImage}
+                      disabled={saving || task?.status === 'submitted' || task?.status === 'approved'}
+                    >
+                      Submit Text
+                    </Button>
+                    <Button
+                      variant="contained"
+                      color="success"
+                      onClick={handleBatchSubmit}
+                      disabled={!allCompletedInBatch || saving || task?.status === 'submitted' || task?.status === 'approved'}
+                    >
+                      Submit Project
+                    </Button>
+                  </div>
                 </div>
               </div>
             ) : getTaskKind(task) === 'audio' ? (
               <div className="bg-white rounded-lg shadow-lg p-4 max-w-4xl w-full space-y-4">
+                <div className="mb-2 rounded-lg border border-blue-100 bg-blue-50 p-3">
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold text-blue-900">Audio Progress in Project</p>
+                      <p className="text-sm text-blue-700">
+                        File {Math.max(1, currentTaskIndex + 1)} / {Math.max(1, batchTasks.length)}
+                        {' '}• Hoàn thành {batchTasks.filter((t) => t.status === 'completed' || t.status === 'submitted' || t.status === 'approved').length}/{Math.max(1, batchTasks.length)}
+                      </p>
+                    </div>
+                    <div className="w-full md:w-72 bg-blue-100 rounded-full h-2.5">
+                      <div
+                        className="bg-blue-600 h-2.5 rounded-full transition-all"
+                        style={{ width: `${Math.min(100, Math.round(batchProgress || 0))}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
                 <div className="flex justify-between items-center">
                   <div>
                     <p className="text-sm text-gray-500">Audio File</p>
@@ -945,21 +1019,49 @@ const AnnotatorTask = () => {
                   />
                 </div>
 
-                <div className="flex items-center gap-3 pt-1">
-                  <Button
-                    variant="outlined"
-                    onClick={handleSave}
-                    disabled={saving || task?.status === 'submitted' || task?.status === 'approved'}
-                  >
-                    Lưu
-                  </Button>
-                  <Button
-                    variant="contained"
-                    onClick={handleSubmit}
-                    disabled={saving || task?.status === 'submitted' || task?.status === 'approved'}
-                  >
-                    Nộp
-                  </Button>
+                <div className="mt-4 flex flex-wrap gap-3 justify-between">
+                  <div className="flex flex-wrap gap-3">
+                    <Button
+                      variant="outlined"
+                      onClick={navigateToPrevious}
+                      disabled={saving || currentTaskIndex <= 0}
+                    >
+                      Back
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      onClick={navigateToNext}
+                      disabled={saving || currentTaskIndex >= batchTasks.length - 1}
+                    >
+                      Next
+                    </Button>
+                  </div>
+
+                  <div className="flex items-center gap-3 pt-1">
+                    <Button
+                      variant="outlined"
+                      onClick={handleSave}
+                      disabled={saving || task?.status === 'submitted' || task?.status === 'approved'}
+                    >
+                      Lưu
+                    </Button>
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      onClick={handleCompleteImage}
+                      disabled={saving || task?.status === 'submitted' || task?.status === 'approved'}
+                    >
+                      Submit Audio
+                    </Button>
+                    <Button
+                      variant="contained"
+                      color="success"
+                      onClick={handleBatchSubmit}
+                      disabled={!allCompletedInBatch || saving || task?.status === 'submitted' || task?.status === 'approved'}
+                    >
+                      Submit Project
+                    </Button>
+                  </div>
                 </div>
               </div>
             ) : (
