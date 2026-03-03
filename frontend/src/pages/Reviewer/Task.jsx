@@ -11,19 +11,18 @@ const ReviewerTask = () => {
   const { user } = useAuth();
   const [task, setTask] = useState(null);
   const [reviewComments, setReviewComments] = useState('');
-  const [errorCategory, setErrorCategory] = useState('');
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [reviewNotes, setReviewNotes] = useState([]);
   const [noteDrafts, setNoteDrafts] = useState({});
-  const [selectedError, setSelectedError] = useState('');
   const [autoNext, setAutoNext] = useState(false);
   const [pendingTasks, setPendingTasks] = useState([]);
   const [reviewedTasks, setReviewedTasks] = useState([]);
-  const [darkMode, setDarkMode] = useState(false);
+  const [darkMode, setDarkMode] = useState(true);
   const [hoveredObjectIndex, setHoveredObjectIndex] = useState(null);
-  const [chatMessages, setChatMessages] = useState([]);
-  const [newMessage, setNewMessage] = useState('');
+  const [selectedIssues, setSelectedIssues] = useState([]);
+  const [issueTargets, setIssueTargets] = useState({});
+  const [issueComments, setIssueComments] = useState({});
   const carouselRef = useRef(null);
   const [carouselScroll, setCarouselScroll] = useState(0);
   const [sentenceFeedbacks, setSentenceFeedbacks] = useState({});
@@ -94,6 +93,82 @@ const ReviewerTask = () => {
       backendCategory: 'does_not_follow_guidelines'
     }
   ];
+
+  const datasetType = (task?.dataItem?.mimeType || '').startsWith('image/')
+    ? 'image'
+    : (task?.dataItem?.mimeType || '').startsWith('audio/')
+      ? 'audio'
+      : ((task?.dataItem?.mimeType || '').startsWith('text/') || !!task?.dataItem?.text)
+        ? 'text'
+        : 'image';
+
+  const issueCatalogByType = {
+    image: [
+      { id: 'missing_object', label: 'Missed Object', needsTarget: false },
+      { id: 'wrong_class', label: 'Wrong Class', needsTarget: true, targetLabel: 'Affected Object ID' },
+      { id: 'bbox_loose', label: 'Bounding Box Too Loose', needsTarget: true, targetLabel: 'Affected Object ID' },
+      { id: 'bbox_tight', label: 'Bounding Box Too Tight', needsTarget: true, targetLabel: 'Affected Object ID' },
+      { id: 'wrong_overlap', label: 'Wrong Overlap Handling', needsTarget: true, targetLabel: 'Affected Object ID' },
+    ],
+    audio: [
+      { id: 'wrong_label', label: 'Wrong Label', needsTarget: true, targetLabel: 'Segment ID' },
+      { id: 'incorrect_timestamp', label: 'Incorrect Timestamp', needsTarget: true, targetLabel: 'Segment ID' },
+      { id: 'overlapping_segments', label: 'Overlapping Segments', needsTarget: true, targetLabel: 'Segment ID' },
+      { id: 'missing_segment', label: 'Missing Segment', needsTarget: false },
+      { id: 'noise_misclassified', label: 'Background Noise Misclassified', needsTarget: true, targetLabel: 'Segment ID' },
+    ],
+    text: [
+      { id: 'wrong_category', label: 'Wrong Category', needsTarget: true, targetLabel: 'Entity ID' },
+      { id: 'missing_entity', label: 'Missing Entity', needsTarget: false },
+      { id: 'wrong_span', label: 'Wrong Span', needsTarget: true, targetLabel: 'Entity ID' },
+      { id: 'overlapping_entity', label: 'Overlapping Entity', needsTarget: true, targetLabel: 'Entity ID' },
+      { id: 'incorrect_classification', label: 'Incorrect Classification', needsTarget: true, targetLabel: 'Entity ID' },
+    ],
+  };
+
+  const issueOptions = issueCatalogByType[datasetType] || issueCatalogByType.image;
+  const targetOptions = datasetType === 'image'
+    ? (task?.labels?.objects || []).map((obj, idx) => ({ id: `object_${idx + 1}`, label: `Object #${idx + 1} (${obj.label || 'Unknown'})` }))
+    : datasetType === 'audio'
+      ? ((task?.labels?.segments || []).length > 0
+        ? (task?.labels?.segments || []).map((_, idx) => ({ id: `segment_${idx + 1}`, label: `Segment #${idx + 1}` }))
+        : [{ id: 'segment_1', label: 'Segment #1' }])
+      : ((task?.labels?.spans || task?.labels?.sentences || []).map((_, idx) => ({ id: `entity_${idx + 1}`, label: `Entity #${idx + 1}` })));
+
+  const selectedIssueDetails = selectedIssues
+    .map((issueId) => issueOptions.find((i) => i.id === issueId))
+    .filter(Boolean);
+
+  const hexToRgba = (hex, alpha = 1) => {
+    if (!hex || typeof hex !== 'string') return `rgba(59,130,246,${alpha})`;
+    const normalized = hex.replace('#', '');
+    if (![3, 6].includes(normalized.length)) return `rgba(59,130,246,${alpha})`;
+
+    const full = normalized.length === 3
+      ? normalized.split('').map((ch) => ch + ch).join('')
+      : normalized;
+
+    const intVal = parseInt(full, 16);
+    if (Number.isNaN(intVal)) return `rgba(59,130,246,${alpha})`;
+
+    const r = (intVal >> 16) & 255;
+    const g = (intVal >> 8) & 255;
+    const b = intVal & 255;
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  };
+
+  const imageClassSummary = (() => {
+    const objects = task?.labels?.objects || [];
+    const map = {};
+    objects.forEach((o) => {
+      const key = o?.label || 'Unknown';
+      map[key] = (map[key] || 0) + 1;
+    });
+    return Object.entries(map);
+  })();
+
+  const audioSegments = task?.labels?.segments || [];
+  const textEntities = task?.labels?.spans || task?.labels?.sentences || [];
 
   const fetchAllTasks = async () => {
     try {
@@ -242,8 +317,13 @@ const ReviewerTask = () => {
       return;
     }
 
+    if (selectedIssues.length === 0) {
+      alert('Reject bắt buộc chọn ít nhất 1 lỗi.');
+      return;
+    }
+
     if (!reviewComments.trim()) {
-      alert('Vui lòng nhập nhận xét khi từ chối task');
+      alert('Reject bắt buộc có comment tổng quan.');
       return;
     }
 
@@ -257,16 +337,36 @@ const ReviewerTask = () => {
             comment: n.comment
           }))
           : [];
-        // Map frontend error category to backend format
-        const selectedErrorType = errorTypes.find(et => et.id === (errorCategory || selectedError));
-        const backendErrorCategory = selectedErrorType
-          ? selectedErrorType.backendCategory
-          : mapErrorCategoryToBackend(errorCategory || selectedError || 'other');
+
+        const issues = selectedIssues.map((issueId) => {
+          const issueMeta = issueOptions.find((i) => i.id === issueId);
+          return {
+            type: issueMeta?.label || issueId,
+            targetId: issueTargets[issueId] || undefined,
+            comment: issueComments[issueId]?.trim() || undefined,
+          };
+        });
+
+        const firstIssue = issues[0]?.type?.toLowerCase?.() || 'other';
+        const backendErrorCategory = firstIssue.includes('class')
+          ? 'incorrect_label'
+          : firstIssue.includes('miss')
+            ? 'missing_label'
+            : firstIssue.includes('box') || firstIssue.includes('tight') || firstIssue.includes('loose')
+              ? 'poor_quality'
+              : 'does_not_follow_guidelines';
 
         await axios.post(`${API_URL}/api/reviews/${id}/reject`, {
           reviewComments: reviewComments.trim(),
           errorCategory: backendErrorCategory,
           reviewNotes: payloadNotes,
+          review: {
+            taskId: id,
+            datasetType,
+            status: 'rejected',
+            issues,
+            overallComment: reviewComments.trim(),
+          },
         });
         alert('Đã từ chối task thành công!');
         // Refresh task data and tasks list to update statistics
@@ -281,7 +381,7 @@ const ReviewerTask = () => {
         setProcessing(false);
       }
     }
-  }, [id, task, reviewComments, reviewNotes, errorCategory, selectedError]);
+  }, [id, task, reviewComments, reviewNotes, selectedIssues, issueOptions, issueTargets, issueComments, datasetType]);
 
   const handleSkip = () => {
     if (pendingTasks.length > 1) {
@@ -294,18 +394,6 @@ const ReviewerTask = () => {
     }
   };
 
-  const sendMessage = () => {
-    if (!newMessage.trim()) return;
-    const message = {
-      id: Date.now(),
-      text: newMessage,
-      sender: 'reviewer',
-      timestamp: new Date()
-    };
-    setChatMessages([...chatMessages, message]);
-    setReviewComments(prev => prev ? `${prev}\n${newMessage}` : newMessage);
-    setNewMessage('');
-  };
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -495,16 +583,16 @@ const ReviewerTask = () => {
 
   if (loading) {
     return (
-      <div className={`flex items-center justify-center min-h-screen ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 to-purple-50'}`}>
+      <div className={`flex items-center justify-center min-h-screen ${darkMode ? 'bg-[#0f172a]' : 'bg-[#0f172a]'}`}>
         <div className={`animate-spin rounded-full h-16 w-16 border-4 ${darkMode ? 'border-emerald-400 border-t-transparent' : 'border-emerald-500 border-t-transparent'}`}></div>
       </div>
     );
   }
 
   return (
-    <div className={`flex-1 flex flex-col overflow-hidden ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50'}`}>
+    <div className={`flex-1 flex flex-col overflow-hidden ${darkMode ? 'bg-[#0f172a]' : 'bg-[#0f172a]'}`}>
       {/* Top Header - Dynamic Style */}
-      <div className={`${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white/80 backdrop-blur-lg border-gray-200'} border-b px-6 py-4 flex items-center justify-between z-10`}>
+      <div className={`${darkMode ? 'bg-[#1e293b] border-slate-700 shadow-[0_0_0_1px_rgba(59,130,246,0.1)]' : 'bg-[#1e293b] border-slate-700'} border-b px-6 py-4 flex items-center justify-between z-10`}>
         <div className="flex items-center gap-4">
           <h1 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
             {darkMode ? '🔍 Premium Dark Audit Station' : '⚡ Review task'}
@@ -525,56 +613,6 @@ const ReviewerTask = () => {
 
       {/* Main Content Area */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Sidebar - Detected Objects with Smart Highlight */}
-        <div className={`w-80 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white/60 backdrop-blur-lg border-gray-200'} border-r flex flex-col`}>
-          <div className={`p-4 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
-            <h3 className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-              DETECTED OBJECTS
-            </h3>
-            <p className={`text-xs mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-              {task?.labels?.objects?.length || 0} TOTAL
-            </p>
-          </div>
-          <div className="flex-1 overflow-y-auto p-4 space-y-2">
-            {task?.labels?.objects?.map((obj, idx) => {
-              const labelInfo = task?.projectId?.labelSet?.find(l => l.name === obj.label);
-              const isHovered = hoveredObjectIndex === idx;
-              return (
-                <div
-                  key={idx}
-                  id={`object-${idx}`}
-                  onMouseEnter={() => setHoveredObjectIndex(idx)}
-                  onMouseLeave={() => setHoveredObjectIndex(null)}
-                  className={`p-3 rounded-lg cursor-pointer transition-all duration-200 ${isHovered
-                    ? darkMode
-                      ? 'bg-emerald-600/30 border-2 border-emerald-400 shadow-lg shadow-emerald-500/50'
-                      : 'bg-emerald-100 border-2 border-emerald-400 shadow-lg'
-                    : darkMode
-                      ? 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
-                      : 'bg-white/40 border border-gray-300/50 hover:bg-white/60'
-                    }`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                      {obj.label || `OBJECT_${idx + 1}`}
-                    </span>
-                    <span
-                      className={`text-xs px-2 py-0.5 rounded ${darkMode ? 'bg-emerald-900/50 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}
-                      title="Độ tin cậy của nhãn này (confidence score)"
-                    >
-                      {obj.confidence ? `${(obj.confidence * 100).toFixed(1)}%` : 'N/A'}
-                    </span>
-                  </div>
-                  {obj.answer && (
-                    <div className={`text-xs mt-1 ${darkMode ? 'text-emerald-300' : 'text-emerald-600'}`}>
-                      ✓ Has answers
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
 
         {/* Center - Image Viewer with Smart Highlight */}
         <div className="flex-1 flex flex-col overflow-hidden">
@@ -622,7 +660,7 @@ const ReviewerTask = () => {
 
             <div className="grid grid-cols-2 gap-6">
               {/* Review Queue (moved down here to replace comparison section) */}
-              <div className={`${darkMode ? 'bg-gray-800/80 border-gray-700' : 'bg-white/60 backdrop-blur-lg border-gray-200/50'} rounded-2xl border p-6 shadow-xl`}>
+              <div className={`${darkMode ? 'bg-[#1e293b] border-slate-700' : 'bg-[#1e293b] border-slate-700'} rounded-2xl border p-6 shadow-2xl`}>
                 <div className="flex items-center justify-between mb-4">
                   <h3 className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                     REVIEW QUEUE
@@ -691,14 +729,16 @@ const ReviewerTask = () => {
                   ANNOTATOR OUTPUT
                 </h3>
 
-                <div className={`mb-4 rounded-xl border p-3 ${darkMode ? 'border-gray-700 bg-gray-900/50' : 'border-gray-200 bg-gray-50'}`}>
-                  <div className={`mb-2 text-xs font-semibold uppercase tracking-wider ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                    Chi tiết kết quả gán nhãn của annotator
+                {datasetType !== 'text' && (
+                  <div className={`mb-4 rounded-xl border p-3 ${darkMode ? 'border-gray-700 bg-gray-900/50' : 'border-gray-200 bg-gray-50'}`}>
+                    <div className={`mb-2 text-xs font-semibold uppercase tracking-wider ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                      Chi tiết kết quả gán nhãn của annotator
+                    </div>
+                    <div className={`max-h-56 overflow-auto rounded-lg p-2 text-xs ${darkMode ? 'bg-gray-950 text-gray-200' : 'bg-white text-gray-700'}`}>
+                      <pre className="whitespace-pre-wrap break-words">{JSON.stringify(task?.labels || {}, null, 2)}</pre>
+                    </div>
                   </div>
-                  <div className={`max-h-56 overflow-auto rounded-lg p-2 text-xs ${darkMode ? 'bg-gray-950 text-gray-200' : 'bg-white text-gray-700'}`}>
-                    <pre className="whitespace-pre-wrap break-words">{JSON.stringify(task?.labels || {}, null, 2)}</pre>
-                  </div>
-                </div>
+                )}
 
                 {task?.dataItem?.mimeType?.startsWith('image/') ? (
                   <>
@@ -883,6 +923,79 @@ const ReviewerTask = () => {
                       const feedback = sentenceFeedbacks[key] || '';
                       const itemText = item.text || item.sentence || '';
                       const itemLabel = item.label || 'No Label';
+                      const itemLabelColor = task?.projectId?.labelSet?.find((l) => l.name === item.label)?.color || '#6366f1';
+                      const fullText = task?.dataItem?.text || task?.dataItem?.content || '';
+
+                      const sortedItems = [...annotatedItems]
+                        .map((span) => ({
+                          ...span,
+                          text: span.text || span.sentence || '',
+                          start: typeof span.start === 'number' ? span.start : fullText.indexOf(span.text || span.sentence || ''),
+                        }))
+                        .sort((a, b) => (a.start || 0) - (b.start || 0));
+
+                      const renderTextWithHighlights = () => {
+                        if (!fullText) {
+                          return sortedItems.map((span, index) => {
+                            const isActive = index === idx;
+                            return (
+                              <span
+                                key={`fallback-${index}`}
+                                className={`inline rounded px-1 py-0.5 ${isActive ? 'bg-blue-500/30 text-blue-100' : 'bg-slate-700/40 text-slate-300'}`}
+                              >
+                                {span.text}
+                              </span>
+                            );
+                          });
+                        }
+
+                        const parts = [];
+                        let cursor = 0;
+                        sortedItems.forEach((span, index) => {
+                          const text = span.text || '';
+                          if (!text) return;
+                          const start = typeof span.start === 'number' && span.start >= 0 ? span.start : fullText.indexOf(text, cursor);
+                          if (start < 0) return;
+                          const end = start + text.length;
+
+                          if (start > cursor) {
+                            parts.push({ type: 'plain', text: fullText.slice(cursor, start) });
+                          }
+
+                          const labelColor = task?.projectId?.labelSet?.find((l) => l.name === span.label)?.color || '#3b82f6';
+                          parts.push({ type: 'span', text, label: span.label, index, labelColor });
+                          cursor = end;
+                        });
+
+                        if (cursor < fullText.length) {
+                          parts.push({ type: 'plain', text: fullText.slice(cursor) });
+                        }
+
+                        return parts.map((part, pIdx) => {
+                          if (part.type === 'plain') {
+                            return <span key={`plain-${pIdx}`} className="text-slate-200">{part.text}</span>;
+                          }
+                          const isActive = part.index === idx;
+                          const borderColor = part.labelColor || '#3b82f6';
+                          const activeBorder = hexToRgba(borderColor, 0.95);
+                          const inactiveBorder = hexToRgba(borderColor, 0.55);
+                          return (
+                            <span
+                              key={`span-${pIdx}`}
+                              className="inline rounded px-1.5 py-0.5 border font-semibold"
+                              style={{
+                                color: '#f8fafc',
+                                backgroundColor: 'transparent',
+                                borderColor: isActive ? activeBorder : inactiveBorder,
+                                boxShadow: isActive ? `0 0 0 1px ${activeBorder}, 0 4px 12px ${hexToRgba(borderColor, 0.35)}` : `0 0 0 1px ${inactiveBorder}`,
+                              }}
+                              title={`Label: ${part.label || 'Unknown'}`}
+                            >
+                              {part.text}
+                            </span>
+                          );
+                        });
+                      };
 
                       return (
                         <div className="flex flex-col h-full min-h-[400px]">
@@ -917,33 +1030,44 @@ const ReviewerTask = () => {
                             </div>
                           </div>
 
-                          {/* Main Sentence Content */}
-                          <div className="flex-1 flex flex-col justify-center items-center py-8">
-                            <div className={`w-full p-8 rounded-3xl border-2 transition-all duration-500 relative ${status === 'approved'
-                              ? darkMode ? 'bg-green-900/10 border-green-500/40 shadow-xl shadow-green-500/10' : 'bg-green-50/50 border-green-200 shadow-xl shadow-green-100'
-                              : status === 'rejected'
-                                ? darkMode ? 'bg-red-900/10 border-red-500/40 shadow-xl shadow-red-500/10' : 'bg-red-50/50 border-red-200 shadow-xl shadow-red-100'
-                                : darkMode ? 'bg-gray-700/30 border-gray-600' : 'bg-gray-50/50 border-gray-200 shadow-xl'
-                              }`}>
-                              <blockquote className={`text-2xl font-semibold leading-relaxed text-center ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                                "{itemText}"
-                              </blockquote>
+                          {/* Annotator-style Result View */}
+                          <div className="flex-1 flex flex-col justify-center items-center py-8 space-y-4">
+                            <div className="w-full rounded-2xl border-2 border-blue-500/40 bg-[#0b1730] p-5 shadow-[0_0_0_1px_rgba(59,130,246,0.25),0_16px_40px_rgba(30,64,175,0.25)]">
+                              <div className="text-xs text-blue-200 mb-3 uppercase tracking-wider font-semibold">
+                                Kết quả gán nhãn của {task?.annotatorId?.fullName || task?.annotatorId?.username || 'Annotator'}
+                              </div>
+                              <div className="max-h-64 overflow-auto text-[17px] leading-8 whitespace-pre-wrap font-medium text-slate-50">
+                                {renderTextWithHighlights()}
+                              </div>
+                            </div>
 
-                              <div className="mt-8 flex flex-wrap justify-center gap-3">
-                                <span className={`px-5 py-2 rounded-full text-xs font-bold shadow-md flex items-center gap-2 ${itemLabel.toLowerCase().includes('tích cực') || itemLabel.toLowerCase().includes('positive')
-                                  ? 'bg-green-100 text-green-700 border border-green-200'
-                                  : itemLabel.toLowerCase().includes('tiêu cực') || itemLabel.toLowerCase().includes('negative')
-                                    ? 'bg-red-100 text-red-700 border border-red-200'
-                                    : 'bg-indigo-100 text-indigo-700 border border-indigo-200'
-                                  }`}>
+                            <div className={`w-full p-6 rounded-2xl border transition-all duration-300 ${status === 'approved'
+                              ? 'bg-emerald-500/10 border-emerald-500/30'
+                              : status === 'rejected'
+                                ? 'bg-rose-500/10 border-rose-500/30'
+                                : 'bg-slate-800/40 border-slate-700'
+                              }`}>
+                              <div className="flex flex-wrap items-center gap-3 mb-3">
+                                <span className="px-4 py-1.5 rounded-full text-xs font-semibold bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                                  Vùng gán nhãn {idx + 1} / {annotatedItems.length}
+                                </span>
+                                <span
+                                  className="px-4 py-1.5 rounded-full text-xs font-semibold border"
+                                  style={{
+                                    color: itemLabelColor,
+                                    borderColor: hexToRgba(itemLabelColor, 0.55),
+                                    backgroundColor: hexToRgba(itemLabelColor, 0.18),
+                                  }}
+                                >
                                   🏷️ {itemLabel}
                                 </span>
-                                {item.note && (
-                                  <span className={`px-5 py-2 rounded-full text-[11px] font-medium ${darkMode ? 'bg-gray-800 text-gray-400 border border-gray-700' : 'bg-gray-200 text-gray-600 border border-gray-300'}`}>
-                                    Lưu chú: {item.note}
-                                  </span>
-                                )}
                               </div>
+                              <blockquote className="text-lg font-semibold text-slate-100 leading-relaxed">
+                                "{itemText}"
+                              </blockquote>
+                              {item.note && (
+                                <p className="mt-2 text-sm text-slate-400">Ghi chú annotator: {item.note}</p>
+                              )}
                             </div>
                           </div>
 
@@ -966,24 +1090,8 @@ const ReviewerTask = () => {
                                     {feedback.length} chars
                                   </div>
                                 </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                  <button
-                                    onClick={() => handleSentenceAction(idx, 'approve', task?.labels?.spans ? 'span' : 'sentence')}
-                                    disabled={isProcessing}
-                                    className="group relative overflow-hidden py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black text-sm uppercase tracking-widest transition-all shadow-xl shadow-emerald-500/30 disabled:opacity-50"
-                                  >
-                                    <span className="relative z-10">{isProcessing ? '⏳ ĐANG DUYỆT...' : '✓ PHÊ DUYỆT CÂU NÀY'}</span>
-                                    <div className="absolute inset-0 bg-white/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
-                                  </button>
-                                  <button
-                                    onClick={() => handleSentenceAction(idx, 'reject', task?.labels?.spans ? 'span' : 'sentence')}
-                                    disabled={isProcessing || !feedback.trim()}
-                                    className="group relative overflow-hidden py-4 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl font-black text-sm uppercase tracking-widest transition-all shadow-xl shadow-rose-500/30 disabled:opacity-50"
-                                    title={!feedback.trim() ? 'Bạn cần nhập phản hồi trước khi từ chối' : ''}
-                                  >
-                                    <span className="relative z-10">{isProcessing ? '⏳ ĐANG XỬ LÝ...' : '✕ TỪ CHỐI CÂU NÀY'}</span>
-                                    <div className="absolute inset-0 bg-white/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
-                                  </button>
+                                <div className="rounded-xl border border-slate-700 bg-slate-900/30 p-3 text-xs text-slate-400">
+                                  Đánh giá ở mức task bằng thanh action phía dưới (Approve/Reject).
                                 </div>
                               </div>
                             ) : (
@@ -1095,229 +1203,124 @@ const ReviewerTask = () => {
           </div>
         </div>
 
-        {/* Right Sidebar - Quality Metrics & Error Classification */}
-        <div className={`w-96 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white/60 backdrop-blur-lg border-gray-200/50'} border-l overflow-y-auto`}>
+        {/* Right Sidebar - Structured Review Inspector */}
+        <div className={`w-96 ${darkMode ? 'bg-[#1e293b] border-slate-700' : 'bg-[#1e293b] border-slate-700'} border-l overflow-y-auto`}>
           <div className="p-6 space-y-6">
-            {/* Quality Metrics - Circular Progress */}
             <div>
-              <div className="flex items-center justify-between mb-4">
-                <h3 className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                  QUALITY METRICS
-                </h3>
-                <button
-                  onClick={() => {
-                    alert(`GIẢI THÍCH CÁC THÔNG SỐ:\n\n` +
-                      `1. AVG CONFIDENCE: Độ tin cậy trung bình của tất cả các đối tượng được gán nhãn trong ảnh hiện tại.\n` +
-                      `2. CLASSES: Tổng số đối tượng (objects) đã được gán nhãn trong ảnh.\n` +
-                      `3. BATCH PROGRESS: Tiến độ xem xét - số task đã xem / tổng số task trong hàng đợi.\n` +
-                      `4. ACCURACY: Tỷ lệ task được phê duyệt = Số task approved / Tổng số task đã review.\n` +
-                      `   Hiện tại: ${reviewStats.approvedCount || 0} approved / ${reviewStats.totalReviewed || 0} reviewed = ${accuracy.toFixed(1)}%\n` +
-                      `5. REJECTION: Tỷ lệ task bị từ chối = Số task rejected / Tổng số task đã review.\n` +
-                      `   Hiện tại: ${reviewStats.rejectedCount || 0} rejected / ${reviewStats.totalReviewed || 0} reviewed = ${rejection.toFixed(1)}%\n\n` +
-                      `Lưu ý: Các thông số này được tính dựa trên TẤT CẢ các task đã được bạn review (approved hoặc rejected), không chỉ các task trong hàng đợi hiện tại.`
-                    );
-                  }}
-                  className={`text-xs px-2 py-1 rounded ${darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-                  title="Click để xem giải thích chi tiết về các thông số"
-                >
-                  ℹ️ Giải thích
-                </button>
-              </div>
+              <h3 className="text-xl font-semibold text-white mb-3">Review Overview</h3>
+              <div className="rounded-xl border border-slate-700 bg-[#0f172a] p-4 text-sm text-slate-300 space-y-3">
+                <p className="text-slate-200 font-medium">Assigned → Submitted → In Review → Approved / Rejected</p>
+                <p>Reject phải có ít nhất 1 lỗi và comment tổng quan.</p>
+                <p>Sau khi review, task sẽ bị khóa.</p>
 
-              {/* Batch Progress */}
-              <div className="mb-6">
-                <div className="flex items-center justify-between mb-2">
-                  <span
-                    className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}
-                    title="Tiến độ xem xét: số task đã xem / tổng số task trong hàng đợi"
-                  >
-                    Batch Progress
-                  </span>
-                  <span className={`text-sm font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                    {Math.round(batchProgress)}%
-                  </span>
-                </div>
-                <div className={`w-full ${darkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-full h-3 overflow-hidden`}>
-                  <div
-                    className="bg-gradient-to-r from-emerald-400 to-teal-500 h-3 rounded-full transition-all duration-500 shadow-lg"
-                    style={{ width: `${Math.max(0, Math.min(100, batchProgress))}%` }}
-                  ></div>
-                </div>
-                <div className={`text-xs mt-1 ${darkMode ? 'text-gray-500' : 'text-gray-500'}`}>
-                  {currentTaskIndex >= 0 ? `${currentTaskIndex + 1} / ${pendingTasks.length} tasks` : '0 / 0 tasks'}
-                </div>
-              </div>
-
-              {/* Circular Progress Charts */}
-              <div className="grid grid-cols-2 gap-4">
-                {/* Accuracy */}
-                <div
-                  className="relative w-32 h-32 mx-auto cursor-help"
-                  title={`Tỷ lệ task được phê duyệt: ${reviewStats.approvedCount || 0} approved / ${reviewStats.totalReviewed || 0} đã review = ${accuracy.toFixed(1)}%`}
-                >
-                  <svg className="transform -rotate-90 w-32 h-32">
-                    <circle
-                      cx="64"
-                      cy="64"
-                      r="56"
-                      stroke={darkMode ? '#374151' : '#e5e7eb'}
-                      strokeWidth="12"
-                      fill="none"
-                    />
-                    <circle
-                      cx="64"
-                      cy="64"
-                      r="56"
-                      stroke="#10b981"
-                      strokeWidth="12"
-                      fill="none"
-                      strokeDasharray={`${(Math.min(100, Math.max(0, accuracy)) / 100) * 352} 352`}
-                      strokeLinecap="round"
-                      className="transition-all duration-1000"
-                    />
-                  </svg>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                      {accuracy.toFixed(1)}
-                    </span>
-                    <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                      ACCURACY
-                    </span>
+                {datasetType === 'image' && (
+                  <div className="pt-2 border-t border-slate-700 space-y-1">
+                    <p className="text-xs uppercase tracking-wider text-slate-400">Object Summary</p>
+                    <p className="text-slate-200">Detected Objects: {(task?.labels?.objects || []).length}</p>
+                    {imageClassSummary.map(([name, count]) => (
+                      <p key={name} className="text-xs text-slate-300">• {name}: {count}</p>
+                    ))}
                   </div>
-                </div>
+                )}
 
-                {/* Rejection */}
-                <div
-                  className="relative w-32 h-32 mx-auto cursor-help"
-                  title={`Tỷ lệ task bị từ chối: ${reviewStats.rejectedCount || 0} rejected / ${reviewStats.totalReviewed || 0} đã review = ${rejection.toFixed(1)}%`}
-                >
-                  <svg className="transform -rotate-90 w-32 h-32">
-                    <circle
-                      cx="64"
-                      cy="64"
-                      r="56"
-                      stroke={darkMode ? '#374151' : '#e5e7eb'}
-                      strokeWidth="12"
-                      fill="none"
-                    />
-                    <circle
-                      cx="64"
-                      cy="64"
-                      r="56"
-                      stroke="#ef4444"
-                      strokeWidth="12"
-                      fill="none"
-                      strokeDasharray={`${(Math.min(100, Math.max(0, rejection)) / 100) * 352} 352`}
-                      strokeLinecap="round"
-                      className="transition-all duration-1000"
-                    />
-                  </svg>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className={`text-2xl font-bold ${darkMode ? 'text-red-400' : 'text-red-600'}`}>
-                      {rejection.toFixed(1)}%
-                    </span>
-                    <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                      REJECTION
-                    </span>
+                {datasetType === 'audio' && (
+                  <div className="pt-2 border-t border-slate-700 space-y-1">
+                    <p className="text-xs uppercase tracking-wider text-slate-400">Segment Overview</p>
+                    <p className="text-slate-200">Total Segments: {audioSegments.length}</p>
+                    <p className="text-xs text-slate-300">Duration: {task?.dataItem?.duration ? `${task.dataItem.duration}s` : 'N/A'}</p>
                   </div>
-                </div>
-              </div>
-              <div className={`text-xs mt-2 text-center ${darkMode ? 'text-gray-500' : 'text-gray-500'}`}>
-                <span className="cursor-help" title="Hover vào các biểu đồ để xem giải thích chi tiết">
-                  💡 Hover để xem giải thích
-                </span>
-                {reviewStats.totalReviewed > 0 && (
-                  <div className={`text-xs mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                    ({reviewStats.approvedCount || 0} approved, {reviewStats.rejectedCount || 0} rejected)
+                )}
+
+                {datasetType === 'text' && (
+                  <div className="pt-2 border-t border-slate-700 space-y-1">
+                    <p className="text-xs uppercase tracking-wider text-slate-400">Label Summary</p>
+                    <p className="text-slate-200">Entities: {textEntities.length}</p>
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Error Classification - Tiles with Icons */}
             <div>
-              <h3 className={`font-bold mb-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                ERROR CLASSIFICATION
-              </h3>
-              <div className="grid grid-cols-2 gap-3">
-                {errorTypes.map((errorType) => (
-                  <button
-                    key={errorType.id}
-                    onClick={() => {
-                      setSelectedError(errorType.id);
-                      setErrorCategory(errorType.id);
-                    }}
-                    className={`p-4 rounded-xl transition-all duration-300 transform ${selectedError === errorType.id
-                      ? darkMode
-                        ? `bg-gradient-to-br ${errorType.color} text-white shadow-2xl scale-105 ring-4 ring-white/20`
-                        : `bg-gradient-to-br ${errorType.color} text-white shadow-2xl scale-105`
-                      : darkMode
-                        ? 'bg-gray-700/50 text-gray-300 hover:bg-gray-700 hover:scale-102 border border-gray-600'
-                        : 'bg-white/60 text-gray-700 hover:bg-white/80 hover:scale-102 border border-gray-300/50'
-                      }`}
-                  >
-                    <div className="text-3xl mb-2">{errorType.icon}</div>
-                    <div className="text-xs font-bold mb-1">{errorType.name}</div>
-                    <div className={`text-xs ${selectedError === errorType.id ? 'text-white/90' : (darkMode ? 'text-gray-400' : 'text-gray-600')}`}>
-                      {errorType.description}
+              <h3 className="text-xl font-semibold text-white mb-3">Error Checklist ({datasetType.toUpperCase()})</h3>
+              <div className="space-y-3">
+                {issueOptions.map((issue) => {
+                  const checked = selectedIssues.includes(issue.id);
+                  return (
+                    <div key={issue.id} className="rounded-xl border border-slate-700 bg-[#0f172a] p-3">
+                      <label className="flex items-center gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            const isChecked = e.target.checked;
+                            setSelectedIssues((prev) => isChecked
+                              ? [...prev, issue.id]
+                              : prev.filter((x) => x !== issue.id));
+                          }}
+                          className="h-4 w-4 rounded border-slate-600 bg-[#0f172a] text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-slate-200">{issue.label}</span>
+                      </label>
+
+                      {checked && issue.needsTarget && (
+                        <div className="mt-3 space-y-2">
+                          <p className="text-xs text-slate-400">{issue.targetLabel}</p>
+                          <select
+                            value={issueTargets[issue.id] || ''}
+                            onChange={(e) => setIssueTargets((prev) => ({ ...prev, [issue.id]: e.target.value }))}
+                            className="w-full rounded-lg bg-[#0f172a] border border-slate-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-slate-200 text-sm px-3 py-2"
+                          >
+                            <option value="">Select target</option>
+                            {targetOptions.map((opt) => (
+                              <option key={opt.id} value={opt.id}>{opt.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+
+                      {checked && (
+                        <div className="mt-3">
+                          <textarea
+                            value={issueComments[issue.id] || ''}
+                            onChange={(e) => setIssueComments((prev) => ({ ...prev, [issue.id]: e.target.value }))}
+                            rows={2}
+                            placeholder="Issue comment (optional)"
+                            className="w-full rounded-lg bg-[#0f172a] border border-slate-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-slate-200 text-sm px-3 py-2"
+                          />
+                        </div>
+                      )}
                     </div>
-                  </button>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
-            {/* Chat-like Feedback System */}
             <div>
-              <h3 className={`font-bold mb-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                AUDITOR FEEDBACK
-              </h3>
-              <div className={`${darkMode ? 'bg-gray-900/50' : 'bg-white/40'} rounded-xl p-4 h-64 flex flex-col`}>
-                <div className="flex-1 overflow-y-auto space-y-3 mb-3">
-                  {chatMessages.length === 0 ? (
-                    <div className={`text-center text-sm ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-                      No feedback yet. Start typing...
+              <h3 className="text-xl font-semibold text-white mb-3">Structured Comment</h3>
+              <div className="rounded-xl border border-slate-700 bg-[#0f172a] p-4 space-y-3">
+                <label className="text-sm text-slate-400 block">Overall Feedback</label>
+                <textarea
+                  value={reviewComments}
+                  onChange={(e) => setReviewComments(e.target.value)}
+                  rows={4}
+                  placeholder={datasetType === 'image'
+                    ? 'Ví dụ: Thiếu 1 object ở góc trái và sai class object #3.'
+                    : datasetType === 'audio'
+                      ? 'Ví dụ: Segment #2 sai nhãn, Segment #3 lệch timestamp 0.5s.'
+                      : 'Ví dụ: Missing entity LOCATION ở cuối câu, span entity #2 sai.'}
+                  className="w-full rounded-lg bg-[#0f172a] border border-slate-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-slate-200 text-sm px-3 py-2"
+                />
+                <div className="text-xs text-slate-400">
+                  {selectedIssueDetails.length > 0 ? (
+                    <div className="space-y-1">
+                      <p className="text-slate-300 font-medium">Issues selected:</p>
+                      {selectedIssueDetails.map((issue) => (
+                        <p key={issue.id}>• {issue.label}{issueTargets[issue.id] ? ` (${issueTargets[issue.id]})` : ''}</p>
+                      ))}
                     </div>
                   ) : (
-                    chatMessages.map((msg) => (
-                      <div
-                        key={msg.id}
-                        className={`flex ${msg.sender === 'reviewer' ? 'justify-end' : 'justify-start'}`}
-                      >
-                        <div className={`max-w-[80%] rounded-lg px-3 py-2 ${msg.sender === 'reviewer'
-                          ? darkMode ? 'bg-emerald-600 text-white' : 'bg-emerald-500 text-white'
-                          : darkMode ? 'bg-gray-700 text-gray-200' : 'bg-gray-200 text-gray-800'
-                          }`}>
-                          <p className="text-sm">{msg.text}</p>
-                          <p className={`text-xs mt-1 ${msg.sender === 'reviewer' ? (darkMode ? 'text-emerald-200' : 'text-emerald-100') : (darkMode ? 'text-gray-400' : 'text-gray-500')}`}>
-                            {msg.timestamp.toLocaleTimeString()}
-                          </p>
-                        </div>
-                      </div>
-                    )))
-                  }
-                </div>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={newMessage}
-                    onChange={(e) => setNewMessage(e.target.value)}
-                    onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-                    placeholder="Add rejection comment..."
-                    className={`flex-1 px-3 py-2 rounded-lg text-sm ${darkMode
-                      ? 'bg-gray-800 text-white border-gray-600 focus:border-emerald-500'
-                      : 'bg-white text-gray-900 border-gray-300 focus:border-emerald-500'
-                      } border focus:outline-none focus:ring-2 focus:ring-emerald-500/50`}
-                  />
-                  <button
-                    onClick={sendMessage}
-                    disabled={!newMessage.trim()}
-                    className={`px-4 py-2 rounded-lg font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed ${darkMode
-                      ? 'bg-emerald-600 text-white hover:bg-emerald-500'
-                      : 'bg-emerald-500 text-white hover:bg-emerald-600 shadow-lg'
-                      }`}
-                  >
-                    ➤
-                  </button>
+                    <p>Chưa chọn issue nào.</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -1327,9 +1330,9 @@ const ReviewerTask = () => {
 
       {/* Floating Action Dock */}
       {!isReviewed && (
-        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 px-6 py-4 rounded-2xl shadow-2xl ${darkMode
-          ? 'bg-gray-800/90 backdrop-blur-xl border border-gray-700'
-          : 'bg-white/90 backdrop-blur-xl border border-gray-200/50'
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-4 px-6 py-4 rounded-2xl shadow-2xl ${darkMode
+          ? 'bg-gray-800/95 backdrop-blur-xl border border-gray-700'
+          : 'bg-white/95 backdrop-blur-xl border border-gray-200/50'
           }`}>
           <button
             onClick={handleSkip}
@@ -1342,9 +1345,9 @@ const ReviewerTask = () => {
           </button>
           <button
             onClick={handleReject}
-            disabled={processing || !reviewComments.trim() || isReviewed}
+            disabled={processing || !reviewComments.trim() || selectedIssues.length === 0 || isReviewed}
             className="px-8 py-3 bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-xl font-bold shadow-lg shadow-red-500/50 transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-            title={isReviewed ? 'Task này đã được đánh giá rồi' : (!reviewComments.trim() ? 'Vui lòng nhập nhận xét trước khi từ chối' : '')}
+            title={isReviewed ? 'Task này đã được đánh giá rồi' : (selectedIssues.length === 0 ? 'Chọn ít nhất 1 lỗi trước khi reject' : (!reviewComments.trim() ? 'Vui lòng nhập nhận xét trước khi từ chối' : ''))}
           >
             <span className="mr-2">✕</span> Reject
           </button>

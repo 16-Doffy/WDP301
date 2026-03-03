@@ -12470,7 +12470,7 @@ const ManagerProjectDetail = () => {
 
 
 
-            <Grid item xs={12} sm={6} md={3}><Card sx={cardSx}><CardContent><Typography variant="overline" sx={{ fontWeight: 800, color: '#94a3b8' }}>Quality</Typography><Typography variant="h4" fontWeight={800}>{qualityStats?.approvalRate || 0}%</Typography><Typography variant="caption" sx={{ color: '#94a3b8' }}>Avg. Approval Rate</Typography></CardContent></Card></Grid>
+            <Grid item xs={12} sm={6} md={3}><Card sx={cardSx}><CardContent><Typography variant="overline" sx={{ fontWeight: 800, color: '#94a3b8' }}>Review Pass Rate</Typography><Typography variant="h4" fontWeight={800}>{qualityStats?.approvalRate || 0}%</Typography><Typography variant="caption" sx={{ color: '#94a3b8' }}>Tỷ lệ task được reviewer duyệt (approved / reviewed)</Typography></CardContent></Card></Grid>
 
 
 

@@ -729,7 +729,7 @@ const AnnotatorTask = () => {
                 </div>
               </div>
             ) : getTaskKind(task) === 'text' ? (
-              <div className="bg-white rounded-lg shadow-lg p-4 max-w-4xl w-full space-y-4 relative">
+              <div className="bg-slate-50 rounded-lg shadow-lg p-4 max-w-4xl w-full space-y-4 relative">
                 <div className="mb-2 rounded-lg border border-blue-100 bg-blue-50 p-3">
                   <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
                     <div>
@@ -751,11 +751,11 @@ const AnnotatorTask = () => {
                 <div className="flex justify-between items-center">
                   <div>
                     <p className="text-sm text-gray-500">Text File</p>
-                    <p className="text-base font-semibold text-gray-800">
+                    <p className="text-base font-semibold text-slate-900">
                       {task?.dataItem?.filename || 'Unnamed file'}
                     </p>
                   </div>
-                  <span className="text-xs text-gray-400">{task?.dataItem?.mimeType}</span>
+                  <span className="text-xs text-slate-600 font-medium">{task?.dataItem?.mimeType}</span>
                 </div>
 
                 <div className="bg-blue-50 border border-blue-200 rounded-md p-3 text-sm text-blue-800">
@@ -765,7 +765,7 @@ const AnnotatorTask = () => {
                 <div className="relative">
                   <div
                     ref={textContainerRef}
-                    className="border rounded-md bg-gray-50 p-4 max-h-96 overflow-auto text-sm text-gray-800 whitespace-pre-wrap relative select-text"
+                    className="border border-slate-300 rounded-md bg-white p-4 max-h-96 overflow-auto text-base text-slate-900 whitespace-pre-wrap relative select-text leading-relaxed"
                     onMouseUp={() => {
                       if (task?.status === 'submitted' || task?.status === 'approved') return;
 
@@ -820,14 +820,14 @@ const AnnotatorTask = () => {
                   {showLabelDropdown && selectedTextRange && task?.projectId?.labelSet?.length > 0 && (
                     <div
                       ref={dropdownRef}
-                      className="absolute z-50 bg-white border border-gray-300 rounded-lg shadow-lg p-2 min-w-[200px]"
+                      className="absolute z-50 bg-white border border-slate-300 rounded-lg shadow-xl p-2 min-w-[220px]"
                       style={{
                         left: `${dropdownPosition.x}px`,
                         top: `${dropdownPosition.y}px`,
                         transform: 'translateX(-50%) translateY(-100%)',
                       }}
                     >
-                      <div className="text-xs font-semibold text-gray-700 mb-2">Chọn nhãn:</div>
+                      <div className="text-sm font-semibold text-slate-800 mb-2">Chọn nhãn:</div>
                       <div className="space-y-1">
                         {task.projectId.labelSet.map((lbl) => (
                           <button

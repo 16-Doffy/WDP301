@@ -50,6 +50,7 @@ const CreateProject = () => {
   const [datasets, setDatasets] = useState([]);
   const [selectedAnnotators, setSelectedAnnotators] = useState([]);
   const [selectedReviewers, setSelectedReviewers] = useState([]);
+  const [lockDatasets, setLockDatasets] = useState(false);
   const [annotators, setAnnotators] = useState([]);
   const [reviewers, setReviewers] = useState([]);
   const [annotatorSearch, setAnnotatorSearch] = useState('');
@@ -75,15 +76,22 @@ const CreateProject = () => {
   useEffect(() => {
     if (location.state?.refreshDatasets) {
       fetchDatasets();
-      // Pre-fill dataset name if provided
+
       if (location.state?.datasetName) {
         setFormData(prev => ({
           ...prev,
           name: location.state.datasetName,
-          description: prev.description || '' // Keep existing description if any
+          description: prev.description || ''
         }));
       }
-      // Clear the state to avoid unnecessary refreshes
+
+      if (Array.isArray(location.state?.preselectedDatasetIds) && location.state.preselectedDatasetIds.length > 0) {
+        setSelectedDatasets(location.state.preselectedDatasetIds);
+        setLockDatasets(true);
+      } else {
+        setLockDatasets(false);
+      }
+
       navigate(location.pathname, { replace: true, state: {} });
     }
   }, [location.state]);
@@ -151,6 +159,26 @@ const CreateProject = () => {
       rev.username?.toLowerCase().includes(reviewerSearch.toLowerCase());
     return matchSearch;
   });
+
+  const isDatasetTypeConsistent = (ds) => {
+    const dsType = (ds?.type || '').toLowerCase();
+    const files = Array.isArray(ds?.files) ? ds.files : [];
+    if (files.length === 0) return true;
+
+    return files.every((f) => {
+      const name = (f?.originalName || f?.filename || '').toLowerCase();
+      const mime = (f?.mimeType || '').toLowerCase();
+      if (dsType === 'image') return mime.startsWith('image/') || ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'].some((ext) => name.endsWith(ext));
+      if (dsType === 'audio') return mime.startsWith('audio/') || ['.mp3', '.wav', '.m4a', '.ogg', '.mp4'].some((ext) => name.endsWith(ext));
+      if (dsType === 'text') return mime.startsWith('text/') || ['.txt', '.csv', '.json', '.xml'].some((ext) => name.endsWith(ext));
+      return false;
+    });
+  };
+
+  const validDatasets = datasets.filter((ds) => isDatasetTypeConsistent(ds));
+  const selectedDatasetObjects = selectedDatasets
+    .map((id) => validDatasets.find((d) => d._id === id))
+    .filter(Boolean);
 
   const handleSaveDraft = async () => {
     if (!formData.name.trim()) {
@@ -300,7 +328,7 @@ const CreateProject = () => {
 
 
   return (
-    <Box sx={{ p: 3, maxWidth: 1400, mx: 'auto' }}>
+    <Box sx={{ p: 3, maxWidth: 1400, mx: 'auto', minHeight: '100vh', bgcolor: '#0f172a', color: '#e2e8f0' }}>
       {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -332,7 +360,32 @@ const CreateProject = () => {
       )}
 
       {/* Main Form - All in One Page */}
-      <Paper sx={{ p: 4, maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
+      <Paper
+        sx={{
+          p: 4,
+          maxHeight: 'calc(100vh - 200px)',
+          overflowY: 'auto',
+          bgcolor: '#1e293b',
+          border: '1px solid #334155',
+          borderRadius: 3,
+          color: '#e2e8f0',
+          '& .MuiTypography-root': { color: '#e2e8f0' },
+          '& .MuiInputLabel-root': { color: '#94a3b8' },
+          '& .MuiOutlinedInput-root': {
+            color: '#e2e8f0',
+            backgroundColor: '#0f172a',
+            '& fieldset': { borderColor: '#475569' },
+            '&:hover fieldset': { borderColor: '#64748b' },
+            '&.Mui-focused fieldset': { borderColor: '#3b82f6' },
+          },
+          '& .MuiSelect-icon': { color: '#94a3b8' },
+          '& .MuiCard-root': {
+            backgroundColor: '#1e293b',
+            borderColor: '#334155',
+            color: '#e2e8f0',
+          },
+        }}
+      >
         <Grid container spacing={4}>
           {/* Left Column - Project Details & Dataset */}
           <Grid item xs={12} md={7}>
@@ -572,47 +625,70 @@ const CreateProject = () => {
                   Refresh
                 </Button>
               </Box>
-              <FormControl fullWidth>
-                <InputLabel>Chọn dataset (có thể chọn nhiều)</InputLabel>
-                <Select
-                  multiple
-                  value={selectedDatasets}
-                  onChange={(e) => setSelectedDatasets(e.target.value)}
-                  renderValue={(selected) => {
-                    const selectedNames = selected.map(id => {
-                      const ds = datasets.find(d => d._id === id);
-                      return ds ? ds.name : id;
-                    });
-                    return selectedNames.join(', ');
-                  }}
-                  label="Chọn dataset (có thể chọn nhiều)"
-                >
-                  {datasets.length === 0 ? (
-                    <MenuItem disabled>
-                      <Typography variant="body2" color="textSecondary">
-                        Chưa có dataset nào. Vui lòng tạo dataset trước.
-                      </Typography>
-                    </MenuItem>
-                  ) : (
-                    datasets.map((dataset) => (
-                      <MenuItem key={dataset._id} value={dataset._id}>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
-                          <span>{dataset.name}</span>
-                          <Chip 
-                            label={`${dataset.totalItems || 0} files`} 
-                            size="small" 
-                            sx={{ ml: 1 }}
-                          />
+              {lockDatasets && selectedDatasetObjects.length > 0 ? (
+                <Box sx={{ mt: 1 }}>
+                  <Alert severity="success" sx={{ mb: 2 }}>
+                    Datasets đã được chọn sẵn từ bước tạo dataset. Project này sẽ dùng {selectedDatasetObjects.length} dataset bên dưới.
+                  </Alert>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                    {selectedDatasetObjects.map((ds) => (
+                      <Box key={ds._id} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', p: 1.5, border: '1px solid #334155', borderRadius: 2, bgcolor: '#0f172a' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Typography variant="body2">{ds.name}</Typography>
+                          <Chip label={(ds.type || 'unknown').toUpperCase()} size="small" sx={{ bgcolor: '#1d4ed8', color: '#dbeafe' }} />
                         </Box>
-                      </MenuItem>
-                    ))
+                        <Chip label={`${ds.totalItems || 0} files`} size="small" />
+                      </Box>
+                    ))}
+                  </Box>
+                  <Button size="small" sx={{ mt: 2, textTransform: 'none' }} onClick={() => setLockDatasets(false)}>
+                    Chọn dataset khác
+                  </Button>
+                </Box>
+              ) : (
+                <>
+                  <FormControl fullWidth>
+                    <InputLabel>Chọn dataset (có thể chọn nhiều)</InputLabel>
+                    <Select
+                      multiple
+                      value={selectedDatasets.filter((id) => validDatasets.some((d) => d._id === id))}
+                      onChange={(e) => setSelectedDatasets(e.target.value)}
+                      renderValue={(selected) => {
+                        const selectedNames = selected.map(id => {
+                          const ds = validDatasets.find(d => d._id === id) || datasets.find(d => d._id === id);
+                          return ds ? `${ds.name} (${(ds.type || 'unknown').toUpperCase()})` : id;
+                        });
+                        return selectedNames.join(', ');
+                      }}
+                      label="Chọn dataset (có thể chọn nhiều)"
+                    >
+                      {validDatasets.length === 0 ? (
+                        <MenuItem disabled>
+                          <Typography variant="body2" color="textSecondary">
+                            Không có dataset hợp lệ để chọn.
+                          </Typography>
+                        </MenuItem>
+                      ) : (
+                        validDatasets.map((dataset) => (
+                          <MenuItem key={dataset._id} value={dataset._id}>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <span>{dataset.name}</span>
+                                <Chip label={(dataset.type || 'unknown').toUpperCase()} size="small" sx={{ bgcolor: '#1d4ed8', color: '#dbeafe' }} />
+                              </Box>
+                              <Chip label={`${dataset.totalItems || 0} files`} size="small" sx={{ ml: 1 }} />
+                            </Box>
+                          </MenuItem>
+                        ))
+                      )}
+                    </Select>
+                  </FormControl>
+                  {selectedDatasets.length > 0 && (
+                    <Alert severity="info" sx={{ mt: 2 }}>
+                      Đã chọn {selectedDatasets.length} dataset(s). Tasks sẽ được tạo cho tất cả files trong các dataset này.
+                    </Alert>
                   )}
-                </Select>
-              </FormControl>
-              {selectedDatasets.length > 0 && (
-                <Alert severity="info" sx={{ mt: 2 }}>
-                  Đã chọn {selectedDatasets.length} dataset(s). Tasks sẽ được tạo cho tất cả files trong các dataset này.
-                </Alert>
+                </>
               )}
               {datasets.length === 0 && (
                 <Alert severity="warning" sx={{ mt: 2 }}>

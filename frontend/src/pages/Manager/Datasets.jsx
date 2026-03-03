@@ -97,6 +97,30 @@ const Datasets = () => {
     }
   };
 
+  const getAllowedAcceptByType = (type) => {
+    if (type === 'image') return 'image/*,.zip,.rar,application/zip,application/x-zip-compressed,application/vnd.rar,application/x-rar-compressed';
+    if (type === 'audio') return 'audio/*,.mp3,.wav,.m4a,.ogg,.mp4,.zip,.rar,application/zip,application/x-zip-compressed,application/vnd.rar,application/x-rar-compressed';
+    return '.txt,.csv,.json,.xml,text/plain,text/csv,application/json,application/xml,.zip,.rar,application/zip,application/x-zip-compressed,application/vnd.rar,application/x-rar-compressed';
+  };
+
+  const isFileCompatibleWithDatasetType = (file, type) => {
+    const name = (file?.name || '').toLowerCase();
+    const mime = (file?.type || '').toLowerCase();
+    const isArchive = name.endsWith('.zip') || name.endsWith('.rar') || mime.includes('zip') || mime.includes('rar');
+    if (isArchive) return true;
+
+    if (type === 'image') {
+      return mime.startsWith('image/') || ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'].some((ext) => name.endsWith(ext));
+    }
+    if (type === 'audio') {
+      return mime.startsWith('audio/') || ['.mp3', '.wav', '.m4a', '.ogg', '.mp4'].some((ext) => name.endsWith(ext));
+    }
+    if (type === 'text') {
+      return mime.startsWith('text/') || ['.txt', '.csv', '.json', '.xml'].some((ext) => name.endsWith(ext));
+    }
+    return false;
+  };
+
   const handleFileUpload = (e) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
@@ -104,6 +128,12 @@ const Datasets = () => {
     const isArchive = (file) => ['.zip', '.rar'].some((ext) => file.name.toLowerCase().endsWith(ext));
     if (files.some(isArchive) && files.length > 1) {
       alert('Nếu upload file nén (zip/rar), vui lòng chọn đúng 1 file.');
+      return;
+    }
+
+    const invalidFiles = files.filter((f) => !isFileCompatibleWithDatasetType(f, formData.type));
+    if (invalidFiles.length > 0) {
+      setError(`Các file sau không phù hợp với dataset type "${formData.type}": ${invalidFiles.map((f) => f.name).join(', ')}`);
       return;
     }
 
@@ -128,17 +158,29 @@ const Datasets = () => {
       if (formData.description) payload.append('description', formData.description.trim());
       uploadedFiles.forEach((f) => payload.append('files', f));
 
-      await axios.post(`${API_URL}/api/datasets`, payload, {
+      const createRes = await axios.post(`${API_URL}/api/datasets`, payload, {
         headers: {
           'Content-Type': 'multipart/form-data',
           Authorization: `Bearer ${localStorage.getItem('token')}`,
         },
       });
 
+      const createdDataset = createRes.data;
       setFormData({ name: '', description: '', type: 'image' });
       setUploadedFiles([]);
       setCreateDialogOpen(false);
       await fetchDatasets();
+
+      if (createdDataset?._id) {
+        navigate('/manager/projects/create', {
+          state: {
+            refreshDatasets: true,
+            datasetName: createdDataset.name,
+            datasetType: createdDataset.type,
+            preselectedDatasetIds: [createdDataset._id],
+          },
+        });
+      }
     } catch (err) {
       setError('Lỗi khi tạo dataset: ' + (err.response?.data?.message || err.message));
     } finally {
@@ -289,7 +331,22 @@ const Datasets = () => {
         <DialogTitle sx={{ fontWeight: 700 }}>Create New Dataset</DialogTitle>
         <DialogContent>
           <TextField fullWidth label="Dataset Name *" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} margin="normal" />
-          <TextField fullWidth select SelectProps={{ native: true }} label="Dataset Type *" value={formData.type} onChange={(e) => setFormData({ ...formData, type: e.target.value })} margin="normal">
+          <TextField
+            fullWidth
+            select
+            SelectProps={{ native: true }}
+            label="Dataset Type *"
+            value={formData.type}
+            onChange={(e) => {
+              const nextType = e.target.value;
+              const stillValid = uploadedFiles.filter((f) => isFileCompatibleWithDatasetType(f, nextType));
+              if (stillValid.length !== uploadedFiles.length) {
+                setUploadedFiles(stillValid);
+              }
+              setFormData({ ...formData, type: nextType });
+            }}
+            margin="normal"
+          >
             <option value="image">Image</option>
             <option value="text">Text</option>
             <option value="audio">Audio</option>
@@ -300,7 +357,7 @@ const Datasets = () => {
             <CloudUploadIcon sx={{ fontSize: 44, color: '#60a5fa', mb: 1 }} />
             <Typography variant="h6" fontWeight={700} gutterBottom>Upload files / zip / rar</Typography>
             <Typography variant="body2" sx={{ color: '#94a3b8' }}>ZIP được auto extract. RAR được nhận diện (nên đổi sang ZIP để hệ thống xử lý tự động).</Typography>
-            <input id="file-upload-dataset" type="file" multiple style={{ display: 'none' }} onChange={handleFileUpload} accept="image/*,audio/*,.txt,.csv,.json,.xml,.zip,.rar,application/zip,application/x-zip-compressed,application/vnd.rar,application/x-rar-compressed" />
+            <input id="file-upload-dataset" type="file" multiple style={{ display: 'none' }} onChange={handleFileUpload} accept={getAllowedAcceptByType(formData.type)} />
           </Box>
 
           {uploadedFiles.length > 0 && (

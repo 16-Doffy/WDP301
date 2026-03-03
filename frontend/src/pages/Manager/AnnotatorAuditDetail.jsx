@@ -25,7 +25,6 @@ import {
   CheckCircle as CheckCircleIcon,
   Cancel as CancelIcon,
   Pending as PendingIcon,
-  Edit as EditIcon,
 } from '@mui/icons-material';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
@@ -190,9 +189,6 @@ const AnnotatorAuditDetail = () => {
                 <MenuItem value="pending">Pending Review</MenuItem>
               </Select>
             </FormControl>
-            <Button variant="outlined" sx={{ textTransform: 'none', fontWeight: 600 }} onClick={() => alert('Bộ lọc đang áp dụng trực tiếp trên bảng bên dưới.')}>
-              Hướng dẫn lọc nhanh
-            </Button>
           </div>
         </div>
 
@@ -228,7 +224,7 @@ const AnnotatorAuditDetail = () => {
                       <TableCell><div className="flex items-center gap-1">{getStatusIcon(task.status)}<span className="text-sm">{task.status === 'approved' ? 'Approved' : task.status === 'rejected' ? 'Rejected' : 'Pending Review'}</span></div></TableCell>
                       <TableCell>
                         <Button size="small" variant="outlined" onClick={() => { setSelectedTask(task); setQuickViewOpen(true); }}>
-                          View Audit
+                          View Review Detail
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -247,13 +243,13 @@ const AnnotatorAuditDetail = () => {
             <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
               <div>
                 <h2 className="text-lg font-semibold text-gray-900">Chi tiết task #{selectedTask._id.slice(-6)} ({getTaskKind(selectedTask).toUpperCase()})</h2>
-                <p className="text-xs text-gray-500 mt-1">Xem nhanh nhãn của annotator và quyết định review hiện tại.</p>
+                <p className="text-xs text-gray-500 mt-1">Hiển thị đầy đủ kết quả reviewer đã chấm: vote, comment và lỗi.</p>
               </div>
               <IconButton onClick={() => { setQuickViewOpen(false); setSelectedTask(null); }}>✕</IconButton>
             </div>
 
             <div className="p-6 space-y-6">
-              <div className="bg-white rounded-lg p-4 min-h-[240px] flex items-center justify-center">
+              <div className="bg-white rounded-lg p-4 min-h-[180px] flex items-center justify-center">
                 {getTaskKind(selectedTask) === 'audio' && selectedTask.dataItem?.path ? (
                   <audio controls className="w-full max-w-md">
                     <source src={`${API_URL}/${selectedTask.dataItem.path}`} type={selectedTask.dataItem?.mimeType || 'audio/mpeg'} />
@@ -266,39 +262,68 @@ const AnnotatorAuditDetail = () => {
               </div>
 
               <div>
-                <Typography variant="subtitle2" className="mb-2">Annotator's Label</Typography>
-                <Paper className="p-4 bg-gray-50">{selectedTask.labels ? JSON.stringify(selectedTask.labels) : 'No labels provided'}</Paper>
-              </div>
+                <Typography variant="subtitle2" className="mb-2">Reviewer Results (chi tiết chấm bài)</Typography>
+                <Paper className="p-4 bg-gray-50 space-y-3">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Chip
+                      size="small"
+                      label={selectedTask.status?.toUpperCase() || 'ASSIGNED'}
+                      color={selectedTask.status === 'approved' ? 'success' : selectedTask.status === 'rejected' ? 'error' : 'warning'}
+                    />
+                    <span className="text-xs text-gray-500">
+                      Reviewed at: {selectedTask.reviewedAt ? new Date(selectedTask.reviewedAt).toLocaleString('vi-VN') : 'Chưa review'}
+                    </span>
+                  </div>
 
-              <div className="pt-4 border-t space-y-3">
-                <div className="text-xs text-gray-500">Hành động cho Manager: duyệt thủ công hoặc ghi đè kết quả review.</div>
-                <div className="flex gap-2">
-                  <Button
-                    variant="contained"
-                    color="success"
-                    startIcon={<CheckCircleIcon />}
-                    onClick={async () => {
-                      try {
-                        await axios.put(`${API_URL}/api/tasks/${selectedTask._id}`, { status: 'approved' }, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
-                        alert('Manager đã duyệt task thành công');
-                        fetchData();
-                        setQuickViewOpen(false);
-                        setSelectedTask(null);
-                      } catch (error) {
-                        alert('Không thể duyệt task: ' + (error.response?.data?.message || error.message));
-                      }
-                    }}
-                  >
-                    Manager Approve
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    startIcon={<EditIcon />}
-                    onClick={() => alert('Override Review sẽ cho phép Manager ghi đè kết quả review (sẽ bổ sung sau).')}
-                  >
-                    Override Review
-                  </Button>
-                </div>
+                  <div className="rounded border border-gray-200 bg-white p-3">
+                    <div className="text-xs font-semibold text-gray-500 mb-1">Overall Reviewer Comment</div>
+                    <div className="text-sm text-gray-800 whitespace-pre-wrap">{selectedTask.reviewComments || 'Không có comment tổng quan.'}</div>
+                  </div>
+
+                  <div className="rounded border border-gray-200 bg-white p-3">
+                    <div className="text-xs font-semibold text-gray-500 mb-1">Reviewer Votes</div>
+                    {Array.isArray(selectedTask.reviewers) && selectedTask.reviewers.length > 0 ? (
+                      <div className="space-y-2">
+                        {selectedTask.reviewers.map((rv, idx) => (
+                          <div key={idx} className="flex items-center justify-between text-sm border-b border-gray-100 pb-2 last:border-0 last:pb-0">
+                            <div>
+                              <div className="font-medium text-gray-800">{rv.reviewerId?.fullName || rv.reviewerId?.username || 'Reviewer'}</div>
+                              <div className="text-xs text-gray-500">{rv.reviewedAt ? new Date(rv.reviewedAt).toLocaleString('vi-VN') : 'Pending'}</div>
+                              {!!rv.comment && <div className="text-xs text-gray-600 mt-1">{rv.comment}</div>}
+                            </div>
+                            <Chip
+                              size="small"
+                              label={(rv.status || 'pending').toUpperCase()}
+                              color={rv.status === 'approved' ? 'success' : rv.status === 'rejected' ? 'error' : 'warning'}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-gray-500">Chưa có reviewer votes.</div>
+                    )}
+                  </div>
+
+                  <div className="rounded border border-gray-200 bg-white p-3">
+                    <div className="text-xs font-semibold text-gray-500 mb-1">Issue Category</div>
+                    <div className="text-sm text-gray-800">{selectedTask.errorCategory || 'Không có phân loại lỗi.'}</div>
+                  </div>
+
+                  {Array.isArray(selectedTask.reviewNotes) && selectedTask.reviewNotes.length > 0 && (
+                    <div className="rounded border border-gray-200 bg-white p-3">
+                      <div className="text-xs font-semibold text-gray-500 mb-2">Object / Segment Notes</div>
+                      <div className="space-y-2">
+                        {selectedTask.reviewNotes.map((note, idx) => (
+                          <div key={idx} className="text-sm text-gray-800 border-b border-gray-100 pb-2 last:border-0 last:pb-0">
+                            <div><strong>Label:</strong> {note.label || '-'}</div>
+                            {Array.isArray(note.bbox) && <div><strong>BBox:</strong> [{note.bbox.join(', ')}]</div>}
+                            <div><strong>Comment:</strong> {note.comment || '-'}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </Paper>
               </div>
             </div>
           </div>
