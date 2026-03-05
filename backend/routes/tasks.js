@@ -505,27 +505,34 @@ router.post('/submit-batch', auth, authorize('annotator'), async (req, res) => {
       }
     }
 
-    // Validate all tasks are ready for submission and have labels
-    const invalidStatuses = ['assigned', 'approved', 'submitted'];
-    const notReady = tasks.filter((t) => invalidStatuses.includes(t.status));
+    // Keep already approved tasks as-is; submit only tasks that need (re)review.
+    const tasksToSubmit = tasks.filter((t) => t.status !== 'approved');
+
+    // Validate tasks that are going to be submitted
+    const invalidStatuses = ['assigned', 'submitted'];
+    const notReady = tasksToSubmit.filter((t) => invalidStatuses.includes(t.status));
     if (notReady.length > 0) {
       return res.status(400).json({
-        message: 'Please finish all tasks in this batch before submitting.',
+        message: 'Please finish all editable tasks in this batch before submitting.',
         remaining: notReady.map(t => t._id.toString()),
       });
     }
 
-    const missingLabels = tasks.filter(t => !t.labels || Object.keys(t.labels).length === 0);
+    const missingLabels = tasksToSubmit.filter(t => !t.labels || Object.keys(t.labels).length === 0);
     if (missingLabels.length > 0) {
       return res.status(400).json({
-        message: 'Some tasks are missing labels. Please label all images before submitting.',
+        message: 'Some tasks are missing labels. Please label all required items before submitting.',
         missing: missingLabels.map(t => t._id.toString()),
       });
     }
 
-    // Set all to submitted
+    if (tasksToSubmit.length === 0) {
+      return res.json({ message: 'No tasks need resubmission in this batch.', count: 0 });
+    }
+
+    // Set only pending/rework tasks to submitted
     const now = new Date();
-    for (const task of tasks) {
+    for (const task of tasksToSubmit) {
       // Ensure reviewer assignment exists
       if (!task.reviewers || task.reviewers.length === 0) {
         return res.status(400).json({ message: 'Task must have at least one reviewer assigned before submission' });
@@ -546,7 +553,7 @@ router.post('/submit-batch', auth, authorize('annotator'), async (req, res) => {
       await task.save();
     }
 
-    res.json({ message: `Submitted batch successfully`, count: tasks.length });
+    res.json({ message: `Submitted batch successfully`, count: tasksToSubmit.length });
   } catch (error) {
     console.error('Error submitting batch:', error);
     res.status(500).json({ message: 'Server error', error: error.message });

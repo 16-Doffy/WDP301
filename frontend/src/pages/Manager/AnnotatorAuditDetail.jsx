@@ -27,6 +27,7 @@ import {
   Pending as PendingIcon,
 } from '@mui/icons-material';
 import axios from 'axios';
+import AudioAnnotator from '../../components/AudioAnnotator';
 import { API_URL } from '../../config/api';
 
 const AnnotatorAuditDetail = () => {
@@ -102,11 +103,119 @@ const AnnotatorAuditDetail = () => {
   };
 
   const getTaskKind = (task) => {
-    const mimeType = task.dataItem?.mimeType || '';
+    const mimeType = (task.dataItem?.mimeType || '').toLowerCase();
+    const filename = (task.dataItem?.filename || '').toLowerCase();
+    const path = (task.dataItem?.path || '').toLowerCase();
+
     if (mimeType.startsWith('image/')) return 'image';
-    if (mimeType.startsWith('text/') || mimeType === 'application/json') return 'text';
     if (mimeType.startsWith('audio/')) return 'audio';
+    if (mimeType.startsWith('text/') || mimeType === 'application/json') return 'text';
+
+    const source = `${filename} ${path}`;
+    if (/\.(png|jpe?g|jfif|gif|webp|bmp|svg)$/.test(source)) return 'image';
+    if (/\.(mp3|wav|ogg|m4a|aac|flac)$/.test(source)) return 'audio';
+    if (/\.(txt|json|csv|md|log|xml)$/.test(source)) return 'text';
+
     return 'other';
+  };
+
+  const getDataItemUrl = (task) => {
+    const p = task?.dataItem?.path;
+    if (!p) return '';
+    return `${API_URL}/${String(p).replace(/^\/+/, '')}`;
+  };
+
+  const getAnnotatorImageObjects = (task) => {
+    const objects = task?.labels?.objects;
+    if (!Array.isArray(objects)) return [];
+
+    return objects
+      .map((obj, idx) => ({
+        id: obj?.id || idx,
+        label: obj?.label || '-',
+        bbox: Array.isArray(obj?.bbox) ? obj.bbox.map((v) => Number(v)) : null,
+        confidence: obj?.confidence,
+      }))
+      .filter((obj) => Array.isArray(obj.bbox) && obj.bbox.length === 4 && obj.bbox.every((v) => Number.isFinite(v)));
+  };
+
+  const getLabelColor = (label = '') => {
+    const palette = ['#1976d2', '#16a34a', '#ea580c', '#9333ea', '#0f766e', '#dc2626', '#2563eb'];
+    const key = String(label);
+    let hash = 0;
+    for (let i = 0; i < key.length; i += 1) hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+    return palette[hash % palette.length];
+  };
+
+  const getNormalizedAudioSegments = (task) => {
+    const segments = task?.labels?.segments;
+    if (!Array.isArray(segments)) return [];
+    return segments
+      .map((seg, idx) => ({
+        id: seg?.id || `segment_${idx + 1}`,
+        start: Number(seg?.start ?? seg?.startTime ?? 0),
+        end: Number(seg?.end ?? seg?.endTime ?? 0),
+        label: seg?.label || 'unknown',
+        note: seg?.note || '',
+      }))
+      .filter((seg) => Number.isFinite(seg.start) && Number.isFinite(seg.end) && seg.end > seg.start);
+  };
+
+  const getSpanText = (span) => {
+    if (span?.text) return span.text;
+    if (!textContent) return '';
+    if (typeof span?.start !== 'number' || typeof span?.end !== 'number') return '';
+    return textContent.slice(span.start, span.end);
+  };
+
+  const renderAnnotatorLabels = (task) => {
+    const labels = task?.labels;
+    if (!labels || (typeof labels === 'object' && Object.keys(labels).length === 0)) {
+      return <div className="text-sm text-gray-500">Annotator chưa khoanh/gán label.</div>;
+    }
+
+    if (getTaskKind(task) === 'audio') {
+      const segments = getNormalizedAudioSegments(task);
+      return (
+        <div className="space-y-3">
+          {segments.length > 0 ? (
+            segments.map((seg, idx) => (
+              <div key={seg.id || idx} className="text-sm text-gray-800 border-b border-gray-100 pb-2 last:border-0 last:pb-0">
+                <div><strong>Segment:</strong> #{idx + 1}</div>
+                <div><strong>Label:</strong> {seg.label}</div>
+                <div><strong>Range:</strong> {seg.start.toFixed(2)}s - {seg.end.toFixed(2)}s</div>
+                {!!seg.note && <div><strong>Note:</strong> {seg.note}</div>}
+              </div>
+            ))
+          ) : (
+            <div className="text-sm text-gray-500">Không có segment audio.</div>
+          )}
+          {!!labels.note && <div className="text-sm text-gray-700"><strong>Note:</strong> {labels.note}</div>}
+        </div>
+      );
+    }
+
+    if (Array.isArray(labels.spans) && labels.spans.length > 0) {
+      return (
+        <div className="space-y-2">
+          {labels.spans.map((span, idx) => (
+            <div key={idx} className="text-sm text-gray-800 border-b border-gray-100 pb-2 last:border-0 last:pb-0">
+              <div><strong>Label:</strong> {span?.label || '-'}</div>
+              {typeof span?.start === 'number' && typeof span?.end === 'number' && (
+                <div><strong>Range:</strong> {span.start} - {span.end}</div>
+              )}
+              {!!getSpanText(span) && <div><strong>Text:</strong> {getSpanText(span)}</div>}
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    if (typeof labels.label === 'string') {
+      return <div className="text-sm text-gray-800"><strong>Label:</strong> {labels.label}</div>;
+    }
+
+    return <pre className="text-xs text-gray-700 whitespace-pre-wrap">{JSON.stringify(labels, null, 2)}</pre>;
   };
 
   const filteredTasks = tasks.filter((task) => {
@@ -250,19 +359,73 @@ const AnnotatorAuditDetail = () => {
 
             <div className="p-6 space-y-6">
               <div className="bg-white rounded-lg p-4 min-h-[180px] flex items-center justify-center">
-                {getTaskKind(selectedTask) === 'audio' && selectedTask.dataItem?.path ? (
-                  <audio controls className="w-full max-w-md">
-                    <source src={`${API_URL}/${selectedTask.dataItem.path}`} type={selectedTask.dataItem?.mimeType || 'audio/mpeg'} />
-                  </audio>
+                {getTaskKind(selectedTask) === 'image' && selectedTask.dataItem?.path ? (
+                  <div className="relative inline-block max-h-[520px] max-w-full overflow-auto border border-gray-200 rounded">
+                    <img
+                      src={getDataItemUrl(selectedTask)}
+                      alt={selectedTask.dataItem?.filename || 'Task preview'}
+                      className="max-h-[500px] w-auto max-w-full object-contain block"
+                    />
+                    {getAnnotatorImageObjects(selectedTask).map((obj) => {
+                      const [x1, y1, x2, y2] = obj.bbox;
+                      const left = Math.min(x1, x2);
+                      const top = Math.min(y1, y2);
+                      const width = Math.max(Math.abs(x2 - x1), 1);
+                      const height = Math.max(Math.abs(y2 - y1), 1);
+                      const color = getLabelColor(obj.label);
+                      return (
+                        <div
+                          key={obj.id}
+                          className="absolute"
+                          style={{
+                            left: `${left}%`,
+                            top: `${top}%`,
+                            width: `${width}%`,
+                            height: `${height}%`,
+                            border: `2px solid ${color}`,
+                            backgroundColor: `${color}22`,
+                            boxSizing: 'border-box',
+                          }}
+                        >
+                          <div
+                            className="absolute -top-6 left-0 px-2 py-0.5 rounded text-xs font-semibold text-white whitespace-nowrap"
+                            style={{ backgroundColor: color }}
+                          >
+                            {obj.label}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : getTaskKind(selectedTask) === 'audio' && selectedTask.dataItem?.path ? (
+                  <div className="w-full">
+                    <AudioAnnotator
+                      audioUrl={getDataItemUrl(selectedTask)}
+                      labelSet={selectedTask?.projectId?.labelSet || []}
+                      initialSegments={getNormalizedAudioSegments(selectedTask)}
+                      readOnly
+                    />
+                  </div>
                 ) : getTaskKind(selectedTask) === 'text' ? (
                   <div className="w-full text-sm text-gray-700 whitespace-pre-wrap">{textContent || 'No content'}</div>
                 ) : (
-                  <div className="text-gray-500">Preview available in original task type UI.</div>
+                  <div className="text-gray-500">Không có preview cho loại dữ liệu này.</div>
                 )}
               </div>
 
               <div>
-                <Typography variant="subtitle2" className="mb-2">Reviewer Results (chi tiết chấm bài)</Typography>
+                <div className="mb-2 inline-flex items-center rounded-md bg-slate-800 px-3 py-1.5 border border-slate-700 shadow-sm">
+                  <Typography variant="subtitle2" className="!text-slate-100 !font-bold tracking-wide">Annotator Results</Typography>
+                </div>
+                <Paper className="p-4 bg-gray-50 space-y-3 mb-4">
+                  <div className="rounded border border-gray-200 bg-white p-3">
+                    {renderAnnotatorLabels(selectedTask)}
+                  </div>
+                </Paper>
+
+                <div className="mb-2 inline-flex items-center rounded-md bg-blue-700 px-3 py-1.5 border border-blue-600 shadow-sm">
+                  <Typography variant="subtitle2" className="!text-white !font-bold tracking-wide">Reviewer Results (chi tiết chấm bài)</Typography>
+                </div>
                 <Paper className="p-4 bg-gray-50 space-y-3">
                   <div className="flex items-center gap-2 flex-wrap">
                     <Chip

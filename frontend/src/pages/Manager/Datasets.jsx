@@ -64,6 +64,18 @@ const Datasets = () => {
     fetchDatasets();
   }, []);
 
+  const safeText = (value, fallback = '-') => {
+    if (value == null) return fallback;
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+    if (typeof value === 'object') {
+      if (typeof value.name === 'string') return value.name;
+      if (typeof value.title === 'string') return value.title;
+      if (typeof value.label === 'string') return value.label;
+      return fallback;
+    }
+    return fallback;
+  };
+
   const fetchDatasets = async () => {
     try {
       const response = await axios.get(`${API_URL}/api/datasets`, {
@@ -72,7 +84,9 @@ const Datasets = () => {
       const allDatasets = response.data || [];
       const mapped = allDatasets.map((ds) => ({
         ...ds,
-        projectName: ds.projectId?.name || 'Chưa gán project',
+        name: safeText(ds.name, 'Unnamed dataset'),
+        description: safeText(ds.description, ''),
+        projectName: safeText(ds.projectId?.name || ds.projectId, 'Chưa gán project'),
       }));
       setDatasets(mapped);
 
@@ -274,9 +288,24 @@ const Datasets = () => {
               .filter((ds) => !searchTerm.trim() || ds.name.toLowerCase().includes(searchTerm.toLowerCase()))
               .map((dataset) => {
                 const stat = statusByDataset[dataset._id];
-                const completion = stat?.completionRate || 0;
-                const finalCount = stat?.totalFinalItems || 0;
+                const finalProgress = stat?.finalRate ?? stat?.completionRate ?? 0;
+                const lifecycleProgress = stat?.lifecycleRate ?? 0;
                 const rawCount = stat?.totalRawItems || dataset.totalItems || 0;
+                const counts = stat?.counts || {};
+                const pendingAnnotation = counts.pendingAnnotation ?? 0;
+                const submitted = counts.submitted ?? 0;
+                const returnedToAnnotator = counts.returnedToAnnotator ?? 0;
+                const completed = counts.completed ?? 0;
+                const approved = counts.approved ?? stat?.totalFinalItems ?? 0;
+                const rejected = counts.rejected ?? 0;
+                const finalCount = counts.final ?? stat?.totalFinalItems ?? 0;
+                const canExport = finalCount > 0;
+                const votes = stat?.votes || {};
+                const approveVotes = votes.approveVotes ?? 0;
+                const rejectVotes = votes.rejectVotes ?? 0;
+                const pendingVotes = votes.pendingVotes ?? 0;
+                const decidedVotes = votes.decidedVotes ?? (approveVotes + rejectVotes);
+                const totalVotes = votes.totalVotes ?? (approveVotes + rejectVotes + pendingVotes);
 
                 return (
                   <Grid item xs={12} md={6} lg={4} key={dataset._id}>
@@ -296,11 +325,77 @@ const Datasets = () => {
                           </IconButton>
                         </Box>
 
-                        <Typography variant="caption" sx={{ color: '#94a3b8' }}>Final Dataset Progress</Typography>
-                        <LinearProgress variant="determinate" value={completion} sx={{ mt: 1, mb: 1, height: 8, borderRadius: 4, bgcolor: '#0f172a', '& .MuiLinearProgress-bar': { bgcolor: '#22c55e' } }} />
-                        <Typography variant="body2" sx={{ color: '#cbd5e1' }}>
-                          Final {finalCount} / Raw {rawCount} items ({completion}%)
+                        <Typography variant="caption" sx={{ color: '#94a3b8' }}>Lifecycle Progress (Completed / Raw)</Typography>
+                        <LinearProgress variant="determinate" value={lifecycleProgress} sx={{ mt: 1, mb: 1, height: 8, borderRadius: 4, bgcolor: '#0f172a', '& .MuiLinearProgress-bar': { bgcolor: '#38bdf8' } }} />
+                        <Typography variant="body2" sx={{ color: '#cbd5e1', mb: 1 }}>
+                          Completed {completed} / Raw {rawCount} items ({lifecycleProgress}%)
                         </Typography>
+
+                        <Typography variant="caption" sx={{ color: '#94a3b8' }}>Final Dataset Progress (Approved / Raw)</Typography>
+                        <LinearProgress variant="determinate" value={finalProgress} sx={{ mt: 1, mb: 1, height: 8, borderRadius: 4, bgcolor: '#0f172a', '& .MuiLinearProgress-bar': { bgcolor: '#22c55e' } }} />
+                        <Typography variant="body2" sx={{ color: '#cbd5e1', mb: 1 }}>
+                          Final {finalCount} / Raw {rawCount} items ({finalProgress}%)
+                        </Typography>
+
+                        <Box sx={{ mt: 1.5, p: 1.5, borderRadius: 2, border: '1px solid #334155', bgcolor: '#0f172a' }}>
+                          <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mb: 1 }}>DATASET LIFECYCLE</Typography>
+                          <Grid container spacing={1}>
+                            <Grid item xs={6}>
+                              <Typography variant="caption" sx={{ color: '#94a3b8' }}>Raw Items</Typography>
+                              <Typography variant="body2" fontWeight={700}>{rawCount}</Typography>
+                            </Grid>
+                            <Grid item xs={6}>
+                              <Typography variant="caption" sx={{ color: '#94a3b8' }}>Pending Annotation</Typography>
+                              <Typography variant="body2" fontWeight={700}>{pendingAnnotation}</Typography>
+                            </Grid>
+                            <Grid item xs={6}>
+                              <Typography variant="caption" sx={{ color: '#94a3b8' }}>Submitted</Typography>
+                              <Typography variant="body2" fontWeight={700}>{submitted}</Typography>
+                            </Grid>
+                            <Grid item xs={6}>
+                              <Typography variant="caption" sx={{ color: '#94a3b8' }}>Returned to Annotator</Typography>
+                              <Typography variant="body2" fontWeight={700} sx={{ color: '#f59e0b' }}>{returnedToAnnotator}</Typography>
+                            </Grid>
+                            <Grid item xs={12}>
+                              <Typography variant="caption" sx={{ color: '#94a3b8' }}>Completed</Typography>
+                              <Typography variant="body2" fontWeight={700}>{completed}</Typography>
+                            </Grid>
+                            <Grid item xs={6}>
+                              <Typography variant="caption" sx={{ color: '#94a3b8' }}>Approved</Typography>
+                              <Typography variant="body2" fontWeight={700} sx={{ color: '#22c55e' }}>{approved}</Typography>
+                            </Grid>
+                            <Grid item xs={6}>
+                              <Typography variant="caption" sx={{ color: '#94a3b8' }}>Rejected</Typography>
+                              <Typography variant="body2" fontWeight={700} sx={{ color: '#f87171' }}>{rejected}</Typography>
+                            </Grid>
+                          </Grid>
+                        </Box>
+
+                        <Box sx={{ mt: 1.5, p: 1.5, borderRadius: 2, border: '1px solid #334155', bgcolor: '#0b1220' }}>
+                          <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mb: 1 }}>REVIEWER VOTES (ALL ITEMS)</Typography>
+                          <Grid container spacing={1}>
+                            <Grid item xs={6}>
+                              <Typography variant="caption" sx={{ color: '#94a3b8' }}>Approve Votes</Typography>
+                              <Typography variant="body2" fontWeight={700} sx={{ color: '#22c55e' }}>{approveVotes}</Typography>
+                            </Grid>
+                            <Grid item xs={6}>
+                              <Typography variant="caption" sx={{ color: '#94a3b8' }}>Reject Votes</Typography>
+                              <Typography variant="body2" fontWeight={700} sx={{ color: '#f87171' }}>{rejectVotes}</Typography>
+                            </Grid>
+                            <Grid item xs={6}>
+                              <Typography variant="caption" sx={{ color: '#94a3b8' }}>Decided Votes</Typography>
+                              <Typography variant="body2" fontWeight={700}>{decidedVotes}</Typography>
+                            </Grid>
+                            <Grid item xs={6}>
+                              <Typography variant="caption" sx={{ color: '#94a3b8' }}>Pending Votes</Typography>
+                              <Typography variant="body2" fontWeight={700} sx={{ color: '#f59e0b' }}>{pendingVotes}</Typography>
+                            </Grid>
+                            <Grid item xs={12}>
+                              <Typography variant="caption" sx={{ color: '#94a3b8' }}>Total Votes</Typography>
+                              <Typography variant="body2" fontWeight={700}>{totalVotes}</Typography>
+                            </Grid>
+                          </Grid>
+                        </Box>
                       </CardContent>
 
                       <CardActions sx={{ px: 2, pb: 2, pt: 0, justifyContent: 'space-between' }}>
@@ -315,8 +410,18 @@ const Datasets = () => {
                         >
                           {dataset.projectId ? 'View Project' : 'No Project'}
                         </Button>
-                        <Button size="small" startIcon={<DownloadIcon />} onClick={() => handleExportFinal(dataset._id)} sx={{ textTransform: 'none', fontWeight: 700, color: '#34d399' }}>
-                          Export Final
+                        <Button
+                          size="small"
+                          startIcon={<DownloadIcon />}
+                          onClick={() => handleExportFinal(dataset._id)}
+                          disabled={!canExport}
+                          sx={{
+                            textTransform: 'none',
+                            fontWeight: 700,
+                            color: canExport ? '#34d399' : '#64748b',
+                          }}
+                        >
+                          {canExport ? 'Export Final' : 'No Approved Items'}
                         </Button>
                       </CardActions>
                     </Card>

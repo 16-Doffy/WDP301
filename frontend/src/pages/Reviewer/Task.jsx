@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
 import ImageViewer from '../../components/ImageViewer';
+import AudioAnnotator from '../../components/AudioAnnotator';
 import { useAuth } from '../../context/AuthContext';
 
 const ReviewerTask = () => {
@@ -29,8 +30,10 @@ const ReviewerTask = () => {
   const [sentenceStatus, setSentenceStatus] = useState({});
   const [processingSentences, setProcessingSentences] = useState({});
   const [activeSentenceIdx, setActiveSentenceIdx] = useState(0);
+  const [localReviewed, setLocalReviewed] = useState(false);
 
   useEffect(() => {
+    setLocalReviewed(false);
     fetchTask();
     fetchAllTasks();
   }, [id]);
@@ -270,7 +273,21 @@ const ReviewerTask = () => {
 
   const hasMyDecision = myReviewerEntry && myReviewerEntry.status !== 'pending';
   const isFinalized = task?.status === 'approved' || task?.status === 'rejected';
-  const isReviewed = isFinalized || hasMyDecision;
+  const isReviewed = localReviewed || isFinalized || hasMyDecision;
+
+  const goToNextPendingTask = useCallback(() => {
+    if (!Array.isArray(pendingTasks) || pendingTasks.length === 0) {
+      navigate('/reviewer/dashboard');
+      return;
+    }
+
+    const remaining = pendingTasks.filter((t) => t._id !== id);
+    if (remaining.length > 0) {
+      navigate(`/reviewer/tasks/${remaining[0]._id}`);
+    } else {
+      navigate('/reviewer/dashboard');
+    }
+  }, [pendingTasks, id, navigate]);
 
   const handleApprove = useCallback(async () => {
     // Check if task has already been reviewed
@@ -297,9 +314,14 @@ const ReviewerTask = () => {
       }, { timeout: 15000 });
 
       if (response.status === 200 || response.status === 201) {
+        setLocalReviewed(true);
         alert('Đã phê duyệt task thành công!');
-        await fetchTask();
         await fetchAllTasks();
+        if (autoNext) {
+          goToNextPendingTask();
+        } else {
+          await fetchTask();
+        }
       }
     } catch (error) {
       const msg = error.response?.data?.message || error.message || 'Lỗi khi phê duyệt';
@@ -308,7 +330,7 @@ const ReviewerTask = () => {
     } finally {
       setProcessing(false);
     }
-  }, [id, task, reviewComments, reviewNotes, isReviewed]);
+  }, [id, reviewComments, reviewNotes, isReviewed, autoNext, fetchAllTasks, fetchTask, goToNextPendingTask]);
 
   const handleReject = useCallback(async () => {
     // Check if task has already been reviewed
@@ -368,11 +390,14 @@ const ReviewerTask = () => {
             overallComment: reviewComments.trim(),
           },
         });
+        setLocalReviewed(true);
         alert('Đã từ chối task thành công!');
-        // Refresh task data and tasks list to update statistics
-        await fetchTask();
         await fetchAllTasks();
-        // Stay on current page instead of navigating away
+        if (autoNext) {
+          goToNextPendingTask();
+        } else {
+          await fetchTask();
+        }
       } catch (error) {
         const errorMessage = error.response?.data?.message || error.response?.data?.errors?.[0]?.msg || 'Lỗi khi từ chối task';
         alert(errorMessage);
@@ -381,17 +406,23 @@ const ReviewerTask = () => {
         setProcessing(false);
       }
     }
-  }, [id, task, reviewComments, reviewNotes, selectedIssues, issueOptions, issueTargets, issueComments, datasetType]);
+  }, [id, task, reviewComments, reviewNotes, selectedIssues, issueOptions, issueTargets, issueComments, datasetType, autoNext, fetchAllTasks, fetchTask, goToNextPendingTask]);
+
+  const goToNextPendingTask = useCallback(() => {
+    const idx = pendingTasks.findIndex((t) => t._id === id);
+    if (idx >= 0 && idx < pendingTasks.length - 1) {
+      navigate(`/reviewer/tasks/${pendingTasks[idx + 1]._id}`);
+      return;
+    }
+    if (pendingTasks.length > 0 && idx === -1) {
+      navigate(`/reviewer/tasks/${pendingTasks[0]._id}`);
+      return;
+    }
+    navigate('/reviewer/dashboard');
+  }, [pendingTasks, id, navigate]);
 
   const handleSkip = () => {
-    if (pendingTasks.length > 1) {
-      const currentIndex = pendingTasks.findIndex(t => t._id === id);
-      if (currentIndex < pendingTasks.length - 1) {
-        navigate(`/reviewer/tasks/${pendingTasks[currentIndex + 1]._id}`);
-      } else if (currentIndex > 0) {
-        navigate(`/reviewer/tasks/${pendingTasks[currentIndex - 1]._id}`);
-      }
-    }
+    goToNextPendingTask();
   };
 
 
@@ -787,13 +818,23 @@ const ReviewerTask = () => {
                   </>
                 ) : task?.dataItem?.mimeType?.startsWith('audio/') ? (
                   (() => {
-                    // Support both generic label/note and potential segments
-                    const segments = task?.labels?.segments || [];
-                    const hasSegments = segments.length > 0;
+                    // Normalize audio segments from annotator output
+                    const normalizedSegments = (task?.labels?.segments || [])
+                      .map((seg, index) => ({
+                        id: seg?.id || `segment_${index + 1}`,
+                        start: Number(seg?.start ?? seg?.startTime ?? 0),
+                        end: Number(seg?.end ?? seg?.endTime ?? 0),
+                        label: seg?.label || 'unknown',
+                        note: seg?.note || '',
+                      }))
+                      .filter((seg) => Number.isFinite(seg.start) && Number.isFinite(seg.end) && seg.end > seg.start);
+
+                    const hasSegments = normalizedSegments.length > 0;
 
                     // If no segments, create a pseudo-segment from the main label/note
-                    const items = hasSegments ? segments : [
+                    const items = hasSegments ? normalizedSegments : [
                       {
+                        id: 'segment_global',
                         label: task.labels?.label || 'Chưa gán nhãn',
                         note: task.labels?.note || '',
                         isGlobal: true
@@ -810,10 +851,10 @@ const ReviewerTask = () => {
 
                     return (
                       <div className="flex flex-col h-full min-h-[450px]">
-                        {/* Audio Player Section */}
+                        {/* Audio Player + Annotator Segments */}
                         <div className={`p-6 mb-6 rounded-3xl border-2 transition-all ${darkMode ? 'bg-gray-800/40 border-gray-700' : 'bg-gray-50 border-gray-200'
                           }`}>
-                          <div className="flex items-center gap-6">
+                          <div className="flex items-center gap-6 mb-5">
                             <div className={`w-16 h-16 rounded-full flex items-center justify-center text-3xl shadow-lg border-4 ${darkMode ? 'bg-gray-900 border-gray-700 text-blue-400' : 'bg-white border-white text-blue-600'
                               }`}>
                               🎧
@@ -821,9 +862,15 @@ const ReviewerTask = () => {
                             <div className="flex-1">
                               <p className={`font-black truncate ${darkMode ? 'text-white' : 'text-gray-900'}`}>{task.dataItem.filename}</p>
                               <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest mt-1">Audio Source • {task.dataItem.mimeType}</p>
-                              <audio controls src={audioUrl} className="w-full h-10 mt-4 filter drop-shadow-sm" />
                             </div>
                           </div>
+
+                          <AudioAnnotator
+                            audioUrl={audioUrl}
+                            labelSet={task?.projectId?.labelSet || []}
+                            initialSegments={normalizedSegments}
+                            readOnly
+                          />
                         </div>
 
                         {/* Annotation Review Unit */}

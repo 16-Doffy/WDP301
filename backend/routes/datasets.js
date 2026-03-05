@@ -411,9 +411,28 @@ router.get('/:id/status', auth, authorize('manager', 'admin'), async (req, res) 
       return res.status(403).json({ message: 'Not authorized' });
     }
 
-    const tasks = await Task.find({ datasetId: dataset._id }).select('status dataItem labels reviewedAt');
+    const tasks = await Task.find({ datasetId: dataset._id }).select('status dataItem labels reviewedAt reviewers');
+
     const approvedTasks = tasks.filter((t) => t.status === 'approved');
-    const pendingTasks = tasks.filter((t) => ['assigned', 'in_progress', 'submitted', 'rejected', 'revised'].includes(t.status));
+    const rejectedTasks = tasks.filter((t) => t.status === 'rejected');
+    const submittedTasks = tasks.filter((t) => t.status === 'submitted');
+    const pendingAnnotationTasks = tasks.filter((t) => ['assigned', 'in_progress', 'completed'].includes(t.status));
+    const returnedToAnnotatorTasks = tasks.filter((t) => t.status === 'revised');
+
+    const completedTasksCount = approvedTasks.length + rejectedTasks.length;
+
+    const voteSummary = tasks.reduce(
+      (acc, task) => {
+        const reviewers = Array.isArray(task.reviewers) ? task.reviewers : [];
+        reviewers.forEach((r) => {
+          if (r.status === 'approved') acc.approveVotes += 1;
+          else if (r.status === 'rejected') acc.rejectVotes += 1;
+          else acc.pendingVotes += 1;
+        });
+        return acc;
+      },
+      { approveVotes: 0, rejectVotes: 0, pendingVotes: 0 }
+    );
 
     const finalItems = approvedTasks.map((t) => ({
       taskId: t._id,
@@ -422,15 +441,37 @@ router.get('/:id/status', auth, authorize('manager', 'admin'), async (req, res) 
       reviewedAt: t.reviewedAt,
     }));
 
+    const totalRawItems = dataset.totalItems || dataset.files?.length || 0;
+    const baseCount = totalRawItems > 0 ? totalRawItems : tasks.length;
+    const lifecycleRate = baseCount > 0 ? Number(((completedTasksCount / baseCount) * 100).toFixed(2)) : 0;
+    const finalRate = baseCount > 0 ? Number(((finalItems.length / baseCount) * 100).toFixed(2)) : 0;
+
     res.json({
       datasetId: dataset._id,
       datasetName: dataset.name,
       type: dataset.type,
-      totalRawItems: dataset.totalItems || dataset.files?.length || 0,
+      totalRawItems,
       totalTasks: tasks.length,
       totalFinalItems: finalItems.length,
-      totalPendingItems: pendingTasks.length,
-      completionRate: tasks.length > 0 ? Number(((finalItems.length / tasks.length) * 100).toFixed(2)) : 0,
+      totalPendingItems: pendingAnnotationTasks.length + submittedTasks.length + returnedToAnnotatorTasks.length,
+      counts: {
+        pendingAnnotation: pendingAnnotationTasks.length,
+        submitted: submittedTasks.length,
+        inReview: submittedTasks.length,
+        returnedToAnnotator: returnedToAnnotatorTasks.length,
+        completed: completedTasksCount,
+        approved: approvedTasks.length,
+        rejected: rejectedTasks.length,
+        final: finalItems.length,
+      },
+      lifecycleRate,
+      finalRate,
+      completionRate: finalRate,
+      votes: {
+        ...voteSummary,
+        decidedVotes: voteSummary.approveVotes + voteSummary.rejectVotes,
+        totalVotes: voteSummary.approveVotes + voteSummary.rejectVotes + voteSummary.pendingVotes,
+      },
       finalItems,
     });
   } catch (error) {
