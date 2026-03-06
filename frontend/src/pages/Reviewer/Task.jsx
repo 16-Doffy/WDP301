@@ -350,6 +350,12 @@ const ReviewerTask = () => {
     ? Math.round(((currentTaskIndex + 1) / pendingTasks.length) * 100)
     : 0;
 
+  const isTextTask = task?.dataItem?.mimeType?.startsWith('text/') || task?.dataItem?.text;
+  const rawText = task?.dataItem?.text || task?.dataItem?.content || '';
+  const annotatedItems = isTextTask
+    ? (task?.labels?.spans || task?.labels?.sentences || (rawText ? splitSentences(rawText) : []))
+    : [];
+
   const getTimeAgo = (date) => {
     const now = new Date();
     const diffInSeconds = Math.floor((now - date) / 1000);
@@ -493,55 +499,57 @@ const ReviewerTask = () => {
       {/* Main Content Area */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Sidebar - Detected Objects with Smart Highlight */}
-        <div className={`w-80 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white/60 backdrop-blur-lg border-gray-200'} border-r flex flex-col`}>
-          <div className={`p-4 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
-            <h3 className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-              DETECTED OBJECTS
-            </h3>
-            <p className={`text-xs mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-              {task?.labels?.objects?.length || 0} TOTAL
-            </p>
-          </div>
-          <div className="flex-1 overflow-y-auto p-4 space-y-2">
-            {task?.labels?.objects?.map((obj, idx) => {
-              const labelInfo = task?.projectId?.labelSet?.find(l => l.name === obj.label);
-              const isHovered = hoveredObjectIndex === idx;
-              return (
-                <div
-                  key={idx}
-                  id={`object-${idx}`}
-                  onMouseEnter={() => setHoveredObjectIndex(idx)}
-                  onMouseLeave={() => setHoveredObjectIndex(null)}
-                  className={`p-3 rounded-lg cursor-pointer transition-all duration-200 ${isHovered
-                    ? darkMode
-                      ? 'bg-emerald-600/30 border-2 border-emerald-400 shadow-lg shadow-emerald-500/50'
-                      : 'bg-emerald-100 border-2 border-emerald-400 shadow-lg'
-                    : darkMode
-                      ? 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
-                      : 'bg-white/40 border border-gray-300/50 hover:bg-white/60'
-                    }`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                      {obj.label || `OBJECT_${idx + 1}`}
-                    </span>
-                    <span
-                      className={`text-xs px-2 py-0.5 rounded ${darkMode ? 'bg-emerald-900/50 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}
-                      title="Độ tin cậy của nhãn này (confidence score)"
-                    >
-                      {obj.confidence ? `${(obj.confidence * 100).toFixed(1)}%` : 'N/A'}
-                    </span>
-                  </div>
-                  {obj.answer && (
-                    <div className={`text-xs mt-1 ${darkMode ? 'text-emerald-300' : 'text-emerald-600'}`}>
-                      ✓ Has answers
+        {!isTextTask && (
+          <div className={`w-80 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white/60 backdrop-blur-lg border-gray-200'} border-r flex flex-col`}>
+            <div className={`p-4 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+              <h3 className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                DETECTED OBJECTS
+              </h3>
+              <p className={`text-xs mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                {task?.labels?.objects?.length || 0} TOTAL
+              </p>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-2">
+              {task?.labels?.objects?.map((obj, idx) => {
+                const labelInfo = task?.projectId?.labelSet?.find(l => l.name === obj.label);
+                const isHovered = hoveredObjectIndex === idx;
+                return (
+                  <div
+                    key={idx}
+                    id={`object-${idx}`}
+                    onMouseEnter={() => setHoveredObjectIndex(idx)}
+                    onMouseLeave={() => setHoveredObjectIndex(null)}
+                    className={`p-3 rounded-lg cursor-pointer transition-all duration-200 ${isHovered
+                      ? darkMode
+                        ? 'bg-emerald-600/30 border-2 border-emerald-400 shadow-lg shadow-emerald-500/50'
+                        : 'bg-emerald-100 border-2 border-emerald-400 shadow-lg'
+                      : darkMode
+                        ? 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
+                        : 'bg-white/40 border border-gray-300/50 hover:bg-white/60'
+                      }`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                        {obj.label || `OBJECT_${idx + 1}`}
+                      </span>
+                      <span
+                        className={`text-xs px-2 py-0.5 rounded ${darkMode ? 'bg-emerald-900/50 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}
+                        title="Độ tin cậy của nhãn này (confidence score)"
+                      >
+                        {obj.confidence ? `${(obj.confidence * 100).toFixed(1)}%` : 'N/A'}
+                      </span>
                     </div>
-                  )}
-                </div>
-              );
-            })}
+                    {obj.answer && (
+                      <div className={`text-xs mt-1 ${darkMode ? 'text-emerald-300' : 'text-emerald-600'}`}>
+                        ✓ Has answers
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Center - Image Viewer with Smart Highlight */}
         <div className="flex-1 flex flex-col overflow-hidden">
@@ -1056,6 +1064,71 @@ const ReviewerTask = () => {
         {/* Right Sidebar - Quality Metrics & Error Classification */}
         <div className={`w-96 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white/60 backdrop-blur-lg border-gray-200/50'} border-l overflow-y-auto`}>
           <div className="p-6 space-y-6">
+            {/* Text Annotations List - Only for Text tasks */}
+            {isTextTask && annotatedItems.length > 0 && (
+              <div className="mb-6 animate-fadeIn">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                    TEXT ANNOTATIONS
+                  </h3>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${darkMode ? 'bg-emerald-900/40 text-emerald-400 border border-emerald-500/30' : 'bg-emerald-100 text-emerald-700 border border-emerald-200'}`}>
+                    {annotatedItems.length} ITEMS
+                  </span>
+                </div>
+                <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                  {annotatedItems.map((item, idx) => {
+                    const isActive = activeSentenceIdx === idx;
+                    const itemText = typeof item === 'string' ? item : (item.text || item.sentence || '');
+                    const itemLabel = typeof item === 'string' ? 'Unlabeled' : (item.label || 'No Label');
+                    const key = `${id}-${idx}`;
+                    const status = sentenceStatus[key];
+
+                    return (
+                      <div
+                        key={idx}
+                        onClick={() => setActiveSentenceIdx(idx)}
+                        className={`group p-4 rounded-2xl cursor-pointer transition-all duration-300 border-2 ${isActive
+                          ? darkMode
+                            ? 'bg-emerald-600/20 border-emerald-500 shadow-lg shadow-emerald-500/20'
+                            : 'bg-emerald-50 border-emerald-400 shadow-md'
+                          : darkMode
+                            ? 'bg-gray-700/30 border-gray-700 hover:border-gray-600 hover:bg-gray-700/50'
+                            : 'bg-white/50 border-gray-100 hover:border-gray-200 hover:bg-white/80 shadow-sm'
+                          }`}
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className={`w-6 h-6 flex items-center justify-center rounded-full text-[10px] font-black ${isActive ? 'bg-emerald-500 text-white' : (darkMode ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-500')
+                              }`}>
+                              {idx + 1}
+                            </span>
+                            {status && (
+                              <span className={`text-[8px] font-black px-1.5 py-0.5 rounded-full uppercase ${status === 'approved' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
+                                }`}>
+                                {status === 'approved' ? '✓' : '✕'}
+                              </span>
+                            )}
+                          </div>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border ${itemLabel.toLowerCase().includes('tích cực') || itemLabel.toLowerCase().includes('positive')
+                            ? 'bg-green-100 text-green-700 border-green-200'
+                            : itemLabel.toLowerCase().includes('tiêu cực') || itemLabel.toLowerCase().includes('negative')
+                              ? 'bg-red-100 text-red-700 border-red-200'
+                              : 'bg-indigo-100 text-indigo-700 border-indigo-200'
+                            }`}>
+                            {itemLabel}
+                          </span>
+                        </div>
+                        <p className={`text-xs ml-8 leading-relaxed line-clamp-2 ${isActive ? (darkMode ? 'text-white font-medium' : 'text-gray-900 font-medium') : (darkMode ? 'text-gray-400' : 'text-gray-600')
+                          }`}>
+                          {itemText}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className={`h-px w-full mt-6 ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}></div>
+              </div>
+            )}
             {/* Quality Metrics - Circular Progress */}
             <div>
               <div className="flex items-center justify-between mb-4">
