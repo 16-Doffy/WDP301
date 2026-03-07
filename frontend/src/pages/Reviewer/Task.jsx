@@ -476,591 +476,619 @@ const ReviewerTask = () => {
 
   return (
     <div className={`flex-1 flex flex-col overflow-hidden ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50'}`}>
-      {/* Top Header - Dynamic Style */}
-      <div className={`${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white/80 backdrop-blur-lg border-gray-200'} border-b px-6 py-4 flex items-center justify-between z-10`}>
-        <div className="flex items-center gap-4">
-          <h1 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-            {darkMode ? '🔍 Premium Dark Audit Station' : '⚡ Review task'}
-          </h1>
-          <span className={`px-3 py-1 rounded-full text-xs font-semibold ${darkMode ? 'bg-emerald-900/50 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}>
-            {pendingTasks.length} PENDING
-          </span>
+      {/* Top Header - Glassmorphism Design */}
+      <div className={`${darkMode ? 'bg-gray-800/90 border-gray-700' : 'bg-white/90 border-gray-200'} backdrop-blur-xl border-b px-6 py-3 flex items-center justify-between z-20 shadow-sm`}>
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-3">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl shadow-lg ${darkMode ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-emerald-500 text-white'}`}>
+              {task?.dataItem?.mimeType?.startsWith('audio/') ? '🎵' : task?.dataItem?.mimeType?.startsWith('text/') ? '📝' : '🖼️'}
+            </div>
+            <div>
+              <h1 className={`text-xl font-bold tracking-tight ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                Audit Station <span className="text-emerald-500">v2.0</span>
+              </h1>
+              <p className={`text-[10px] font-bold uppercase tracking-[0.2em] ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                {task?.projectId?.name || 'Project Detail'}
+              </p>
+            </div>
+          </div>
+
+          <div className="h-8 w-px bg-gray-200 dark:bg-gray-700 mx-2 hidden md:block"></div>
+
+          <div className="hidden lg:flex items-center gap-4">
+            <div className="flex flex-col">
+              <span className={`text-[10px] font-bold uppercase ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>Status</span>
+              <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider inline-block text-center ${task?.status === 'approved' ? 'bg-emerald-500/10 text-emerald-500' :
+                task?.status === 'rejected' ? 'bg-rose-500/10 text-rose-500' :
+                  'bg-amber-500/10 text-amber-500'
+                }`}>
+                {task?.status || 'Pending'}
+              </span>
+            </div>
+          </div>
         </div>
-        <div className="flex items-center gap-3">
+
+        <div className="flex items-center gap-4">
+          <div className={`hidden md:flex items-center gap-2 px-3 py-1.5 rounded-full ${darkMode ? 'bg-gray-700/50' : 'bg-gray-100'}`}>
+            <span className={`w-2 h-2 rounded-full animate-pulse bg-emerald-500`}></span>
+            <span className={`text-xs font-bold ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+              {pendingTasks.length} TASKS IN QUEUE
+            </span>
+          </div>
+
           <button
             onClick={() => setDarkMode(!darkMode)}
-            className={`p-2 rounded-lg transition-all ${darkMode ? 'bg-gray-700 text-yellow-300 hover:bg-gray-600' : 'bg-white/60 text-gray-700 hover:bg-white/80'}`}
+            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${darkMode
+              ? 'bg-gray-700 text-yellow-300 hover:bg-gray-600 shadow-lg shadow-black/20'
+              : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-200 shadow-sm'
+              }`}
           >
             {darkMode ? '☀️' : '🌙'}
+          </button>
+
+          <button
+            onClick={() => navigate('/reviewer/dashboard')}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${darkMode
+              ? 'bg-gray-700 text-white hover:bg-gray-600'
+              : 'bg-gray-900 text-white hover:bg-gray-800 shadow-lg shadow-gray-900/20'
+              }`}
+          >
+            Dashboard
           </button>
         </div>
       </div>
 
       {/* Main Content Area */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Left Sidebar - Detected Objects with Smart Highlight */}
-        {!isTextTask && (
-          <div className={`w-80 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white/60 backdrop-blur-lg border-gray-200'} border-r flex flex-col`}>
-            <div className={`p-4 border-b ${darkMode ? 'border-gray-700' : 'border-gray-200'}`}>
-              <h3 className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                DETECTED OBJECTS
+        {/* Left Sidebar - Task Navigation & Objects */}
+        <div className={`w-80 ${darkMode ? 'bg-gray-850 border-gray-700' : 'bg-white border-gray-200'} border-r flex flex-col z-10`}>
+          {/* Review Queue Tab-like header */}
+          <div className={`p-4 border-b ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className={`text-xs font-black uppercase tracking-[0.2em] ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                Review Queue
               </h3>
-              <p className={`text-xs mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                {task?.labels?.objects?.length || 0} TOTAL
-              </p>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${darkMode ? 'bg-emerald-500/10 text-emerald-400' : 'bg-emerald-100 text-emerald-700'}`}>
+                {pendingTasks.length} LEFT
+              </span>
             </div>
-            <div className="flex-1 overflow-y-auto p-4 space-y-2">
-              {task?.labels?.objects?.map((obj, idx) => {
-                const labelInfo = task?.projectId?.labelSet?.find(l => l.name === obj.label);
-                const isHovered = hoveredObjectIndex === idx;
+
+            <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1 thin-scrollbar">
+              {pendingTasks.map((pt) => {
+                const isActive = pt._id === id;
                 return (
-                  <div
-                    key={idx}
-                    id={`object-${idx}`}
-                    onMouseEnter={() => setHoveredObjectIndex(idx)}
-                    onMouseLeave={() => setHoveredObjectIndex(null)}
-                    className={`p-3 rounded-lg cursor-pointer transition-all duration-200 ${isHovered
-                      ? darkMode
-                        ? 'bg-emerald-600/30 border-2 border-emerald-400 shadow-lg shadow-emerald-500/50'
-                        : 'bg-emerald-100 border-2 border-emerald-400 shadow-lg'
-                      : darkMode
-                        ? 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
-                        : 'bg-white/40 border border-gray-300/50 hover:bg-white/60'
+                  <button
+                    key={pt._id}
+                    onClick={() => navigate(`/reviewer/tasks/${pt._id}`)}
+                    className={`w-full flex items-center gap-3 p-2.5 rounded-xl transition-all ${isActive
+                      ? (darkMode ? 'bg-emerald-500/20 border border-emerald-500/30' : 'bg-emerald-50 border border-emerald-200 shadow-sm')
+                      : (darkMode ? 'hover:bg-gray-700/50' : 'hover:bg-gray-50 border border-transparent')
                       }`}
                   >
-                    <div className="flex items-center justify-between mb-2">
-                      <span className={`font-bold text-sm ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                        {obj.label || `OBJECT_${idx + 1}`}
-                      </span>
-                      <span
-                        className={`text-xs px-2 py-0.5 rounded ${darkMode ? 'bg-emerald-900/50 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}
-                        title="Độ tin cậy của nhãn này (confidence score)"
-                      >
-                        {obj.confidence ? `${(obj.confidence * 100).toFixed(1)}%` : 'N/A'}
-                      </span>
+                    <div className={`w-10 h-10 rounded-lg flex-shrink-0 overflow-hidden ${darkMode ? 'bg-gray-700' : 'bg-gray-100'} flex items-center justify-center text-lg`}>
+                      {pt.dataItem?.mimeType?.startsWith('image/') ? (
+                        <img src={`${API_URL}/${pt.dataItem?.path}`} className="w-full h-full object-cover" alt="" />
+                      ) : pt.dataItem?.mimeType?.startsWith('audio/') ? '🎵' : '📝'}
                     </div>
-                    {obj.answer && (
-                      <div className={`text-xs mt-1 ${darkMode ? 'text-emerald-300' : 'text-emerald-600'}`}>
-                        ✓ Has answers
-                      </div>
-                    )}
-                  </div>
+                    <div className="text-left min-w-0">
+                      <p className={`text-[11px] font-bold truncate ${isActive ? (darkMode ? 'text-emerald-400' : 'text-emerald-700') : (darkMode ? 'text-gray-200' : 'text-gray-700')}`}>
+                        TSK-{pt._id?.substring(pt._id.length - 6).toUpperCase()}
+                      </p>
+                      <p className={`text-[10px] truncate ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                        {pt.submittedAt ? getTimeAgo(new Date(pt.submittedAt)) : 'New'}
+                      </p>
+                    </div>
+                  </button>
                 );
               })}
             </div>
           </div>
-        )}
+
+          <div className={`p-4 flex-1 flex flex-col min-h-0`}>
+            <h3 className={`text-xs font-black uppercase tracking-[0.2em] mb-4 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+              Components / Labels
+            </h3>
+            <div className="flex-1 overflow-y-auto pr-1 thin-scrollbar space-y-2">
+              {task?.labels?.objects?.length > 0 ? (
+                task.labels.objects.map((obj, idx) => (
+                  <div
+                    key={idx}
+                    onMouseEnter={() => setHoveredObjectIndex(idx)}
+                    onMouseLeave={() => setHoveredObjectIndex(null)}
+                    className={`p-3 rounded-xl cursor-default transition-all ${hoveredObjectIndex === idx
+                      ? (darkMode ? 'bg-emerald-500/10 border border-emerald-500/30 ring-1 ring-emerald-500/20' : 'bg-emerald-50 border border-emerald-200 shadow-md')
+                      : (darkMode ? 'bg-gray-800/50 border border-gray-700' : 'bg-white border border-gray-100 shadow-sm')
+                      }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className={`text-[11px] font-black uppercase ${darkMode ? 'text-gray-200' : 'text-gray-700'}`}>
+                        {obj.label || `OBJECT_${idx + 1}`}
+                      </span>
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${darkMode ? 'bg-gray-700 text-gray-400' : 'bg-gray-100 text-gray-500'}`}>
+                        CONF: {obj.confidence ? Math.round(obj.confidence * 100) : '—'}%
+                      </span>
+                    </div>
+                    {obj.answer && <div className="mt-1 flex items-center gap-1 text-[9px] text-emerald-500 font-bold uppercase"><span className="w-1 h-1 rounded-full bg-emerald-500"></span> Verified</div>}
+                  </div>
+                ))
+              ) : (
+                <div className={`text-center py-10 ${darkMode ? 'text-gray-600' : 'text-gray-300'}`}>
+                  <p className="text-2xl mb-2">🔭</p>
+                  <p className="text-[10px] font-bold uppercase tracking-widest">No objects found</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
 
         {/* Center - Image Viewer with Smart Highlight */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <div className={`flex-1 overflow-y-auto p-6 ${darkMode ? 'bg-gray-900' : ''}`}>
-            {/* Status Banner - Show when task is already reviewed */}
+        <div className="flex-1 flex flex-col overflow-hidden relative">
+          <div className={`flex-1 overflow-y-auto p-8 ${darkMode ? 'bg-gray-950' : 'bg-gray-50/30'}`}>
+            {/* Status Banner - Ultra Slim & Integrated */}
             {isReviewed && (
-              <div className={`mb-4 p-4 rounded-xl border-2 ${task?.status === 'approved'
-                ? darkMode
-                  ? 'bg-emerald-900/30 border-emerald-500 text-emerald-300'
-                  : 'bg-emerald-100 border-emerald-500 text-emerald-800'
-                : darkMode
-                  ? 'bg-red-900/30 border-red-500 text-red-300'
-                  : 'bg-red-100 border-red-500 text-red-800'
+              <div className={`mb-8 p-6 rounded-[2rem] border-2 transition-all shadow-2xl ${task?.status === 'approved'
+                ? (darkMode ? 'bg-emerald-500/5 border-emerald-500/20 shadow-emerald-500/5' : 'bg-emerald-50 border-emerald-200 shadow-emerald-500/10')
+                : (darkMode ? 'bg-rose-500/5 border-rose-500/20 shadow-rose-500/5' : 'bg-rose-50 border-rose-200 shadow-rose-500/10')
                 }`}>
-                <div className="flex items-center gap-2">
-                  <span className="text-2xl">
+                <div className="flex items-start gap-6">
+                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl shadow-inner ${task?.status === 'approved'
+                    ? 'bg-emerald-500 text-white shadow-emerald-400/50'
+                    : 'bg-rose-500 text-white shadow-rose-400/50'
+                    }`}>
                     {task?.status === 'approved' ? '✓' : '✕'}
-                  </span>
+                  </div>
                   <div className="flex-1">
-                    <h3 className="font-bold text-lg">
-                      {task?.status === 'approved' ? 'ĐÃ PHÊ DUYỆT' : 'ĐÃ TỪ CHỐI'}
-                    </h3>
-                    <p className="text-sm mt-1">
-                      Task này đã được đánh giá bởi bạn vào {task?.reviewedAt ? new Date(task.reviewedAt).toLocaleString('vi-VN') : 'trước đó'}.
-                      Mỗi task chỉ có thể được đánh giá 1 lần.
+                    <div className="flex items-center gap-3 mb-1">
+                      <h3 className={`font-black text-xl tracking-tight ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                        {task?.status === 'approved' ? 'AUDIT APPROVED' : 'AUDIT REJECTED'}
+                      </h3>
+                      <span className={`px-3 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest ${darkMode ? 'bg-gray-800 text-gray-400' : 'bg-white text-gray-500 border border-gray-200'
+                        }`}>
+                        Official Record
+                      </span>
+                    </div>
+                    <p className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                      Verified on {task?.reviewedAt ? new Date(task.reviewedAt).toLocaleString('vi-VN') : '—'} by Reviewer
                     </p>
+
                     {task?.reviewComments && (
-                      <p className="text-sm mt-2 opacity-90">
-                        <strong>Nhận xét của bạn:</strong> {task.reviewComments}
-                      </p>
+                      <div className={`mt-4 p-4 rounded-2xl border ${darkMode ? 'bg-gray-900/50 border-gray-800 text-gray-300' : 'bg-white border-gray-100 text-gray-700 shadow-sm'
+                        }`}>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-emerald-500 mb-2">Auditor's Note</p>
+                        <p className="text-sm font-medium italic">"{task.reviewComments}"</p>
+                      </div>
                     )}
                   </div>
                 </div>
               </div>
             )}
 
-            <div className="mb-4">
-              <h2 className={`text-lg font-bold mb-1 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                CURRENTLY AUDITING
-              </h2>
-              <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                {task?.dataItem?.filename || 'Image'}
-              </p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-6">
-              {/* Review Queue (moved down here to replace comparison section) */}
-              <div className={`${darkMode ? 'bg-gray-800/80 border-gray-700' : 'bg-white/60 backdrop-blur-lg border-gray-200/50'} rounded-2xl border p-6 shadow-xl`}>
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                    REVIEW QUEUE
-                  </h3>
-                  <span className={`px-3 py-1 rounded-full text-xs font-semibold ${darkMode ? 'bg-emerald-900/50 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}>
-                    {pendingTasks.length} PENDING
-                  </span>
+            <div className="max-w-5xl mx-auto space-y-8">
+              <div className="flex items-end justify-between border-b pb-6 dark:border-gray-800">
+                <div>
+                  <h2 className={`text-3xl font-black tracking-tighter mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                    {task?.dataItem?.mimeType?.startsWith('image/') ? 'Image Inspection' :
+                      task?.dataItem?.mimeType?.startsWith('audio/') ? 'Acoustic Analysis' : 'Linguistic Audit'}
+                  </h2>
+                  <p className={`text-xs font-bold uppercase tracking-widest ${darkMode ? 'text-emerald-500' : 'text-emerald-600'}`}>
+                    Source: {task?.dataItem?.filename || 'Untitled Task'} • {task?.dataItem?.mimeType}
+                  </p>
                 </div>
-                <div className="space-y-3">
-                  {pendingTasks.length === 0 ? (
-                    <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                      Không có task nào đang chờ review.
-                    </div>
-                  ) : (
-                    pendingTasks.map((pendingTask) => {
-                      const isActive = pendingTask._id === id;
-                      const timeAgo = pendingTask.submittedAt ? getTimeAgo(new Date(pendingTask.submittedAt)) : '';
-                      return (
-                        <button
-                          key={pendingTask._id}
-                          onClick={() => navigate(`/reviewer/tasks/${pendingTask._id}`)}
-                          className={`w-full text-left rounded-xl p-3 transition-all duration-200 ${isActive
-                            ? darkMode
-                              ? 'bg-emerald-600/30 border-2 border-emerald-400'
-                              : 'bg-emerald-100 border-2 border-emerald-400'
-                            : darkMode
-                              ? 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
-                              : 'bg-white/40 border border-gray-300/50 hover:bg-white/60'
-                            }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            {pendingTask.dataItem?.mimeType?.startsWith('image/') && (
-                              <div className="w-20 h-14 rounded-lg overflow-hidden bg-gray-200 flex-shrink-0">
-                                <img
-                                  src={`${API_URL}/${pendingTask.dataItem?.path}`}
-                                  alt="Task thumbnail"
-                                  className="w-full h-full object-cover"
-                                  onError={(e) => { e.target.style.display = 'none'; }}
-                                />
-                              </div>
-                            )}
-                            <div className="min-w-0">
-                              <div className={`text-xs font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                                TSK-{pendingTask._id?.substring(0, 8).toUpperCase()}
-                              </div>
-                              <div className={`text-xs truncate ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                                {pendingTask.projectId?.name || 'Project'}
-                              </div>
-                              {timeAgo && (
-                                <div className={`text-xs mt-1 ${darkMode ? 'text-gray-500' : 'text-gray-500'}`}>
-                                  {timeAgo}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </button>
-                      );
-                    })
-                  )}
+                <div className="flex gap-4">
+                  <div className="text-right">
+                    <p className={`text-[10px] font-black uppercase tracking-widest ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>Precision</p>
+                    <p className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>{averageConfidence.toFixed(1)}%</p>
+                  </div>
+                  <div className="text-right">
+                    <p className={`text-[10px] font-black uppercase tracking-widest ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>Items</p>
+                    <p className={`text-sm font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>{task?.labels?.objects?.length || 0}</p>
+                  </div>
                 </div>
               </div>
 
-              {/* Annotator Output - Glassmorphism with Neon Glow on Hover */}
-              <div className={`${darkMode ? 'bg-gray-800/80 border-gray-700' : 'bg-white/60 backdrop-blur-lg border-gray-200/50'} rounded-2xl border p-6 shadow-xl`}>
-                <h3 className={`font-bold mb-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                  ANNOTATOR OUTPUT
-                </h3>
-
-                {task?.dataItem?.mimeType?.startsWith('image/') ? (
-                  <>
-                    <div className={`mb-4 rounded-xl overflow-hidden transition-all duration-300 ${hoveredObjectIndex !== null
-                      ? darkMode
-                        ? 'ring-4 ring-emerald-400/50 shadow-2xl shadow-emerald-500/30'
-                        : 'ring-4 ring-emerald-300/50 shadow-2xl'
-                      : ''
-                      }`}>
-                      <ImageViewer
-                        imageUrl={`${API_URL}/${task.dataItem.path}`}
-                        annotations={task?.labels?.objects?.map((obj, idx) => ({
-                          id: idx,
-                          bbox: obj.bbox,
-                          label: obj.label,
-                          index: idx,
-                        })) || []}
-                        labelSet={task?.projectId?.labelSet || []}
-                        reviewNotes={reviewNotes}
-                        readOnly={false}
-                        highlightedIndex={hoveredObjectIndex}
-                        maxHeight="400px"
-                        onAnnotationClick={(ann) => {
-                          setHoveredObjectIndex(ann.index);
-                          const element = document.getElementById(`object-${ann.index}`);
-                          if (element) {
-                            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                          }
-                        }}
-                      />
-                    </div>
-                    <div className="flex items-center gap-4 text-sm">
-                      <span
-                        className={`font-semibold ${darkMode ? 'text-emerald-400' : 'text-emerald-600'}`}
-                        title="Độ tin cậy trung bình của tất cả các đối tượng được gán nhãn trong ảnh này"
-                      >
-                        AVG CONFIDENCE {averageConfidence.toFixed(1)}%
-                      </span>
-                      <span
-                        className={darkMode ? 'text-gray-400' : 'text-gray-600'}
-                        title="Tổng số đối tượng (objects) đã được gán nhãn trong ảnh này"
-                      >
-                        CLASSES {task?.labels?.objects?.length || 0} Total
-                      </span>
-                    </div>
-                  </>
-                ) : task?.dataItem?.mimeType?.startsWith('audio/') ? (
-                  (() => {
-                    // Support both generic label/note and potential segments
-                    const segments = task?.labels?.segments || [];
-                    const hasSegments = segments.length > 0;
-
-                    // If no segments, create a pseudo-segment from the main label/note
-                    const items = hasSegments ? segments : [
-                      {
-                        label: task.labels?.label || 'Chưa gán nhãn',
-                        note: task.labels?.note || '',
-                        isGlobal: true
-                      }
-                    ];
-
-                    const idx = Math.min(activeSentenceIdx, items.length - 1);
-                    const item = items[idx];
-                    const key = `${id}-${idx}`;
-                    const status = sentenceStatus[key];
-                    const isProcessing = !!processingSentences[key];
-                    const feedback = sentenceFeedbacks[key] || '';
-                    const audioUrl = `${API_URL}/${task.dataItem.path}`;
-
-                    return (
-                      <div className="flex flex-col h-full min-h-[450px]">
-                        {/* Audio Player Section */}
-                        <div className={`p-6 mb-6 rounded-3xl border-2 transition-all ${darkMode ? 'bg-gray-800/40 border-gray-700' : 'bg-gray-50 border-gray-200'
+              {/* Main Content Card */}
+              <div className={`${darkMode ? 'bg-gray-900/40 border-gray-800' : 'bg-white border-gray-200'} rounded-[2.5rem] border p-1 shadow-2xl overflow-hidden`}>
+                <div className={`h-full min-h-[500px] flex flex-col`}>
+                  <div className="flex-1 p-8">
+                    {/* Data type specific display */}
+                    {task?.dataItem?.mimeType?.startsWith('image/') ? (
+                      <>
+                        <div className={`mb-4 rounded-xl overflow-hidden transition-all duration-300 ${hoveredObjectIndex !== null
+                          ? darkMode
+                            ? 'ring-4 ring-emerald-400/50 shadow-2xl shadow-emerald-500/30'
+                            : 'ring-4 ring-emerald-300/50 shadow-2xl'
+                          : ''
                           }`}>
-                          <div className="flex items-center gap-6">
-                            <div className={`w-16 h-16 rounded-full flex items-center justify-center text-3xl shadow-lg border-4 ${darkMode ? 'bg-gray-900 border-gray-700 text-blue-400' : 'bg-white border-white text-blue-600'
-                              }`}>
-                              🎧
-                            </div>
-                            <div className="flex-1">
-                              <p className={`font-black truncate ${darkMode ? 'text-white' : 'text-gray-900'}`}>{task.dataItem.filename}</p>
-                              <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest mt-1">Audio Source • {task.dataItem.mimeType}</p>
-                              <audio controls src={audioUrl} className="w-full h-10 mt-4 filter drop-shadow-sm" />
-                            </div>
-                          </div>
+                          <ImageViewer
+                            imageUrl={`${API_URL}/${task.dataItem.path}`}
+                            annotations={task?.labels?.objects?.map((obj, idx) => ({
+                              id: idx,
+                              bbox: obj.bbox,
+                              label: obj.label,
+                              index: idx,
+                            })) || []}
+                            labelSet={task?.projectId?.labelSet || []}
+                            reviewNotes={reviewNotes}
+                            readOnly={false}
+                            highlightedIndex={hoveredObjectIndex}
+                            maxHeight="400px"
+                            onAnnotationClick={(ann) => {
+                              setHoveredObjectIndex(ann.index);
+                              const element = document.getElementById(`object-${ann.index}`);
+                              if (element) {
+                                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                              }
+                            }}
+                          />
                         </div>
-
-                        {/* Annotation Review Unit */}
-                        <div className="flex-1 flex flex-col">
-                          <div className="flex items-center justify-between mb-4">
-                            <span className={`text-[10px] font-black tracking-widest px-3 py-1.5 rounded-full ${darkMode ? 'bg-blue-900/40 text-blue-400' : 'bg-blue-100 text-blue-700'
-                              }`}>
-                              {item.isGlobal ? 'OVERALL LABEL' : `SEGMENT ${idx + 1} / ${items.length}`}
-                            </span>
-                            {hasSegments && (
-                              <div className="flex gap-2">
-                                <button onClick={() => setActiveSentenceIdx(prev => Math.max(0, prev - 1))} disabled={idx === 0} className="p-2 border rounded-xl disabled:opacity-30">←</button>
-                                <button onClick={() => setActiveSentenceIdx(prev => Math.min(items.length - 1, prev + 1))} disabled={idx === items.length - 1} className="p-2 border rounded-xl disabled:opacity-30">→</button>
-                              </div>
-                            )}
-                          </div>
-
-                          <div className={`p-8 rounded-[2rem] border-2 flex flex-col items-center justify-center text-center space-y-4 ${status === 'approved'
-                            ? 'bg-emerald-500/5 border-emerald-500/20'
-                            : status === 'rejected'
-                              ? 'bg-rose-500/5 border-rose-500/20'
-                              : darkMode ? 'bg-gray-900/30 border-gray-700' : 'bg-white border-gray-100 shadow-xl shadow-gray-200/50'
-                            }`}>
-                            <span className={`px-6 py-2 rounded-full text-sm font-black uppercase tracking-tighter shadow-sm border ${darkMode ? 'bg-gray-800 text-blue-300 border-blue-500/30' : 'bg-indigo-50 text-indigo-700 border-indigo-200'
-                              }`}>
-                              🏷️ Nhãn: {item.label}
-                            </span>
-                            <blockquote className={`text-xl font-bold leading-relaxed max-w-md ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                              "{item.note || 'Không có ghi chú chi tiết'}"
-                            </blockquote>
-                            {item.startTime !== undefined && (
-                              <p className="text-xs font-black text-gray-400 font-mono">
-                                TIME: {item.startTime}s - {item.endTime}s
-                              </p>
-                            )}
-                          </div>
-
-                          {/* Action Area */}
-                          <div className="mt-8 border-t pt-6">
-                            {!status && !isReviewed ? (
-                              <div className="space-y-4">
-                                <textarea
-                                  value={feedback}
-                                  onChange={(e) => setSentenceFeedbacks(prev => ({ ...prev, [key]: e.target.value }))}
-                                  placeholder="Nhập phản hồi đánh giá cho nhãn audio này..."
-                                  className={`w-full p-4 border rounded-2xl resize-none text-sm transition-all ${darkMode ? 'bg-gray-900 border-gray-700 text-white' : 'bg-gray-50 border-gray-200 focus:bg-white'
-                                    }`}
-                                  rows={2}
-                                />
-                                <div className="grid grid-cols-2 gap-4">
-                                  <button
-                                    onClick={() => handleSentenceAction(idx, 'approve', hasSegments ? 'segment' : 'audio')}
-                                    disabled={isProcessing}
-                                    className="py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-emerald-500/30 transition-all hover:-translate-y-1 disabled:opacity-50"
-                                  >
-                                    {isProcessing ? '⏳ DUYỆT...' : '✓ Approve'}
-                                  </button>
-                                  <button
-                                    onClick={() => handleSentenceAction(idx, 'reject', hasSegments ? 'segment' : 'audio')}
-                                    disabled={isProcessing || !feedback.trim()}
-                                    className="py-4 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-rose-500/30 transition-all hover:-translate-y-1 disabled:opacity-50 disabled:translate-y-0"
-                                  >
-                                    {isProcessing ? '⏳ TỪ CHỐI...' : '✕ Reject'}
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className={`p-6 rounded-2xl text-center border-2 ${status === 'approved' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' : 'bg-rose-500/10 border-rose-500/20 text-rose-500'
-                                }`}>
-                                <p className="font-black text-xl uppercase tracking-widest mb-2">
-                                  {status === 'approved' ? '✅ Đã phê duyệt' : '❌ Đã từ chối'}
-                                </p>
-                                {feedback && <p className="text-sm italic opacity-80">"{feedback}"</p>}
-                                {hasSegments && idx < items.length - 1 && (
-                                  <button onClick={() => setActiveSentenceIdx(idx + 1)} className="mt-4 text-[10px] font-black uppercase border-b border-current">
-                                    Next Segment →
-                                  </button>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })()
-                ) : task?.dataItem?.mimeType?.startsWith('text/') || task?.dataItem?.text ? (
-                  (() => {
-                    const annotatedItems = task?.labels?.spans || task?.labels?.sentences || [];
-                    const hasItems = annotatedItems.length > 0;
-
-                    if (hasItems) {
-                      const idx = Math.min(activeSentenceIdx, annotatedItems.length - 1);
-                      const item = annotatedItems[idx];
-                      const key = `${id}-${idx}`;
-                      const status = sentenceStatus[key];
-                      const isProcessing = !!processingSentences[key];
-                      const feedback = sentenceFeedbacks[key] || '';
-                      const itemText = item.text || item.sentence || '';
-                      const itemLabel = item.label || 'No Label';
-
-                      return (
-                        <div className="flex flex-col h-full min-h-[400px]">
-                          {/* Pagination Header */}
-                          <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-100">
-                            <div className="flex items-center gap-2">
-                              <span className={`text-xs font-bold px-3 py-1.5 rounded-full ${darkMode ? 'bg-emerald-900/50 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}>
-                                CÂU {idx + 1} / {annotatedItems.length}
-                              </span>
-                              {status && (
-                                <span className={`text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider ${status === 'approved' ? 'bg-green-500 text-white shadow-lg shadow-green-500/30' : 'bg-red-500 text-white shadow-lg shadow-red-500/30'
-                                  }`}>
-                                  {status === 'approved' ? '✓ APPROVED' : '✕ REJECTED'}
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => setActiveSentenceIdx(prev => Math.max(0, prev - 1))}
-                                disabled={idx === 0}
-                                className={`p-2 rounded-xl border transition-all ${darkMode ? 'border-gray-600 bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-20' : 'bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-20 border-gray-200'}`}
-                              >
-                                ← Prev
-                              </button>
-                              <button
-                                onClick={() => setActiveSentenceIdx(prev => Math.min(annotatedItems.length - 1, prev + 1))}
-                                disabled={idx === annotatedItems.length - 1}
-                                className={`p-2 rounded-xl border transition-all ${darkMode ? 'border-gray-600 bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-20' : 'bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-20 border-gray-200'}`}
-                              >
-                                Next →
-                              </button>
-                            </div>
-                          </div>
-
-                          {/* Main Sentence Content */}
-                          <div className="flex-1 flex flex-col justify-center items-center py-8">
-                            <div className={`w-full p-8 rounded-3xl border-2 transition-all duration-500 relative ${status === 'approved'
-                              ? darkMode ? 'bg-green-900/10 border-green-500/40 shadow-xl shadow-green-500/10' : 'bg-green-50/50 border-green-200 shadow-xl shadow-green-100'
-                              : status === 'rejected'
-                                ? darkMode ? 'bg-red-900/10 border-red-500/40 shadow-xl shadow-red-500/10' : 'bg-red-50/50 border-red-200 shadow-xl shadow-red-100'
-                                : darkMode ? 'bg-gray-700/30 border-gray-600' : 'bg-gray-50/50 border-gray-200 shadow-xl'
-                              }`}>
-                              <blockquote className={`text-2xl font-semibold leading-relaxed text-center ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                                "{itemText}"
-                              </blockquote>
-
-                              <div className="mt-8 flex flex-wrap justify-center gap-3">
-                                <span className={`px-5 py-2 rounded-full text-xs font-bold shadow-md flex items-center gap-2 ${itemLabel.toLowerCase().includes('tích cực') || itemLabel.toLowerCase().includes('positive')
-                                  ? 'bg-green-100 text-green-700 border border-green-200'
-                                  : itemLabel.toLowerCase().includes('tiêu cực') || itemLabel.toLowerCase().includes('negative')
-                                    ? 'bg-red-100 text-red-700 border border-red-200'
-                                    : 'bg-indigo-100 text-indigo-700 border border-indigo-200'
-                                  }`}>
-                                  🏷️ {itemLabel}
-                                </span>
-                                {item.note && (
-                                  <span className={`px-5 py-2 rounded-full text-[11px] font-medium ${darkMode ? 'bg-gray-800 text-gray-400 border border-gray-700' : 'bg-gray-200 text-gray-600 border border-gray-300'}`}>
-                                    Lưu chú: {item.note}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Footer Actions */}
-                          <div className={`mt-auto pt-8 border-t ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
-                            {!status && !isReviewed ? (
-                              <div className="space-y-5">
-                                <div className="relative group">
-                                  <textarea
-                                    value={feedback}
-                                    onChange={(e) => setSentenceFeedbacks(prev => ({ ...prev, [key]: e.target.value }))}
-                                    placeholder="Nhập phản hồi đánh giá của bạn cho câu này..."
-                                    className={`w-full p-5 border rounded-2xl resize-none text-sm font-medium focus:outline-none focus:ring-4 transition-all ${darkMode
-                                      ? 'bg-gray-950 text-white border-gray-700 focus:ring-emerald-500/20'
-                                      : 'bg-white text-gray-900 border-gray-300 focus:ring-emerald-500/10 focus:border-emerald-500'
-                                      }`}
-                                    rows={3}
-                                  />
-                                  <div className="absolute right-4 bottom-4 text-[10px] text-gray-400 font-bold uppercase tracking-widest opacity-0 group-focus-within:opacity-100 transition-opacity">
-                                    {feedback.length} chars
-                                  </div>
-                                </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                  <button
-                                    onClick={() => handleSentenceAction(idx, 'approve', task?.labels?.spans ? 'span' : 'sentence')}
-                                    disabled={isProcessing}
-                                    className="group relative overflow-hidden py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black text-sm uppercase tracking-widest transition-all shadow-xl shadow-emerald-500/30 disabled:opacity-50"
-                                  >
-                                    <span className="relative z-10">{isProcessing ? '⏳ ĐANG DUYỆT...' : '✓ PHÊ DUYỆT CÂU NÀY'}</span>
-                                    <div className="absolute inset-0 bg-white/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
-                                  </button>
-                                  <button
-                                    onClick={() => handleSentenceAction(idx, 'reject', task?.labels?.spans ? 'span' : 'sentence')}
-                                    disabled={isProcessing || !feedback.trim()}
-                                    className="group relative overflow-hidden py-4 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl font-black text-sm uppercase tracking-widest transition-all shadow-xl shadow-rose-500/30 disabled:opacity-50"
-                                    title={!feedback.trim() ? 'Bạn cần nhập phản hồi trước khi từ chối' : ''}
-                                  >
-                                    <span className="relative z-10">{isProcessing ? '⏳ ĐANG XỬ LÝ...' : '✕ TỪ CHỐI CÂU NÀY'}</span>
-                                    <div className="absolute inset-0 bg-white/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              <div className={`p-6 rounded-3xl text-center flex flex-col gap-3 group border-2 ${status === 'approved'
-                                ? 'bg-emerald-500/5 border-emerald-500/20 text-emerald-500'
-                                : status === 'rejected'
-                                  ? 'bg-rose-500/5 border-rose-500/20 text-rose-500'
-                                  : 'bg-gray-500/5 border-gray-500/20 text-gray-500'
-                                }`}>
-                                <div className="flex items-center justify-center gap-3">
-                                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl font-black ${status === 'approved' ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'
-                                    }`}>
-                                    {status === 'approved' ? '✓' : '✕'}
-                                  </div>
-                                  <p className="font-black text-xl uppercase tracking-[0.2em]">
-                                    {status === 'approved' ? 'Đã phê duyệt' : 'Đã từ chối'}
-                                  </p>
-                                </div>
-                                {feedback && (
-                                  <div className={`mx-auto max-w-md p-3 rounded-xl text-sm font-bold border-l-4 ${darkMode ? 'bg-gray-900 border-gray-600 text-gray-400' : 'bg-white border-gray-200 text-gray-600'
-                                    }`}>
-                                    " {feedback} "
-                                  </div>
-                                )}
-                                <button
-                                  onClick={() => setActiveSentenceIdx(prev => Math.min(annotatedItems.length - 1, prev + 1))}
-                                  disabled={idx === annotatedItems.length - 1}
-                                  className={`mt-4 mx-auto px-8 py-2.5 rounded-full text-xs font-black uppercase tracking-widest border-2 transition-all disabled:opacity-0 ${darkMode ? 'border-gray-700 hover:bg-gray-700 text-gray-300' : 'border-gray-200 hover:bg-white hover:border-emerald-500 text-gray-600 hover:text-emerald-500 shadow-sm'
-                                    }`}
-                                >
-                                  Câu tiếp theo →
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    }
-
-                    const rawText = task.dataItem?.text || task.dataItem?.content || '';
-                    const sentences = splitSentences(rawText);
-                    if (!sentences || sentences.length === 0) return <div className="text-center py-20 font-black opacity-20 text-4xl uppercase tracking-tighter">No Content Found</div>;
-
-                    const sIdx = Math.min(activeSentenceIdx, sentences.length - 1);
-                    const sent = sentences[sIdx];
-                    const sKey = `${id}-${sIdx}`;
-                    const sStatus = sentenceStatus[sKey];
-                    const sIsProcessing = !!processingSentences[sKey];
-                    const sFeedback = sentenceFeedbacks[sKey] || '';
-
-                    return (
-                      <div className="flex flex-col h-full min-h-[400px]">
-                        <div className="flex items-center justify-between mb-4 border-b pb-4">
-                          <span className="text-[10px] font-black tracking-widest bg-amber-100 text-amber-700 px-3 py-1.5 rounded-full border border-amber-200">
-                            AUTO-SEGMENT: {sIdx + 1} / {sentences.length}
+                        <div className="flex items-center gap-4 text-sm">
+                          <span
+                            className={`font-semibold ${darkMode ? 'text-emerald-400' : 'text-emerald-600'}`}
+                            title="Độ tin cậy trung bình của tất cả các đối tượng được gán nhãn trong ảnh này"
+                          >
+                            AVG CONFIDENCE {averageConfidence.toFixed(1)}%
                           </span>
-                          <div className="flex gap-2">
-                            <button onClick={() => setActiveSentenceIdx(prev => Math.max(0, prev - 1))} className="w-10 h-10 flex items-center justify-center border-2 border-gray-200 rounded-xl font-bold hover:bg-white transition-all">←</button>
-                            <button onClick={() => setActiveSentenceIdx(prev => Math.min(sentences.length - 1, prev + 1))} className="w-10 h-10 flex items-center justify-center border-2 border-gray-200 rounded-xl font-bold hover:bg-white transition-all">→</button>
-                          </div>
+                          <span
+                            className={darkMode ? 'text-gray-400' : 'text-gray-600'}
+                            title="Tổng số đối tượng (objects) đã được gán nhãn trong ảnh này"
+                          >
+                            CLASSES {task?.labels?.objects?.length || 0} Total
+                          </span>
                         </div>
-                        <div className="flex-1 flex items-center justify-center p-12 bg-gray-50/50 rounded-[2.5rem] border-2 border-dashed border-gray-200 shadow-inner">
-                          <p className="text-2xl font-bold italic text-gray-800 text-center leading-relaxed">"{sent}"</p>
-                        </div>
-                        <div className="mt-8 space-y-4">
-                          {!sStatus && !isReviewed ? (
-                            <>
-                              <textarea
-                                value={sFeedback}
-                                onChange={(e) => setSentenceFeedbacks(prev => ({ ...prev, [sKey]: e.target.value }))}
-                                placeholder="Ghi chú đánh giá cho câu này..."
-                                className="w-full p-5 border-2 border-gray-200 rounded-2xl focus:border-amber-500 focus:outline-none transition-all"
-                              />
-                              <div className="grid grid-cols-2 gap-4">
-                                <button
-                                  onClick={() => handleSentenceAction(sIdx, 'approve', 'sentence')}
-                                  disabled={sIsProcessing}
-                                  className={`py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-emerald-500/20 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50`}
-                                >
-                                  {sIsProcessing ? '⏳ ĐANG LƯU...' : '✓ Approve'}
-                                </button>
-                                <button
-                                  onClick={() => handleSentenceAction(sIdx, 'reject', 'sentence')}
-                                  disabled={sIsProcessing || !sFeedback.trim()}
-                                  className={`py-4 bg-rose-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-rose-500/20 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50`}
-                                >
-                                  {sIsProcessing ? '⏳ ĐANG LƯU...' : '✕ Reject'}
-                                </button>
+                      </>
+                    ) : task?.dataItem?.mimeType?.startsWith('audio/') ?
+                      (() => {
+                        const segments = task?.labels?.segments || [];
+                        const hasSegments = segments.length > 0;
+                        const items = hasSegments ? segments : [{
+                          label: task.labels?.label || 'Unlabeled',
+                          note: task.labels?.note || '',
+                          isGlobal: true
+                        }];
+
+                        const idx = Math.min(activeSentenceIdx, items.length - 1);
+                        const item = items[idx];
+                        const key = `${id}-${idx}`;
+                        const status = sentenceStatus[key];
+                        const isProcessing = !!processingSentences[key];
+                        const feedback = sentenceFeedbacks[key] || '';
+                        const audioUrl = `${API_URL}/${task.dataItem.path}`;
+
+                        return (
+                          <div className="flex flex-col h-full">
+                            {/* Audio Waveform/Player Area */}
+                            <div className={`p-8 rounded-[2.5rem] mb-8 transition-all relative overflow-hidden ${darkMode ? 'bg-gray-900 border border-gray-800' : 'bg-white border border-gray-100 shadow-xl shadow-gray-200/50'
+                              }`}>
+                              <div className="flex items-center gap-8 relative z-10">
+                                <div className={`w-20 h-20 rounded-[2rem] flex items-center justify-center text-4xl shadow-2xl ${darkMode ? 'bg-emerald-500/20 text-emerald-400' : 'bg-emerald-500 text-white'
+                                  }`}>
+                                  🎧
+                                </div>
+                                <div className="flex-1">
+                                  <p className={`text-xl font-black mb-1 ${darkMode ? 'text-white' : 'text-gray-900'}`}>{task.dataItem.filename}</p>
+                                  <div className="flex items-center gap-3">
+                                    <span className="px-2 py-0.5 rounded bg-gray-500/10 text-[9px] font-black uppercase tracking-widest text-gray-500">Audio Stream</span>
+                                    <span className={`w-1 h-1 rounded-full ${darkMode ? 'bg-gray-700' : 'bg-gray-300'}`}></span>
+                                    <span className="text-[10px] font-bold text-gray-400 capitalize">{task.dataItem.mimeType}</span>
+                                  </div>
+                                </div>
                               </div>
-                            </>
-                          ) : (
-                            <div className="p-8 bg-gray-100/50 rounded-[2rem] text-center border-2 border-gray-200">
-                              <p className="font-black text-2xl uppercase tracking-widest text-gray-400">
-                                {sStatus === 'approved' ? '✅ Duyệt thành công' : '❌ Đã từ chối'}
-                              </p>
+                              <div className="mt-8">
+                                <audio controls src={audioUrl} className="w-full h-12 filter grayscale brightness-125 dark:invert" />
+                              </div>
+                              {/* Decorative subtle background waves */}
+                              <div className="absolute right-0 bottom-0 opacity-10 pointer-events-none">
+                                <svg width="200" height="100" viewBox="0 0 200 100">
+                                  <path d="M0 50 Q 50 20, 100 50 T 200 50" fill="none" stroke="currentColor" strokeWidth="2" className={darkMode ? 'text-emerald-500' : 'text-emerald-600'} />
+                                  <path d="M0 60 Q 50 30, 100 60 T 200 60" fill="none" stroke="currentColor" strokeWidth="2" className={darkMode ? 'text-emerald-500' : 'text-emerald-600'} />
+                                </svg>
+                              </div>
                             </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })()
-                ) : (
-                  <div className={`text-center py-12 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                    Unsupported data type
+
+                            {/* Annotation Review Unit */}
+                            <div className="flex-1 flex flex-col pt-4">
+                              <div className="flex items-center justify-between mb-6">
+                                <div className="flex items-center gap-3">
+                                  <div className={`px-4 py-1.5 rounded-full text-[10px] font-black tracking-widest uppercase ${darkMode ? 'bg-emerald-500/10 text-emerald-400' : 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                                    }`}>
+                                    {item.isGlobal ? 'Global Annotation' : `Segment ${idx + 1} of ${items.length}`}
+                                  </div>
+                                  {status && (
+                                    <div className={`px-3 py-1 rounded-full text-[9px] font-black tracking-widest uppercase ${status === 'approved' ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'
+                                      }`}>
+                                      {status}
+                                    </div>
+                                  )}
+                                </div>
+
+                                {hasSegments && (
+                                  <div className="flex gap-2">
+                                    <button
+                                      onClick={() => setActiveSentenceIdx(prev => Math.max(0, prev - 1))}
+                                      disabled={idx === 0}
+                                      className={`w-10 h-10 flex items-center justify-center rounded-xl border-2 transition-all ${darkMode ? 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white disabled:opacity-20' : 'bg-white border-gray-100 shadow-sm hover:border-emerald-500 disabled:opacity-30'
+                                        }`}
+                                    >
+                                      ←
+                                    </button>
+                                    <button
+                                      onClick={() => setActiveSentenceIdx(prev => Math.min(items.length - 1, prev + 1))}
+                                      disabled={idx === items.length - 1}
+                                      className={`w-10 h-10 flex items-center justify-center rounded-xl border-2 transition-all ${darkMode ? 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white disabled:opacity-20' : 'bg-white border-gray-100 shadow-sm hover:border-emerald-500 disabled:opacity-30'
+                                        }`}
+                                    >
+                                      →
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className={`p-10 rounded-[3rem] border-2 transition-all duration-500 relative flex flex-col items-center text-center ${status === 'approved' ? 'bg-emerald-500/5 border-emerald-500/20' :
+                                status === 'rejected' ? 'bg-rose-500/5 border-rose-500/20' :
+                                  darkMode ? 'bg-gray-901 border-gray-800' : 'bg-white border-gray-100 shadow-2xl shadow-gray-200/50'
+                                }`}>
+                                <div className="mb-6">
+                                  <span className={`px-6 py-2.5 rounded-2xl text-xs font-black uppercase tracking-widest shadow-xl ${darkMode ? 'bg-gray-800 text-emerald-400 border border-emerald-500/20' : 'bg-emerald-500 text-white'
+                                    }`}>
+                                    Label: {item.label}
+                                  </span>
+                                </div>
+
+                                <blockquote className={`text-2xl font-bold leading-relaxed max-w-2xl mb-4 ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                                  "{item.note || 'No detailed note provided'}"
+                                </blockquote>
+
+                                {item.startTime !== undefined && (
+                                  <div className="flex items-center gap-2 text-[10px] font-black text-gray-400 font-mono tracking-tighter">
+                                    <span className="bg-gray-500/10 px-2 py-0.5 rounded">START {item.startTime}s</span>
+                                    <span className="w-1 h-1 rounded-full bg-gray-300"></span>
+                                    <span className="bg-gray-500/10 px-2 py-0.5 rounded">END {item.endTime}s</span>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Action Area */}
+                              <div className={`mt-auto pt-10 border-t ${darkMode ? 'border-gray-800' : 'border-gray-100'}`}>
+                                {!status && !isReviewed ? (
+                                  <div className="space-y-6">
+                                    <div className="relative">
+                                      <textarea
+                                        value={feedback}
+                                        onChange={(e) => setSentenceFeedbacks(prev => ({ ...prev, [key]: e.target.value }))}
+                                        placeholder="Add feedback for this specific audio element..."
+                                        className={`w-full p-6 border-2 rounded-[2rem] resize-none text-sm transition-all outline-none ${darkMode
+                                          ? 'bg-gray-950 border-gray-800 text-white focus:border-emerald-500/50'
+                                          : 'bg-gray-50 border-gray-200 focus:bg-white focus:border-emerald-500 focus:shadow-xl focus:shadow-emerald-500/5'
+                                          }`}
+                                        rows={2}
+                                      />
+                                      <div className="absolute right-6 bottom-4 text-[9px] font-black uppercase tracking-widest text-gray-400 pointer-events-none">
+                                        Segment Input
+                                      </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-6">
+                                      <button
+                                        onClick={() => handleSentenceAction(idx, 'approve', hasSegments ? 'segment' : 'audio')}
+                                        disabled={isProcessing}
+                                        className="group py-5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-[1.5rem] font-black uppercase tracking-[0.2em] text-xs shadow-2xl shadow-emerald-500/40 transition-all hover:-translate-y-1 active:scale-95 disabled:opacity-50"
+                                      >
+                                        {isProcessing ? 'Saving...' : 'Approve Unit'}
+                                      </button>
+                                      <button
+                                        onClick={() => handleSentenceAction(idx, 'reject', hasSegments ? 'segment' : 'audio')}
+                                        disabled={isProcessing || !feedback.trim()}
+                                        className="group py-5 bg-rose-600 hover:bg-rose-500 text-white rounded-[1.5rem] font-black uppercase tracking-[0.2em] text-xs shadow-2xl shadow-rose-500/40 transition-all hover:-translate-y-1 active:scale-95 disabled:opacity-50 disabled:translate-y-0"
+                                      >
+                                        {isProcessing ? 'Processing...' : 'Reject Unit'}
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className={`p-8 rounded-[2rem] text-center border-2 flex items-center justify-between ${status === 'approved' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' : 'bg-rose-500/10 border-rose-500/20 text-rose-500'
+                                    }`}>
+                                    <div className="text-left">
+                                      <p className="font-black text-xs uppercase tracking-widest mb-1 opacity-60">Status Result</p>
+                                      <p className="font-black text-2xl uppercase tracking-tighter">
+                                        {status === 'approved' ? 'Approved Unit' : 'Rejected Unit'}
+                                      </p>
+                                      {feedback && <p className="text-sm font-medium mt-2 italic">" {feedback} "</p>}
+                                    </div>
+
+                                    {hasSegments && idx < items.length - 1 && (
+                                      <button
+                                        onClick={() => setActiveSentenceIdx(idx + 1)}
+                                        className={`px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${darkMode ? 'bg-white/10 hover:bg-white text-white hover:text-black' : 'bg-black text-white hover:bg-gray-800'
+                                          }`}
+                                      >
+                                        Next Unit →
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })()
+                      : (task?.dataItem?.mimeType?.startsWith('text/') || task?.dataItem?.text) ?
+                        (() => {
+                          const currentAnnotatedItems = task?.labels?.spans || task?.labels?.sentences || [];
+                          const hasItems = currentAnnotatedItems.length > 0;
+
+                          if (hasItems) {
+                            const idx = Math.min(activeSentenceIdx, currentAnnotatedItems.length - 1);
+                            const item = currentAnnotatedItems[idx];
+                            const key = `${id}-${idx}`;
+                            const status = sentenceStatus[key];
+                            const isProcessing = !!processingSentences[key];
+                            const feedback = sentenceFeedbacks[key] || '';
+                            const itemText = item.text || item.sentence || '';
+                            const itemLabel = item.label || 'No Label';
+
+                            return (
+                              <div className="flex flex-col h-full min-h-[400px]">
+                                <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-100">
+                                  <div className="flex items-center gap-2">
+                                    <span className={`text-xs font-bold px-3 py-1.5 rounded-full ${darkMode ? 'bg-emerald-900/50 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}>
+                                      CÂU {idx + 1} / {currentAnnotatedItems.length}
+                                    </span>
+                                    {status && (
+                                      <span className={`text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider ${status === 'approved' ? 'bg-green-500 text-white shadow-lg shadow-green-500/30' : 'bg-red-500 text-white shadow-lg shadow-red-500/30'}`}>
+                                        {status === 'approved' ? '✓ APPROVED' : '✕ REJECTED'}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex gap-2">
+                                    <button
+                                      onClick={() => setActiveSentenceIdx(prev => Math.max(0, prev - 1))}
+                                      disabled={idx === 0}
+                                      className={`p-2 rounded-xl border transition-all ${darkMode ? 'border-gray-600 bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-20' : 'bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-20 border-gray-200'}`}
+                                    >
+                                      ← Prev
+                                    </button>
+                                    <button
+                                      onClick={() => setActiveSentenceIdx(prev => Math.min(currentAnnotatedItems.length - 1, prev + 1))}
+                                      disabled={idx === currentAnnotatedItems.length - 1}
+                                      className={`p-2 rounded-xl border transition-all ${darkMode ? 'border-gray-600 bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-20' : 'bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-20 border-gray-200'}`}
+                                    >
+                                      Next →
+                                    </button>
+                                  </div>
+                                </div>
+
+                                <div className="flex-1 flex flex-col justify-center items-center py-8">
+                                  <div className={`w-full p-8 rounded-3xl border-2 transition-all duration-500 relative ${status === 'approved'
+                                    ? darkMode ? 'bg-green-900/10 border-green-500/40 shadow-xl shadow-green-500/10' : 'bg-green-50/50 border-green-200 shadow-xl shadow-green-100'
+                                    : status === 'rejected'
+                                      ? darkMode ? 'bg-red-900/10 border-red-500/40 shadow-xl shadow-red-500/10' : 'bg-red-50/50 border-red-200 shadow-xl shadow-red-100'
+                                      : darkMode ? 'bg-gray-700/30 border-gray-600' : 'bg-gray-50/50 border-gray-200 shadow-xl'
+                                    }`}>
+                                    <blockquote className={`text-2xl font-semibold leading-relaxed text-center ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                      "{itemText}"
+                                    </blockquote>
+
+                                    <div className="mt-8 flex flex-wrap justify-center gap-3">
+                                      <span className={`px-5 py-2 rounded-full text-xs font-bold shadow-md flex items-center gap-2 ${itemLabel.toLowerCase().includes('tích cực') || itemLabel.toLowerCase().includes('positive')
+                                        ? 'bg-green-100 text-green-700 border border-green-200'
+                                        : itemLabel.toLowerCase().includes('tiêu cực') || itemLabel.toLowerCase().includes('negative')
+                                          ? 'bg-red-100 text-red-700 border border-red-200'
+                                          : 'bg-indigo-100 text-indigo-700 border border-indigo-200'
+                                        }`}>
+                                        🏷️ {itemLabel}
+                                      </span>
+                                      {item.note && (
+                                        <span className={`px-5 py-2 rounded-full text-[11px] font-medium ${darkMode ? 'bg-gray-800 text-gray-400 border border-gray-700' : 'bg-gray-200 text-gray-600 border border-gray-300'}`}>
+                                          Lưu chú: {item.note}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className={`mt-auto pt-8 border-t ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
+                                  {!status && !isReviewed ? (
+                                    <div className="space-y-5">
+                                      <div className="relative group">
+                                        <textarea
+                                          value={feedback}
+                                          onChange={(e) => setSentenceFeedbacks(prev => ({ ...prev, [key]: e.target.value }))}
+                                          placeholder="Nhập phản hồi đánh giá của bạn cho câu này..."
+                                          className={`w-full p-5 border rounded-2xl resize-none text-sm font-medium focus:outline-none focus:ring-4 transition-all ${darkMode ? 'bg-gray-950 text-white border-gray-700 focus:ring-emerald-500/20' : 'bg-white text-gray-900 border-gray-300 focus:ring-emerald-500/10 focus:border-emerald-500'}`}
+                                          rows={3}
+                                        />
+                                      </div>
+                                      <div className="grid grid-cols-2 gap-4">
+                                        <button
+                                          onClick={() => handleSentenceAction(idx, 'approve', task?.labels?.spans ? 'span' : 'sentence')}
+                                          disabled={isProcessing}
+                                          className="py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-emerald-500/30"
+                                        >
+                                          {isProcessing ? '⏳ DUYỆT...' : '✓ PHÊ DUYỆT'}
+                                        </button>
+                                        <button
+                                          onClick={() => handleSentenceAction(idx, 'reject', task?.labels?.spans ? 'span' : 'sentence')}
+                                          disabled={isProcessing || !feedback.trim()}
+                                          className="py-4 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl font-black text-sm uppercase tracking-widest shadow-xl shadow-rose-500/30"
+                                        >
+                                          {isProcessing ? '⏳ XỬ LÝ...' : '✕ TỪ CHỐI'}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div className={`p-6 rounded-3xl text-center flex flex-col gap- group border-2 ${status === 'approved' ? 'bg-emerald-500/5 border-emerald-500/20 text-emerald-500' : 'bg-rose-500/5 border-rose-500/20 text-rose-500'}`}>
+                                      <div className="flex items-center justify-center gap-3">
+                                        <p className="font-black text-xl uppercase tracking-widest">
+                                          {status === 'approved' ? '✓ Đã phê duyệt' : '✕ Đã từ chối'}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )
+                          }
+
+                          const rawText = task.dataItem?.text || task.dataItem?.content || ''
+                          const sentences = splitSentences(rawText)
+                          if (!sentences || sentences.length === 0) return <div className="text-center py-20 font-black opacity-20 text-4xl uppercase tracking-tighter">No Content Found</div>
+
+                          const sIdx = Math.min(activeSentenceIdx, sentences.length - 1)
+                          const sent = sentences[sIdx]
+                          const sKey = `${id}-${sIdx}`
+                          const sStatus = sentenceStatus[sKey]
+                          const sIsProcessing = !!processingSentences[sKey]
+                          const sFeedback = sentenceFeedbacks[sKey] || ''
+
+                          return (
+                            <div className="flex flex-col h-full min-h-[400px]">
+                              <div className="flex items-center justify-between mb-4 border-b pb-4">
+                                <span className="text-[10px] font-black tracking-widest bg-amber-100 text-amber-700 px-3 py-1.5 rounded-full border border-amber-200">
+                                  AUTO-SEGMENT: {sIdx + 1} / {sentences.length}
+                                </span>
+                                <div className="flex gap-2">
+                                  <button onClick={() => setActiveSentenceIdx(prev => Math.max(0, prev - 1))} className="w-10 h-10 flex items-center justify-center border-2 border-gray-200 rounded-xl font-bold">←</button>
+                                  <button onClick={() => setActiveSentenceIdx(prev => Math.min(sentences.length - 1, prev + 1))} className="w-10 h-10 flex items-center justify-center border-2 border-gray-200 rounded-xl font-bold">→</button>
+                                </div>
+                              </div>
+                              <div className="flex-1 flex items-center justify-center p-12 bg-gray-50/50 rounded-[2.5rem] border-2 border-dashed border-gray-200">
+                                <p className="text-2xl font-bold italic text-gray-800 text-center leading-relaxed">"{sent}"</p>
+                              </div>
+                              <div className="mt-8 space-y-4">
+                                {!sStatus && !isReviewed ? (
+                                  <>
+                                    <textarea
+                                      value={sFeedback}
+                                      onChange={(e) => setSentenceFeedbacks(prev => ({ ...prev, [sKey]: e.target.value }))}
+                                      placeholder="Ghi chú đánh giá cho câu này..."
+                                      className="w-full p-5 border-2 border-gray-200 rounded-2xl focus:border-amber-500 focus:outline-none"
+                                    />
+                                    <div className="grid grid-cols-2 gap-4">
+                                      <button onClick={() => handleSentenceAction(sIdx, 'approve', 'sentence')} disabled={sIsProcessing} className="py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase">Approve</button>
+                                      <button onClick={() => handleSentenceAction(sIdx, 'reject', 'sentence')} disabled={sIsProcessing || !sFeedback.trim()} className="py-4 bg-rose-600 text-white rounded-2xl font-black uppercase">Reject</button>
+                                    </div>
+                                  </>
+                                ) : (
+                                  <div className="p-8 bg-gray-100/50 rounded-[2rem] text-center border-2 border-gray-200">
+                                    <p className="font-black text-2xl uppercase tracking-widest text-gray-400">
+                                      {sStatus === 'approved' ? '✅ Approved' : '❌ Rejected'}
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })()
+                        : (
+                          <div className={`text-center py-12 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                            Unsupported data type
+                          </div>
+                        )}
                   </div>
-                )}
+                </div>
               </div>
             </div>
           </div>
         </div>
-
         {/* Right Sidebar - Quality Metrics & Error Classification */}
         <div className={`w-96 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white/60 backdrop-blur-lg border-gray-200/50'} border-l overflow-y-auto`}>
           <div className="p-6 space-y-6">
@@ -1129,6 +1157,7 @@ const ReviewerTask = () => {
                 <div className={`h-px w-full mt-6 ${darkMode ? 'bg-gray-700' : 'bg-gray-100'}`}></div>
               </div>
             )}
+
             {/* Quality Metrics - Circular Progress */}
             <div>
               <div className="flex items-center justify-between mb-4">
@@ -1409,6 +1438,7 @@ const ReviewerTask = () => {
           </div>
         </div>
       )}
+
     </div>
   );
 };
