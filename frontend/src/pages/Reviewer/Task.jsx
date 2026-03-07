@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
 import ImageViewer from '../../components/ImageViewer';
@@ -9,6 +9,7 @@ import { useAuth } from '../../context/AuthContext';
 const ReviewerTask = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
   const [task, setTask] = useState(null);
   const [reviewComments, setReviewComments] = useState('');
@@ -32,11 +33,24 @@ const ReviewerTask = () => {
   const [activeSentenceIdx, setActiveSentenceIdx] = useState(0);
   const [localReviewed, setLocalReviewed] = useState(false);
 
+  const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
+  const scopedProjectId = searchParams.get('projectId') || '';
+  const scopedDatasetId = searchParams.get('datasetId') || '';
+
   useEffect(() => {
     setLocalReviewed(false);
+    setSelectedIssues([]);
+    setIssueTargets({});
+    setIssueComments({});
+    setReviewComments('');
+    setReviewNotes([]);
+    setSentenceFeedbacks({});
+    setSentenceStatus({});
+    setProcessingSentences({});
+    setActiveSentenceIdx(0);
     fetchTask();
     fetchAllTasks();
-  }, [id]);
+  }, [id, scopedProjectId, scopedDatasetId]);
 
   // ADD THIS LOG
   useEffect(() => {
@@ -176,8 +190,20 @@ const ReviewerTask = () => {
   const fetchAllTasks = async () => {
     try {
       const response = await axios.get(`${API_URL}/api/reviews/all`);
-      setPendingTasks(response.data.pending || []);
-      setReviewedTasks(response.data.reviewed || []);
+      let pending = response.data.pending || [];
+      let reviewed = response.data.reviewed || [];
+
+      if (scopedProjectId) {
+        pending = pending.filter((t) => (t?.projectId?._id || t?.projectId)?.toString() === scopedProjectId);
+        reviewed = reviewed.filter((t) => (t?.projectId?._id || t?.projectId)?.toString() === scopedProjectId);
+      }
+      if (scopedDatasetId) {
+        pending = pending.filter((t) => (t?.datasetId?._id || t?.datasetId)?.toString() === scopedDatasetId);
+        reviewed = reviewed.filter((t) => (t?.datasetId?._id || t?.datasetId)?.toString() === scopedDatasetId);
+      }
+
+      setPendingTasks(pending);
+      setReviewedTasks(reviewed);
     } catch (error) {
       console.error('Error fetching tasks:', error);
     }
@@ -275,23 +301,36 @@ const ReviewerTask = () => {
   const isFinalized = task?.status === 'approved' || task?.status === 'rejected';
   const isReviewed = localReviewed || isFinalized || hasMyDecision;
 
+  // pendingTasks from /api/reviews/all is already scoped to current reviewer queue.
+  const actionablePendingTasks = pendingTasks || [];
+
   const goToNextPendingTask = useCallback(() => {
-    if (!Array.isArray(pendingTasks) || pendingTasks.length === 0) {
+    if (!Array.isArray(actionablePendingTasks) || actionablePendingTasks.length === 0) {
       navigate('/reviewer/dashboard');
       return;
     }
 
-    const remaining = pendingTasks.filter((t) => t._id !== id);
-    if (remaining.length > 0) {
-      navigate(`/reviewer/tasks/${remaining[0]._id}`);
-    } else {
-      navigate('/reviewer/dashboard');
+    const currentIndex = actionablePendingTasks.findIndex((t) => t._id === id);
+    const scopeQuery = new URLSearchParams();
+    if (scopedProjectId) scopeQuery.set('projectId', scopedProjectId);
+    if (scopedDatasetId) scopeQuery.set('datasetId', scopedDatasetId);
+    const query = scopeQuery.toString();
+
+    if (currentIndex >= 0 && currentIndex < actionablePendingTasks.length - 1) {
+      navigate(`/reviewer/tasks/${actionablePendingTasks[currentIndex + 1]._id}${query ? `?${query}` : ''}`);
+      return;
     }
-  }, [pendingTasks, id, navigate]);
+
+    if (currentIndex === -1 && actionablePendingTasks.length > 0) {
+      navigate(`/reviewer/tasks/${actionablePendingTasks[0]._id}${query ? `?${query}` : ''}`);
+      return;
+    }
+
+    navigate('/reviewer/dashboard');
+  }, [actionablePendingTasks, id, navigate, scopedProjectId, scopedDatasetId]);
 
   const handleApprove = useCallback(async () => {
-    // Check if task has already been reviewed
-    if (isReviewed) {
+    if (processing || isReviewed) {
       alert('Task này đã được đánh giá rồi.');
       return;
     }
@@ -325,16 +364,27 @@ const ReviewerTask = () => {
       }
     } catch (error) {
       const msg = error.response?.data?.message || error.message || 'Lỗi khi phê duyệt';
-      alert(`Không thể hoàn tất: ${msg}`);
+      const alreadyReviewed = /already submitted your review decision|already been submitted|đã được đánh giá|đã gửi quyết định/i.test(msg);
+      if (alreadyReviewed) {
+        setLocalReviewed(true);
+        await fetchAllTasks();
+        if (autoNext) {
+          goToNextPendingTask();
+        } else {
+          await fetchTask();
+        }
+        alert('Task này đã được bạn chấm trước đó. Mình đã đồng bộ lại trạng thái.');
+      } else {
+        alert(`Không thể hoàn tất: ${msg}`);
+      }
       console.error(error);
     } finally {
       setProcessing(false);
     }
-  }, [id, reviewComments, reviewNotes, isReviewed, autoNext, fetchAllTasks, fetchTask, goToNextPendingTask]);
+  }, [id, reviewComments, reviewNotes, isReviewed, autoNext, fetchAllTasks, fetchTask, goToNextPendingTask, processing]);
 
   const handleReject = useCallback(async () => {
-    // Check if task has already been reviewed
-    if (task?.status === 'approved' || task?.status === 'rejected') {
+    if (processing || isReviewed || task?.status === 'approved' || task?.status === 'rejected') {
       alert('Task này đã được đánh giá rồi. Mỗi task chỉ có thể được đánh giá 1 lần.');
       return;
     }
@@ -400,26 +450,25 @@ const ReviewerTask = () => {
         }
       } catch (error) {
         const errorMessage = error.response?.data?.message || error.response?.data?.errors?.[0]?.msg || 'Lỗi khi từ chối task';
-        alert(errorMessage);
+        const alreadyReviewed = /already submitted your review decision|already been submitted|đã được đánh giá|đã gửi quyết định/i.test(errorMessage);
+        if (alreadyReviewed) {
+          setLocalReviewed(true);
+          await fetchAllTasks();
+          if (autoNext) {
+            goToNextPendingTask();
+          } else {
+            await fetchTask();
+          }
+          alert('Task này đã được bạn chấm trước đó. Mình đã đồng bộ lại trạng thái.');
+        } else {
+          alert(errorMessage);
+        }
         console.error('Error rejecting task:', error);
       } finally {
         setProcessing(false);
       }
     }
-  }, [id, task, reviewComments, reviewNotes, selectedIssues, issueOptions, issueTargets, issueComments, datasetType, autoNext, fetchAllTasks, fetchTask, goToNextPendingTask]);
-
-  const goToNextPendingTask = useCallback(() => {
-    const idx = pendingTasks.findIndex((t) => t._id === id);
-    if (idx >= 0 && idx < pendingTasks.length - 1) {
-      navigate(`/reviewer/tasks/${pendingTasks[idx + 1]._id}`);
-      return;
-    }
-    if (pendingTasks.length > 0 && idx === -1) {
-      navigate(`/reviewer/tasks/${pendingTasks[0]._id}`);
-      return;
-    }
-    navigate('/reviewer/dashboard');
-  }, [pendingTasks, id, navigate]);
+  }, [id, task, reviewComments, reviewNotes, selectedIssues, issueOptions, issueTargets, issueComments, datasetType, autoNext, fetchAllTasks, fetchTask, goToNextPendingTask, processing, isReviewed]);
 
   const handleSkip = () => {
     goToNextPendingTask();
@@ -697,22 +746,28 @@ const ReviewerTask = () => {
                     REVIEW QUEUE
                   </h3>
                   <span className={`px-3 py-1 rounded-full text-xs font-semibold ${darkMode ? 'bg-emerald-900/50 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}>
-                    {pendingTasks.length} PENDING
+                    {actionablePendingTasks.length} ACTIONABLE
                   </span>
                 </div>
                 <div className="space-y-3">
-                  {pendingTasks.length === 0 ? (
+                  {actionablePendingTasks.length === 0 ? (
                     <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                      Không có task nào đang chờ review.
+                      Không có task nào bạn có thể chấm lúc này.
                     </div>
                   ) : (
-                    pendingTasks.map((pendingTask) => {
+                    actionablePendingTasks.map((pendingTask) => {
                       const isActive = pendingTask._id === id;
                       const timeAgo = pendingTask.submittedAt ? getTimeAgo(new Date(pendingTask.submittedAt)) : '';
                       return (
                         <button
                           key={pendingTask._id}
-                          onClick={() => navigate(`/reviewer/tasks/${pendingTask._id}`)}
+                          onClick={() => {
+                            const scopeQuery = new URLSearchParams();
+                            if (scopedProjectId) scopeQuery.set('projectId', scopedProjectId);
+                            if (scopedDatasetId) scopeQuery.set('datasetId', scopedDatasetId);
+                            const query = scopeQuery.toString();
+                            navigate(`/reviewer/tasks/${pendingTask._id}${query ? `?${query}` : ''}`);
+                          }}
                           className={`w-full text-left rounded-xl p-3 transition-all duration-200 ${isActive
                             ? darkMode
                               ? 'bg-emerald-600/30 border-2 border-emerald-400'
@@ -1344,29 +1399,35 @@ const ReviewerTask = () => {
 
             <div>
               <h3 className="text-xl font-semibold text-white mb-3">Structured Comment</h3>
-              <div className="rounded-xl border border-slate-700 bg-[#0f172a] p-4 space-y-3">
-                <label className="text-sm text-slate-400 block">Overall Feedback</label>
+              <div className="rounded-xl border border-blue-700/40 bg-gradient-to-b from-[#0f172a] to-[#0b1220] p-4 space-y-3 shadow-[0_0_0_1px_rgba(59,130,246,0.15)]">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-semibold text-blue-200 block">Overall Feedback</label>
+                  <span className={`text-[11px] px-2 py-1 rounded-full border ${reviewComments.trim().length >= 12 ? 'text-emerald-300 border-emerald-600/40 bg-emerald-900/20' : 'text-amber-300 border-amber-600/40 bg-amber-900/20'}`}>
+                    {reviewComments.trim().length >= 12 ? 'Đủ nội dung' : 'Nên >= 12 ký tự'}
+                  </span>
+                </div>
                 <textarea
                   value={reviewComments}
                   onChange={(e) => setReviewComments(e.target.value)}
-                  rows={4}
+                  rows={5}
                   placeholder={datasetType === 'image'
                     ? 'Ví dụ: Thiếu 1 object ở góc trái và sai class object #3.'
                     : datasetType === 'audio'
                       ? 'Ví dụ: Segment #2 sai nhãn, Segment #3 lệch timestamp 0.5s.'
                       : 'Ví dụ: Missing entity LOCATION ở cuối câu, span entity #2 sai.'}
-                  className="w-full rounded-lg bg-[#0f172a] border border-slate-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-slate-200 text-sm px-3 py-2"
+                  disabled={isReviewed}
+                  className="w-full rounded-lg bg-[#0a1020] border border-slate-500 focus:border-blue-400 focus:ring-2 focus:ring-blue-500/30 text-slate-100 text-sm px-3 py-3 placeholder:text-slate-400 disabled:opacity-60"
                 />
-                <div className="text-xs text-slate-400">
+                <div className="text-xs text-slate-300 rounded-lg border border-slate-700 bg-[#0b1328] px-3 py-2">
                   {selectedIssueDetails.length > 0 ? (
                     <div className="space-y-1">
-                      <p className="text-slate-300 font-medium">Issues selected:</p>
+                      <p className="text-blue-200 font-semibold">Issues selected ({selectedIssueDetails.length})</p>
                       {selectedIssueDetails.map((issue) => (
                         <p key={issue.id}>• {issue.label}{issueTargets[issue.id] ? ` (${issueTargets[issue.id]})` : ''}</p>
                       ))}
                     </div>
                   ) : (
-                    <p>Chưa chọn issue nào.</p>
+                    <p className="text-amber-200">Chưa chọn issue nào. Reject sẽ bị khóa cho tới khi chọn ít nhất 1 issue.</p>
                   )}
                 </div>
               </div>

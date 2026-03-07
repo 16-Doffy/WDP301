@@ -300,12 +300,18 @@ const Datasets = () => {
                 const rejected = counts.rejected ?? 0;
                 const finalCount = counts.final ?? stat?.totalFinalItems ?? 0;
                 const canExport = finalCount > 0;
+                const isReviewCompleted = rawCount > 0 && completed >= rawCount;
+                const majorityThreshold = stat?.majorityThreshold;
+                const majorityRuleLabel = stat?.majorityRuleLabel || (majorityThreshold?.required && majorityThreshold?.total
+                  ? `${majorityThreshold.required}/${majorityThreshold.total}`
+                  : '2/3');
                 const votes = stat?.votes || {};
                 const approveVotes = votes.approveVotes ?? 0;
                 const rejectVotes = votes.rejectVotes ?? 0;
                 const pendingVotes = votes.pendingVotes ?? 0;
                 const decidedVotes = votes.decidedVotes ?? (approveVotes + rejectVotes);
                 const totalVotes = votes.totalVotes ?? (approveVotes + rejectVotes + pendingVotes);
+                const voteProgressLabel = votes.progressLabel || `${decidedVotes}/${totalVotes}`;
 
                 return (
                   <Grid item xs={12} md={6} lg={4} key={dataset._id}>
@@ -318,6 +324,58 @@ const Datasets = () => {
                             <Box sx={{ mt: 1, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                               <Chip size="small" label={(dataset.type || 'image').toUpperCase()} sx={{ bgcolor: 'rgba(59,130,246,0.15)', color: '#60a5fa', border: '1px solid #334155' }} />
                               <Chip size="small" label={dataset.projectName} sx={{ bgcolor: 'rgba(16,185,129,0.15)', color: '#34d399', border: '1px solid #334155' }} />
+                            </Box>
+                            <Box sx={{ mt: 1, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                              <Chip
+                                size="small"
+                                label={`Review Completed: ${isReviewCompleted ? 'Yes' : 'No'}`}
+                                sx={{
+                                  bgcolor: isReviewCompleted ? 'rgba(34,197,94,0.15)' : 'rgba(248,113,113,0.15)',
+                                  color: isReviewCompleted ? '#4ade80' : '#fca5a5',
+                                  border: '1px solid #334155',
+                                  fontWeight: 700,
+                                }}
+                              />
+                              <Chip
+                                size="small"
+                                label={`Export Ready: ${canExport ? 'Yes' : 'No'}`}
+                                sx={{
+                                  bgcolor: canExport ? 'rgba(34,197,94,0.15)' : 'rgba(248,113,113,0.15)',
+                                  color: canExport ? '#4ade80' : '#fca5a5',
+                                  border: '1px solid #334155',
+                                  fontWeight: 700,
+                                }}
+                              />
+                              <Chip
+                                size="small"
+                                label={`Majority Rule: ${majorityRuleLabel}`}
+                                sx={{
+                                  bgcolor: 'rgba(59,130,246,0.15)',
+                                  color: '#93c5fd',
+                                  border: '1px solid #334155',
+                                  fontWeight: 700,
+                                }}
+                              />
+                              <Chip
+                                size="small"
+                                label={`Vote Progress: ${voteProgressLabel}`}
+                                sx={{
+                                  bgcolor: totalVotes > 0 ? 'rgba(59,130,246,0.15)' : 'rgba(100,116,139,0.2)',
+                                  color: totalVotes > 0 ? '#93c5fd' : '#94a3b8',
+                                  border: '1px solid #334155',
+                                  fontWeight: 700,
+                                }}
+                              />
+                              <Chip
+                                size="small"
+                                label={`Approved Coverage: ${finalCount}/${rawCount}`}
+                                sx={{
+                                  bgcolor: finalCount > 0 ? 'rgba(34,197,94,0.15)' : 'rgba(100,116,139,0.2)',
+                                  color: finalCount > 0 ? '#86efac' : '#94a3b8',
+                                  border: '1px solid #334155',
+                                  fontWeight: 700,
+                                }}
+                              />
                             </Box>
                           </Box>
                           <IconButton size="small" sx={{ color: '#f87171' }} onClick={() => { setSelectedDataset(dataset); setDeleteDialogOpen(true); }}>

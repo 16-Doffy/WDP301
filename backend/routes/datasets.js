@@ -402,7 +402,7 @@ router.put('/:id', auth, authorize('manager', 'admin'), async (req, res) => {
 // Get dataset labeling status (raw vs final)
 router.get('/:id/status', auth, authorize('manager', 'admin'), async (req, res) => {
   try {
-    const dataset = await Dataset.findById(req.params.id);
+    const dataset = await Dataset.findById(req.params.id).populate('projectId', 'reviewPolicy');
     if (!dataset) {
       return res.status(404).json({ message: 'Dataset not found' });
     }
@@ -424,6 +424,13 @@ router.get('/:id/status', auth, authorize('manager', 'admin'), async (req, res) 
     const voteSummary = tasks.reduce(
       (acc, task) => {
         const reviewers = Array.isArray(task.reviewers) ? task.reviewers : [];
+        const reviewerCount = reviewers.length;
+
+        if (reviewerCount > 0) {
+          acc.totalReviewerSlots += reviewerCount;
+          acc.reviewerCounts.push(reviewerCount);
+        }
+
         reviewers.forEach((r) => {
           if (r.status === 'approved') acc.approveVotes += 1;
           else if (r.status === 'rejected') acc.rejectVotes += 1;
@@ -431,8 +438,20 @@ router.get('/:id/status', auth, authorize('manager', 'admin'), async (req, res) 
         });
         return acc;
       },
-      { approveVotes: 0, rejectVotes: 0, pendingVotes: 0 }
+      { approveVotes: 0, rejectVotes: 0, pendingVotes: 0, totalReviewerSlots: 0, reviewerCounts: [] }
     );
+
+    const decidedVotes = voteSummary.approveVotes + voteSummary.rejectVotes;
+    const totalVotes = voteSummary.approveVotes + voteSummary.rejectVotes + voteSummary.pendingVotes;
+
+    const reviewerCounts = voteSummary.reviewerCounts;
+    const configuredReviewersPerItem = Number(dataset?.projectId?.reviewPolicy?.reviewersPerItem);
+    const fallbackFromTasks = reviewerCounts.length ? Math.max(...reviewerCounts) : 0;
+    const reviewersPerItem = Number.isFinite(configuredReviewersPerItem) && configuredReviewersPerItem > 0
+      ? configuredReviewersPerItem
+      : (fallbackFromTasks > 0 ? fallbackFromTasks : 3);
+    const majorityRequired = Math.floor(reviewersPerItem / 2) + 1;
+    const majorityRuleLabel = `${majorityRequired}/${reviewersPerItem}`;
 
     const finalItems = approvedTasks.map((t) => ({
       taskId: t._id,
@@ -467,10 +486,18 @@ router.get('/:id/status', auth, authorize('manager', 'admin'), async (req, res) 
       lifecycleRate,
       finalRate,
       completionRate: finalRate,
+      majorityThreshold: {
+        required: majorityRequired,
+        total: reviewersPerItem,
+      },
+      majorityRuleLabel,
       votes: {
-        ...voteSummary,
-        decidedVotes: voteSummary.approveVotes + voteSummary.rejectVotes,
-        totalVotes: voteSummary.approveVotes + voteSummary.rejectVotes + voteSummary.pendingVotes,
+        approveVotes: voteSummary.approveVotes,
+        rejectVotes: voteSummary.rejectVotes,
+        pendingVotes: voteSummary.pendingVotes,
+        decidedVotes,
+        totalVotes,
+        progressLabel: `${decidedVotes}/${totalVotes}`,
       },
       finalItems,
     });

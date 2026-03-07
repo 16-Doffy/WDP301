@@ -55,6 +55,12 @@ const projectSchema = new mongoose.Schema({
       min: 0,
       max: 1,
       default: 0.1
+    },
+    reviewersPerItem: {
+      type: Number,
+      min: 1,
+      max: 10,
+      default: 3
     }
   },
   status: {

@@ -67,15 +67,17 @@ const ReviewerDashboard = () => {
     filteredPending.forEach((task) => {
       const projectId = task?.projectId?._id || 'unknown';
       const projectName = task?.projectId?.name || 'Unknown Project';
+      const datasetId = task?.datasetId?._id || 'unknown';
       const datasetName = task?.datasetId?.name || 'No dataset';
       const type = detectType(task);
-      const key = `${projectId}::${datasetName}::${type}`;
+      const key = `${projectId}::${datasetId}::${type}`;
 
       if (!groups[key]) {
         groups[key] = {
           key,
           projectId,
           projectName,
+          datasetId,
           datasetName,
           type,
           tasks: [],
@@ -220,7 +222,7 @@ const ReviewerDashboard = () => {
                           className="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-white/90 text-slate-700"
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (group.firstTask?._id) navigate(`/reviewer/tasks/${group.firstTask._id}`);
+                            if (group.firstTask?._id) navigate(`/reviewer/tasks/${group.firstTask._id}?projectId=${group.projectId}&datasetId=${group.datasetId}`);
                           }}
                         >
                           <ArrowRightIcon />
@@ -241,7 +243,7 @@ const ReviewerDashboard = () => {
                 <div className="text-sm text-slate-300">Pending: {selectedGroup?.pendingCount || 0}</div>
                 <button
                   disabled={!selectedGroup?.firstTask?._id}
-                  onClick={() => selectedGroup?.firstTask?._id && navigate(`/reviewer/tasks/${selectedGroup.firstTask._id}`)}
+                  onClick={() => selectedGroup?.firstTask?._id && navigate(`/reviewer/tasks/${selectedGroup.firstTask._id}?projectId=${selectedGroup.projectId}&datasetId=${selectedGroup.datasetId}`)}
                   className="mt-3 w-full py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50"
                 >
                   Start Reviewing Batch

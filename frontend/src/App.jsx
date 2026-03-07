@@ -205,6 +205,7 @@ function App() {
               <Route path="annotator/tasks" element={<AnnotatorDashboard />} />
               <Route path="annotator/tasks/:id" element={<AnnotatorTask />} />
               <Route path="reviewer/tasks" element={<ReviewerDashboard />} />
+              <Route path="reviewer/dashboard" element={<ReviewerDashboard />} />
               <Route path="reviewer/tasks/:id" element={<ReviewerTask />} />
               <Route path="admin/users" element={<AdminUsers />} />
               <Route path="admin/activity-logs" element={<AdminActivityLogs />} />
