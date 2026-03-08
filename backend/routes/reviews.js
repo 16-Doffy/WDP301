@@ -186,6 +186,38 @@ router.get('/all', auth, authorize('reviewer', 'admin'), async (req, res) => {
   }
 });
 
+// Reviewer overview: include assigned/not-submitted + submitted + reviewed
+router.get('/overview', auth, authorize('reviewer', 'admin'), async (req, res) => {
+  try {
+    const reviewerId = req.user._id;
+    const reviewerIdString = reviewerId.toString();
+
+    const reviewerAssignedQuery = {
+      $or: [
+        {
+          reviewers: {
+            $elemMatch: {
+              reviewerId: { $in: [reviewerId, reviewerIdString] },
+            },
+          },
+        },
+        { reviewerId: { $in: [reviewerId, reviewerIdString] } },
+      ],
+    };
+
+    const tasks = await Task.find(reviewerAssignedQuery)
+      .populate('projectId', 'name')
+      .populate('datasetId', 'name')
+      .populate('annotatorId', 'username fullName')
+      .sort({ updatedAt: -1 });
+
+    res.json({ tasks });
+  } catch (error) {
+    console.error('Error in /api/reviews/overview:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
 // Approve task
 router.post('/:id/approve', auth, authorize('reviewer', 'admin'), async (req, res) => {
   try {

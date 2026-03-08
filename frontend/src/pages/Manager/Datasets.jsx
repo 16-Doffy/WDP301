@@ -60,6 +60,8 @@ const Datasets = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusByDataset, setStatusByDataset] = useState({});
 
+  const getAuthToken = () => sessionStorage.getItem('token') || localStorage.getItem('token');
+
   useEffect(() => {
     fetchDatasets();
   }, []);
@@ -79,7 +81,7 @@ const Datasets = () => {
   const fetchDatasets = async () => {
     try {
       const response = await axios.get(`${API_URL}/api/datasets`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        headers: { Authorization: `Bearer ${getAuthToken()}` },
       });
       const allDatasets = response.data || [];
       const mapped = allDatasets.map((ds) => ({
@@ -94,7 +96,7 @@ const Datasets = () => {
         mapped.map(async (ds) => {
           try {
             const s = await axios.get(`${API_URL}/api/datasets/${ds._id}/status`, {
-              headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+              headers: { Authorization: `Bearer ${getAuthToken()}` },
             });
             return [ds._id, s.data];
           } catch {
@@ -174,8 +176,7 @@ const Datasets = () => {
 
       const createRes = await axios.post(`${API_URL}/api/datasets`, payload, {
         headers: {
-          'Content-Type': 'multipart/form-data',
-          Authorization: `Bearer ${localStorage.getItem('token')}`,
+          Authorization: `Bearer ${getAuthToken()}`,
         },
       });
 
@@ -206,7 +207,7 @@ const Datasets = () => {
     if (!selectedDataset) return;
     try {
       await axios.delete(`${API_URL}/api/datasets/${selectedDataset._id}`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        headers: { Authorization: `Bearer ${getAuthToken()}` },
       });
       setDeleteDialogOpen(false);
       setSelectedDataset(null);
@@ -220,7 +221,7 @@ const Datasets = () => {
     try {
       const response = await axios.get(`${API_URL}/api/datasets/${datasetId}/final-export`, {
         responseType: 'blob',
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+        headers: { Authorization: `Bearer ${getAuthToken()}` },
       });
 
       const blob = new Blob([response.data], { type: 'application/json' });

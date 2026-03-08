@@ -1,13 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  Search as SearchIcon,
-  CheckCircle as CheckCircleIcon,
-  PendingActions as PendingIcon,
-  ErrorOutline as RejectedIcon,
-  KeyboardArrowRight as ArrowRightIcon,
-  Folder as FolderIcon,
-} from '@mui/icons-material';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
 
@@ -19,56 +11,42 @@ const detectType = (task) => {
   return 'other';
 };
 
+const notSubmittedStatuses = ['assigned', 'in_progress', 'completed', 'revised'];
+
 const ReviewerDashboard = () => {
-  const [pendingTasks, setPendingTasks] = useState([]);
-  const [reviewedTasks, setReviewedTasks] = useState([]);
+  const [allTasks, setAllTasks] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [tabValue, setTabValue] = useState(0); // 0: Pending by Project, 1: Reviewed History
-  const [selectedDataType, setSelectedDataType] = useState('all');
-  const [selectedGroupKey, setSelectedGroupKey] = useState('');
+  const [selectedType, setSelectedType] = useState('all');
+  const [selectedBatchKey, setSelectedBatchKey] = useState('');
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetchTasks();
+    fetchAllReviewerTasks();
   }, []);
 
-  const fetchTasks = async () => {
+  const fetchAllReviewerTasks = async () => {
     try {
-      const response = await axios.get(`${API_URL}/api/reviews/all`);
-      setPendingTasks(response.data.pending || []);
-      setReviewedTasks(response.data.reviewed || []);
+      setLoading(true);
+      const response = await axios.get(`${API_URL}/api/reviews/overview`);
+      setAllTasks(response.data.tasks || []);
     } catch (error) {
-      console.error('Error fetching tasks:', error);
+      console.error('Error fetching reviewer overview:', error);
+      setAllTasks([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const dataTypeTabs = useMemo(() => {
-    const allTasks = [...pendingTasks, ...reviewedTasks];
-    const byType = (type) => allTasks.filter((t) => type === 'all' ? true : detectType(t) === type).length;
+  const filteredTasks = useMemo(() => {
+    return allTasks.filter((task) => (selectedType === 'all' ? true : detectType(task) === selectedType));
+  }, [allTasks, selectedType]);
 
-    return [
-      { id: 'all', label: 'All', count: byType('all') },
-      { id: 'image', label: 'Image', count: byType('image') },
-      { id: 'text', label: 'Text', count: byType('text') },
-      { id: 'audio', label: 'Audio', count: byType('audio') },
-    ];
-  }, [pendingTasks, reviewedTasks]);
-
-  const matchesDataType = (task) => selectedDataType === 'all' || detectType(task) === selectedDataType;
-
-  const filteredPending = useMemo(() => pendingTasks.filter(matchesDataType), [pendingTasks, selectedDataType]);
-  const filteredReviewed = useMemo(() => reviewedTasks.filter(matchesDataType), [reviewedTasks, selectedDataType]);
-
-  const pendingProjectGroups = useMemo(() => {
+  const groupedBatches = useMemo(() => {
     const groups = {};
 
-    filteredPending.forEach((task) => {
-      const projectId = task?.projectId?._id || 'unknown';
-      const projectName = task?.projectId?.name || 'Unknown Project';
-      const datasetId = task?.datasetId?._id || 'unknown';
-      const datasetName = task?.datasetId?.name || 'No dataset';
+    filteredTasks.forEach((task) => {
+      const projectId = task?.projectId?._id || 'unknown-project';
+      const datasetId = task?.datasetId?._id || 'unknown-dataset';
       const type = detectType(task);
       const key = `${projectId}::${datasetId}::${type}`;
 
@@ -76,231 +54,223 @@ const ReviewerDashboard = () => {
         groups[key] = {
           key,
           projectId,
-          projectName,
+          projectName: task?.projectId?.name || 'Unknown Project',
           datasetId,
-          datasetName,
+          datasetName: task?.datasetId?.name || 'Unknown Dataset',
           type,
           tasks: [],
-          annotatorMap: {},
+          annotators: {},
         };
       }
 
       groups[key].tasks.push(task);
 
+      const annotatorId = task?.annotatorId?._id || 'unknown-annotator';
       const annotatorName = task?.annotatorId?.fullName || task?.annotatorId?.username || 'Unknown Annotator';
-      groups[key].annotatorMap[annotatorName] = (groups[key].annotatorMap[annotatorName] || 0) + 1;
+
+      if (!groups[key].annotators[annotatorId]) {
+        groups[key].annotators[annotatorId] = {
+          annotatorId,
+          annotatorName,
+          totalTasks: 0,
+          submittedTasks: 0,
+          notSubmittedTasks: 0,
+          submittedTaskIds: [],
+          latestSubmittedAt: null,
+        };
+      }
+
+      const ann = groups[key].annotators[annotatorId];
+      ann.totalTasks += 1;
+
+      if (task?.status === 'submitted') {
+        ann.submittedTasks += 1;
+        ann.submittedTaskIds.push(task._id);
+        const submittedAt = task?.submittedAt ? new Date(task.submittedAt) : null;
+        if (submittedAt && (!ann.latestSubmittedAt || submittedAt > ann.latestSubmittedAt)) {
+          ann.latestSubmittedAt = submittedAt;
+        }
+      } else if (notSubmittedStatuses.includes(task?.status)) {
+        ann.notSubmittedTasks += 1;
+      }
     });
 
     return Object.values(groups)
-      .map((g) => {
-        const submittedCount = g.tasks.filter((t) => t.status === 'submitted').length;
-        const firstTask = [...g.tasks].sort((a, b) => new Date(a.submittedAt || 0) - new Date(b.submittedAt || 0))[0];
-        const annotatorSummary = Object.entries(g.annotatorMap)
-          .sort((a, b) => b[1] - a[1]);
+      .map((group) => {
+        const annotatorRows = Object.values(group.annotators).sort((a, b) => {
+          if (b.submittedTasks !== a.submittedTasks) return b.submittedTasks - a.submittedTasks;
+          return a.annotatorName.localeCompare(b.annotatorName);
+        });
+
+        const submittedAnnotators = annotatorRows.filter((a) => a.submittedTasks > 0).length;
+        const notSubmittedAnnotators = annotatorRows.filter((a) => a.submittedTasks === 0).length;
+        const firstActionableTaskId = annotatorRows.find((a) => a.submittedTaskIds.length > 0)?.submittedTaskIds?.[0] || null;
 
         return {
-          ...g,
-          pendingCount: g.tasks.length,
-          submittedCount,
-          firstTask,
-          annotatorSummary,
+          ...group,
+          annotatorRows,
+          annotatorCount: annotatorRows.length,
+          submittedAnnotators,
+          notSubmittedAnnotators,
+          firstActionableTaskId,
         };
       })
-      .sort((a, b) => b.pendingCount - a.pendingCount);
-  }, [filteredPending]);
+      .sort((a, b) => {
+        if (b.submittedAnnotators !== a.submittedAnnotators) return b.submittedAnnotators - a.submittedAnnotators;
+        return a.projectName.localeCompare(b.projectName);
+      });
+  }, [filteredTasks]);
 
-  const selectedGroup = useMemo(
-    () => pendingProjectGroups.find((g) => g.key === selectedGroupKey) || pendingProjectGroups[0] || null,
-    [pendingProjectGroups, selectedGroupKey]
-  );
+  const selectedBatch = useMemo(() => {
+    return groupedBatches.find((g) => g.key === selectedBatchKey) || groupedBatches[0] || null;
+  }, [groupedBatches, selectedBatchKey]);
 
-  const reviewedRows = tabValue === 1 ? filteredReviewed : [];
+  const stats = useMemo(() => {
+    const submitted = allTasks.filter((t) => t.status === 'submitted').length;
+    const inReview = allTasks.filter((t) => t.status === 'approved' || t.status === 'rejected').length;
+    const notSubmitted = allTasks.filter((t) => notSubmittedStatuses.includes(t.status)).length;
+
+    return {
+      total: allTasks.length,
+      submitted,
+      inReview,
+      notSubmitted,
+    };
+  }, [allTasks]);
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="relative w-12 h-12">
-          <div className="absolute top-0 left-0 w-full h-full border-4 border-slate-700 rounded-full"></div>
-          <div className="absolute top-0 left-0 w-full h-full border-4 border-blue-600 rounded-full border-t-transparent animate-spin"></div>
-        </div>
+      <div className="flex items-center justify-center min-h-[420px] bg-[#0f172a]">
+        <div className="h-12 w-12 rounded-full border-4 border-slate-700 border-t-blue-500 animate-spin" />
       </div>
     );
   }
 
-  const StatCard = ({ title, value, icon: Icon, colorClass, subtext }) => (
-    <div className="bg-[#1e293b] rounded-2xl p-6 shadow-2xl border border-slate-700">
-      <div className="flex justify-between items-start">
-        <div>
-          <p className="text-slate-400 text-sm mb-1 uppercase tracking-wider">{title}</p>
-          <h3 className="text-3xl font-semibold text-slate-200">{value}</h3>
-          {subtext && <p className="text-slate-400 text-xs mt-2">{subtext}</p>}
-        </div>
-        <div className={`p-3 rounded-xl ${colorClass}`}>
-          <Icon className="w-6 h-6" />
-        </div>
-      </div>
-    </div>
-  );
-
   return (
-    <div className="min-h-screen bg-[#0f172a] p-6 md:p-10 max-w-7xl mx-auto space-y-8 text-slate-200">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-semibold text-white tracking-tight">Review Dashboard</h1>
-          <p className="text-slate-400 mt-1">Project-based review mode for large-scale queue.</p>
+    <div className="min-h-screen bg-[#0f172a] p-6 md:p-10 text-slate-200">
+      <div className="max-w-7xl mx-auto space-y-6">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h1 className="text-3xl font-semibold text-white">Reviewer Dashboard</h1>
+            <p className="text-slate-400 mt-1">Hiển thị project/dataset được giao và trạng thái nộp của từng annotator.</p>
+          </div>
+          <button
+            onClick={fetchAllReviewerTasks}
+            className="px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 border border-slate-600"
+          >
+            Refresh
+          </button>
         </div>
-        <button onClick={fetchTasks} className="p-2.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 border border-slate-600 transition">
-          Refresh
-        </button>
-      </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard title="Total Assigned" value={pendingTasks.length + reviewedTasks.length} icon={SearchIcon} colorClass="bg-blue-500/20 text-blue-400" subtext="All tasks" />
-        <StatCard title="Pending" value={filteredPending.length} icon={PendingIcon} colorClass="bg-amber-500/20 text-amber-400" subtext="Need review" />
-        <StatCard title="Approved" value={filteredReviewed.filter((t) => t.status === 'approved').length} icon={CheckCircleIcon} colorClass="bg-emerald-500/20 text-emerald-400" subtext="Reviewed pass" />
-        <StatCard title="Rejected" value={filteredReviewed.filter((t) => t.status === 'rejected').length} icon={RejectedIcon} colorClass="bg-red-500/20 text-red-400" subtext="Need rework" />
-      </div>
-
-      <div className="bg-[#1e293b] rounded-2xl shadow-2xl border border-slate-700 overflow-hidden">
-        <div className="px-6 pt-5">
-          <div className="mb-4 flex flex-wrap gap-2">
-            {dataTypeTabs.map((typeTab) => (
-              <button
-                key={typeTab.id}
-                onClick={() => setSelectedDataType(typeTab.id)}
-                className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${selectedDataType === typeTab.id
-                  ? 'bg-blue-600 text-white border-blue-500'
-                  : 'bg-[#0f172a] text-slate-300 border-slate-600 hover:border-blue-500'
-                  }`}
-              >
-                {typeTab.label} <span className="ml-1 opacity-80">({typeTab.count})</span>
-              </button>
-            ))}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="rounded-xl border border-slate-700 bg-[#1e293b] p-4">
+            <p className="text-xs uppercase text-slate-400">Total assigned items</p>
+            <p className="text-2xl font-bold text-white">{stats.total}</p>
+          </div>
+          <div className="rounded-xl border border-slate-700 bg-[#1e293b] p-4">
+            <p className="text-xs uppercase text-slate-400">Submitted to reviewer</p>
+            <p className="text-2xl font-bold text-emerald-300">{stats.submitted}</p>
+          </div>
+          <div className="rounded-xl border border-slate-700 bg-[#1e293b] p-4">
+            <p className="text-xs uppercase text-slate-400">Not submitted yet</p>
+            <p className="text-2xl font-bold text-amber-300">{stats.notSubmitted}</p>
+          </div>
+          <div className="rounded-xl border border-slate-700 bg-[#1e293b] p-4">
+            <p className="text-xs uppercase text-slate-400">Already reviewed</p>
+            <p className="text-2xl font-bold text-blue-300">{stats.inReview}</p>
           </div>
         </div>
 
-        <div className="flex border-b border-slate-700 px-6">
-          <button onClick={() => setTabValue(0)} className={`pb-4 px-4 text-sm font-semibold ${tabValue === 0 ? 'text-blue-400 border-b-2 border-blue-500' : 'text-slate-400'}`}>
-            Pending by Project <span className="ml-2 text-xs">({pendingProjectGroups.length})</span>
-          </button>
-          <button onClick={() => setTabValue(1)} className={`pb-4 px-4 text-sm font-semibold ${tabValue === 1 ? 'text-blue-400 border-b-2 border-blue-500' : 'text-slate-400'}`}>
-            Reviewed History <span className="ml-2 text-xs">({filteredReviewed.length})</span>
-          </button>
+        <div className="flex gap-2 flex-wrap">
+          {['all', 'image', 'audio', 'text'].map((t) => (
+            <button
+              key={t}
+              onClick={() => setSelectedType(t)}
+              className={`px-3 py-1.5 rounded-full text-xs border ${selectedType === t
+                ? 'bg-blue-600 border-blue-500 text-white'
+                : 'bg-[#1e293b] border-slate-600 text-slate-300'
+                }`}
+            >
+              {t.toUpperCase()}
+            </button>
+          ))}
         </div>
 
-        {tabValue === 0 ? (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-0">
-            <div className="lg:col-span-2 border-r border-slate-700">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-[#0f172a]">
-                    <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase">Project / Dataset</th>
-                    <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase">Type</th>
-                    <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase">Pending</th>
-                    <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase">Annotators</th>
-                    <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-700/60">
-                  {pendingProjectGroups.length === 0 ? (
-                    <tr><td colSpan={5} className="py-16 text-center text-slate-400">No pending projects.</td></tr>
-                  ) : pendingProjectGroups.map((group) => (
-                    <tr
-                      key={group.key}
-                      onClick={() => setSelectedGroupKey(group.key)}
-                      className={`cursor-pointer hover:bg-slate-700/30 ${selectedGroup?.key === group.key ? 'bg-slate-700/40' : ''}`}
-                    >
-                      <td className="px-6 py-4">
-                        <div className="font-semibold text-slate-100">{group.projectName}</div>
-                        <div className="text-xs text-slate-400 mt-1">{group.datasetName}</div>
-                      </td>
-                      <td className="px-6 py-4 uppercase text-xs font-semibold text-blue-300">{group.type}</td>
-                      <td className="px-6 py-4 text-slate-200 font-semibold">{group.pendingCount}</td>
-                      <td className="px-6 py-4 text-slate-300">{group.annotatorSummary.length}</td>
-                      <td className="px-6 py-4 text-right">
-                        <button
-                          className="inline-flex items-center justify-center w-9 h-9 rounded-xl bg-white/90 text-slate-700"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (group.firstTask?._id) navigate(`/reviewer/tasks/${group.firstTask._id}?projectId=${group.projectId}&datasetId=${group.datasetId}`);
-                          }}
-                        >
-                          <ArrowRightIcon />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="p-5 space-y-4 bg-[#172033]">
-              <div className="rounded-xl border border-slate-700 bg-[#0f172a] p-4">
-                <p className="text-xs text-slate-400 uppercase mb-1">Selected Batch</p>
-                <div className="text-slate-100 font-semibold">{selectedGroup?.projectName || '—'}</div>
-                <div className="text-xs text-slate-400">{selectedGroup?.datasetName || '—'}</div>
-                <div className="mt-2 text-sm text-slate-300">Type: <span className="uppercase">{selectedGroup?.type || '—'}</span></div>
-                <div className="text-sm text-slate-300">Pending: {selectedGroup?.pendingCount || 0}</div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 border border-slate-700 rounded-2xl overflow-hidden">
+          <div className="lg:col-span-1 bg-[#1e293b] border-r border-slate-700">
+            <div className="p-4 border-b border-slate-700 text-sm font-semibold text-slate-200">Project / Dataset được giao</div>
+            <div className="max-h-[640px] overflow-auto">
+              {groupedBatches.length === 0 ? (
+                <div className="p-6 text-sm text-slate-400">Không có batch nào.</div>
+              ) : groupedBatches.map((batch) => (
                 <button
-                  disabled={!selectedGroup?.firstTask?._id}
-                  onClick={() => selectedGroup?.firstTask?._id && navigate(`/reviewer/tasks/${selectedGroup.firstTask._id}?projectId=${selectedGroup.projectId}&datasetId=${selectedGroup.datasetId}`)}
-                  className="mt-3 w-full py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50"
+                  key={batch.key}
+                  onClick={() => setSelectedBatchKey(batch.key)}
+                  className={`w-full text-left p-4 border-b border-slate-700/60 hover:bg-slate-700/30 ${selectedBatch?.key === batch.key ? 'bg-slate-700/40' : ''}`}
                 >
-                  Start Reviewing Batch
+                  <p className="font-semibold text-slate-100">{batch.projectName}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">{batch.datasetName} • {batch.type.toUpperCase()}</p>
+                  <p className="text-xs mt-2 text-slate-300">
+                    Annotators: {batch.annotatorCount} • Đã nộp: {batch.submittedAnnotators} • Chưa nộp: {batch.notSubmittedAnnotators}
+                  </p>
                 </button>
-              </div>
-
-              <div className="rounded-xl border border-slate-700 bg-[#0f172a] p-4">
-                <p className="text-xs text-slate-400 uppercase mb-2">Grouped by Annotator</p>
-                {selectedGroup?.annotatorSummary?.length ? selectedGroup.annotatorSummary.map(([name, count]) => (
-                  <div key={name} className="flex items-center justify-between py-1.5 border-b border-slate-800 last:border-0">
-                    <span className="text-sm text-slate-200">{name}</span>
-                    <span className="text-xs px-2 py-0.5 rounded bg-slate-700 text-slate-200">{count} tasks</span>
-                  </div>
-                )) : <p className="text-sm text-slate-500">No annotator data.</p>}
-              </div>
-
-              <div className="rounded-xl border border-slate-700 bg-[#0f172a] p-4 text-xs text-slate-400">
-                <div className="flex items-center gap-2 text-slate-300 font-semibold mb-2"><FolderIcon fontSize="small" /> UX note</div>
-                Reviewer giờ vào theo <b>Project/Batch</b>, không phải click từng task từ dashboard.
-              </div>
+              ))}
             </div>
           </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="bg-[#0f172a]">
-                  <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase">Project & File</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase">Annotator</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase">Status</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase">Reviewed At</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-700/60">
-                {reviewedRows.length === 0 ? (
-                  <tr><td colSpan={5} className="py-16 text-center text-slate-400">No reviewed tasks.</td></tr>
-                ) : reviewedRows.map((task) => (
-                  <tr key={task._id} className="hover:bg-slate-700/30 cursor-pointer" onClick={() => navigate(`/reviewer/tasks/${task._id}`)}>
-                    <td className="px-6 py-4">
-                      <div className="text-slate-100 font-semibold">{task.projectId?.name || 'Unknown Project'}</div>
-                      <div className="text-xs text-slate-400 mt-1">{task.dataItem?.filename}</div>
-                    </td>
-                    <td className="px-6 py-4 text-slate-200">{task.annotatorId?.fullName || task.annotatorId?.username || '—'}</td>
-                    <td className="px-6 py-4">
-                      <span className={`text-xs px-2 py-1 rounded-full ${task.status === 'approved' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-red-500/20 text-red-300'}`}>
-                        {task.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-slate-300 text-sm">{task.reviewedAt ? new Date(task.reviewedAt).toLocaleString() : '-'}</td>
-                    <td className="px-6 py-4 text-right"><ArrowRightIcon className="text-slate-300" /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+
+          <div className="lg:col-span-2 bg-[#0f172a]">
+            <div className="p-4 border-b border-slate-700">
+              <h2 className="text-lg font-semibold text-white">{selectedBatch?.projectName || 'Chọn một batch'}</h2>
+              <p className="text-sm text-slate-400">{selectedBatch?.datasetName || ''}</p>
+            </div>
+
+            <div className="p-4 max-h-[640px] overflow-auto">
+              {!selectedBatch ? (
+                <p className="text-slate-400">Không có dữ liệu annotator.</p>
+              ) : (
+                <div className="space-y-3">
+                  {selectedBatch.annotatorRows.map((ann) => {
+                    const hasSubmission = ann.submittedTasks > 0;
+                    return (
+                      <div key={ann.annotatorId} className="rounded-xl border border-slate-700 bg-[#1e293b] p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-semibold text-slate-100">{ann.annotatorName}</p>
+                            <p className="text-xs text-slate-400 mt-1">Tổng item: {ann.totalTasks}</p>
+                          </div>
+                          <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${hasSubmission
+                            ? 'bg-emerald-500/20 text-emerald-300'
+                            : 'bg-amber-500/20 text-amber-300'
+                            }`}>
+                            {hasSubmission ? 'ĐÃ NỘP' : 'CHƯA NỘP'}
+                          </span>
+                        </div>
+
+                        <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
+                          <div className="rounded-lg border border-slate-700 bg-[#0f172a] p-2 text-slate-300">Đã nộp: <b>{ann.submittedTasks}</b></div>
+                          <div className="rounded-lg border border-slate-700 bg-[#0f172a] p-2 text-slate-300">Chưa nộp: <b>{ann.notSubmittedTasks}</b></div>
+                        </div>
+
+                        <div className="mt-3 flex gap-2">
+                          <button
+                            disabled={!hasSubmission || !ann.submittedTaskIds[0]}
+                            onClick={() => {
+                              if (!ann.submittedTaskIds[0]) return;
+                              navigate(`/reviewer/tasks/${ann.submittedTaskIds[0]}?projectId=${selectedBatch.projectId}&datasetId=${selectedBatch.datasetId}&annotatorId=${ann.annotatorId}`);
+                            }}
+                            className="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm disabled:opacity-40"
+                          >
+                            Mở bài đã nộp
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );

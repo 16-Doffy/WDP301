@@ -36,6 +36,7 @@ const ReviewerTask = () => {
   const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const scopedProjectId = searchParams.get('projectId') || '';
   const scopedDatasetId = searchParams.get('datasetId') || '';
+  const scopedAnnotatorId = searchParams.get('annotatorId') || '';
 
   useEffect(() => {
     setLocalReviewed(false);
@@ -50,7 +51,7 @@ const ReviewerTask = () => {
     setActiveSentenceIdx(0);
     fetchTask();
     fetchAllTasks();
-  }, [id, scopedProjectId, scopedDatasetId]);
+  }, [id, scopedProjectId, scopedDatasetId, scopedAnnotatorId]);
 
   // ADD THIS LOG
   useEffect(() => {
@@ -201,6 +202,10 @@ const ReviewerTask = () => {
         pending = pending.filter((t) => (t?.datasetId?._id || t?.datasetId)?.toString() === scopedDatasetId);
         reviewed = reviewed.filter((t) => (t?.datasetId?._id || t?.datasetId)?.toString() === scopedDatasetId);
       }
+      if (scopedAnnotatorId) {
+        pending = pending.filter((t) => (t?.annotatorId?._id || t?.annotatorId)?.toString() === scopedAnnotatorId);
+        reviewed = reviewed.filter((t) => (t?.annotatorId?._id || t?.annotatorId)?.toString() === scopedAnnotatorId);
+      }
 
       setPendingTasks(pending);
       setReviewedTasks(reviewed);
@@ -314,6 +319,7 @@ const ReviewerTask = () => {
     const scopeQuery = new URLSearchParams();
     if (scopedProjectId) scopeQuery.set('projectId', scopedProjectId);
     if (scopedDatasetId) scopeQuery.set('datasetId', scopedDatasetId);
+    if (scopedAnnotatorId) scopeQuery.set('annotatorId', scopedAnnotatorId);
     const query = scopeQuery.toString();
 
     if (currentIndex >= 0 && currentIndex < actionablePendingTasks.length - 1) {
@@ -327,7 +333,7 @@ const ReviewerTask = () => {
     }
 
     navigate('/reviewer/dashboard');
-  }, [actionablePendingTasks, id, navigate, scopedProjectId, scopedDatasetId]);
+  }, [actionablePendingTasks, id, navigate, scopedProjectId, scopedDatasetId, scopedAnnotatorId]);
 
   const handleApprove = useCallback(async () => {
     if (processing || isReviewed) {
@@ -765,6 +771,7 @@ const ReviewerTask = () => {
                             const scopeQuery = new URLSearchParams();
                             if (scopedProjectId) scopeQuery.set('projectId', scopedProjectId);
                             if (scopedDatasetId) scopeQuery.set('datasetId', scopedDatasetId);
+                            if (scopedAnnotatorId) scopeQuery.set('annotatorId', scopedAnnotatorId);
                             const query = scopeQuery.toString();
                             navigate(`/reviewer/tasks/${pendingTask._id}${query ? `?${query}` : ''}`);
                           }}
