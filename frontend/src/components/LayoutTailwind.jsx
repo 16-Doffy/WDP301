@@ -1,10 +1,20 @@
-
 import React, { useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import dashboardIcon from '../icons/dashboard.png';
-import projectsIcon from '../icons/projects.png';
-import datasetsIcon from '../icons/datasets.png';
+import {
+  Dashboard as DashboardIcon,
+  Assignment as ProjectIcon,
+  Storage as DatasetIcon,
+  ListAlt as TaskIcon,
+  RateReview as ReviewIcon,
+  People as UsersIcon,
+  History as LogIcon,
+  Settings as SettingsIcon,
+  Logout as LogoutIcon,
+  ChevronRight as ChevronRightIcon,
+} from '@mui/icons-material';
+import { IconButton, Avatar, Tooltip } from '@mui/material';
+
 const LayoutTailwind = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -16,13 +26,7 @@ const LayoutTailwind = () => {
     const baseItems = [
       {
         text: 'Dashboard',
-        icon: (
-          <img
-            src={dashboardIcon}
-            alt="Dashboard"
-            className="w-5 h-5"
-          />
-        ),
+        icon: <DashboardIcon fontSize="small" />,
         path: '/dashboard',
       },
     ];
@@ -30,24 +34,12 @@ const LayoutTailwind = () => {
     if (user.role === 'manager' || user.role === 'admin') {
       baseItems.push({
         text: 'Projects',
-        icon: (
-          <img
-            src={projectsIcon}
-            alt="Projects"
-            className="w-5 h-5"
-          />
-        ),
+        icon: <ProjectIcon fontSize="small" />,
         path: '/manager/projects',
       });
       baseItems.push({
         text: 'Datasets',
-        icon: (
-          <img
-            src={datasetsIcon}
-            alt="Datasets"
-            className="w-5 h-5"
-          />
-        ),
+        icon: <DatasetIcon fontSize="small" />,
         path: '/manager/datasets',
       });
     }
@@ -55,20 +47,15 @@ const LayoutTailwind = () => {
     if (user.role === 'annotator') {
       baseItems.push({
         text: 'My Tasks',
-        icon: '📝',
+        icon: <TaskIcon fontSize="small" />,
         path: '/annotator/tasks',
       });
-      // baseItems.push({
-      //   text: 'Reviews',
-      //   icon: '✅',
-      //   path: '/annotator/reviews',
-      // });
     }
 
     if (user.role === 'reviewer' || user.role === 'admin') {
       baseItems.push({
         text: 'Reviews',
-        icon: '🔍',
+        icon: <ReviewIcon fontSize="small" />,
         path: '/reviewer/tasks',
       });
     }
@@ -76,17 +63,17 @@ const LayoutTailwind = () => {
     if (user.role === 'admin') {
       baseItems.push({
         text: 'Users',
-        icon: '👤',
+        icon: <UsersIcon fontSize="small" />,
         path: '/admin/users',
       });
       baseItems.push({
         text: 'Activity Logs',
-        icon: '📜',
+        icon: <LogIcon fontSize="small" />,
         path: '/admin/activity-logs',
       });
       baseItems.push({
         text: 'Settings',
-        icon: '⚙️',
+        icon: <SettingsIcon fontSize="small" />,
         path: '/admin/settings',
       });
     }
@@ -99,9 +86,19 @@ const LayoutTailwind = () => {
     navigate('/login');
   };
 
+  const getUserInitials = () => {
+    if (!user?.fullName) return 'U';
+    return user.fullName
+      .split(' ')
+      .map((n) => n[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
   const getRoleDisplay = () => {
     const roleMap = {
-      manager: ' Manager',
+      manager: 'Manager',
       annotator: 'Annotator',
       reviewer: 'Reviewer',
       admin: 'Administrator',
@@ -110,74 +107,107 @@ const LayoutTailwind = () => {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      {/* Left Sidebar - Dark Blue */}
-      <div className="w-64 bg-gradient-to-b from-blue-600/60 to-white text-white flex flex-col">
-        {/* Logo */}
-        <div className="p-6 border-b border-blue-800">
+    <div className="flex h-screen bg-[#f8fafc] font-sans">
+      {/* Left Sidebar */}
+      <aside className="w-64 bg-[#0f172a] text-slate-300 flex flex-col shadow-2xl z-20 transition-all duration-300">
+        {/* Brand Header */}
+        <div className="h-20 flex items-center px-6 border-b border-slate-800/50">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-700 rounded-lg flex items-center justify-center">
-              <span className="text-xl">📊</span>
+            <div className="w-9 h-9 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
+              <span className="text-white text-xl font-bold">L</span>
             </div>
             <div>
-              <h1 className="text-lg font-bold">LabelFlow</h1>
-              <p className="text-xs text-black uppercase font-bold">
-                {user?.role === 'manager' ? 'Manager' : 
-                 user?.role === 'annotator' ? 'Annotator' :
-                 user?.role === 'reviewer' ? 'Reviewer' : 'Admin'}
+              <h1 className="text-lg font-bold text-white tracking-tight">LabelFlow</h1>
+              <div className="flex items-center gap-1.5">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  {getRoleDisplay()}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Navigation Section */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar py-6 px-4 space-y-8">
+          <div>
+            <p className="px-4 text-[11px] font-bold uppercase tracking-[0.2em] text-slate-500 mb-4">
+              Main Menu
+            </p>
+            <nav className="space-y-1.5">
+              {getMenuItems().map((item) => {
+                const isActive = location.pathname === item.path ||
+                  (item.path !== '/dashboard' && location.pathname.startsWith(item.path));
+
+                return (
+                  <button
+                    key={item.path}
+                    onClick={() => navigate(item.path)}
+                    className={`group w-full flex items-center justify-between px-4 py-2.5 rounded-xl transition-all duration-200 ${isActive
+                        ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
+                        : 'hover:bg-slate-800/50 hover:text-white'
+                      }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className={`${isActive ? 'text-white' : 'text-slate-500 group-hover:text-indigo-400'}`}>
+                        {item.icon}
+                      </span>
+                      <span className="text-[14px] font-semibold tracking-wide">
+                        {item.text}
+                      </span>
+                    </div>
+                    {isActive && <ChevronRightIcon sx={{ fontSize: 16, opacity: 0.7 }} />}
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
+        </div>
+
+        {/* User Footer Account */}
+        <div className="p-4 border-t border-slate-800/50 bg-slate-900/30">
+          <div className="flex items-center gap-3 p-2 rounded-2xl">
+            <Avatar
+              sx={{
+                width: 40,
+                height: 40,
+                bgcolor: 'indigo-600',
+                fontSize: '0.875rem',
+                fontWeight: 700,
+                background: 'linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)'
+              }}
+            >
+              {getUserInitials()}
+            </Avatar>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-white truncate">
+                {user?.fullName || 'User'}
+              </p>
+              <p className="text-xs text-slate-500 truncate font-medium">
+                {user?.email || 'user@example.com'}
               </p>
             </div>
           </div>
-        </div>
 
-        {/* Navigation Menu */}
-        <nav className="flex-1 p-4 space-y-1 ">
-          {getMenuItems().map((item) => {
-            const isActive = location.pathname === item.path || 
-              (item.path !== '/dashboard' && location.pathname.startsWith(item.path));
-            return (
-              <button
-                key={item.path}
-                onClick={() => navigate(item.path)}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                  isActive
-                    ? 'bg-blue-800 text-white'
-                    : 'text-black hover:bg-blue-800 hover:text-white text-lg'
-                }`}
-              >
-                <span className="text-xl">{item.icon}</span>
-                <span className="font-medium">{item.text}</span>
-              </button>
-            );
-          })}
-        </nav>
-
-        {/* User Profile */}
-        <div className="p-4 border-t border-blue-800">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 bg-blue-700 rounded-full flex items-center justify-center">
-              <span className="text-sm font-bold">
-                {user?.fullName?.split(' ').map(n => n[0]).join('').toUpperCase() || 'U'}
-              </span>
-            </div>
-            <div className="flex-1 hover:bg-blue-900/10 ">
-              <p className="text-xl text-black font-medium">{user?.fullName || 'User'}</p>
-              <p className="text-lg text-sky-600 flex text-center  ">{getRoleDisplay()}</p>
-            </div>
-          </div>
           <button
             onClick={handleLogout}
-            className="w-full mt-2 px-4 py-2 text-sm text-black hover:text-black hover:bg-blue-900/50 rounded-lg transition-colors"
+            className="mt-2 w-full flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-xl transition-all duration-200"
           >
-            Logout
+            <LogoutIcon sx={{ fontSize: 16 }} />
+            Sign Out
           </button>
         </div>
-      </div>
+      </aside>
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <Outlet />
-      </div>
+      {/* Main Content Area */}
+      <main className="flex-1 flex flex-col relative overflow-hidden bg-[#f8fafc]">
+        {/* Subtle top shadow transition */}
+        <div className="absolute top-0 left-0 right-0 h-px bg-slate-200 z-10"></div>
+
+        <div className="flex-1 overflow-y-auto overflow-x-hidden p-6 md:p-8">
+          <Outlet />
+        </div>
+      </main>
     </div>
   );
 };

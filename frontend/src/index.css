@@ -66,8 +66,28 @@ code {
   }
 }
 
+@keyframes shake {
+
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+
+  25% {
+    transform: translateX(-5px);
+  }
+
+  75% {
+    transform: translateX(5px);
+  }
+}
+
 .animate-fadeIn {
   animation: fadeIn 0.5s ease-out forwards;
+}
+
+.animate-shake {
+  animation: shake 0.4s ease-in-out;
 }
 
 /* Custom Scrollbar */
