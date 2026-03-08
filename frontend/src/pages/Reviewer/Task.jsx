@@ -475,20 +475,20 @@ const ReviewerTask = () => {
   }
 
   return (
-    <div className={`flex-1 flex flex-col overflow-hidden ${darkMode ? 'bg-gray-900' : 'bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50'}`}>
-      {/* Top Header - Glassmorphism Design */}
-      <div className={`${darkMode ? 'bg-gray-800/90 border-gray-700' : 'bg-white/90 border-gray-200'} backdrop-blur-xl border-b px-6 py-3 flex items-center justify-between z-20 shadow-sm`}>
+    <div className={`flex-1 flex flex-col overflow-hidden ${darkMode ? 'bg-gray-900' : 'bg-[#f8fafc]'}`}>
+      {/* Header */}
+      <div className={`${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'} border-b px-6 py-4 flex items-center justify-between z-20`}>
         <div className="flex items-center gap-6">
-          <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl shadow-lg ${darkMode ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-emerald-500 text-white'}`}>
+          <div className="flex items-center gap-4">
+            <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-xl ${darkMode ? 'bg-indigo-500/20 text-indigo-400' : 'bg-indigo-50 text-indigo-600 border border-indigo-100'}`}>
               {task?.dataItem?.mimeType?.startsWith('audio/') ? '🎵' : task?.dataItem?.mimeType?.startsWith('text/') ? '📝' : '🖼️'}
             </div>
             <div>
               <h1 className={`text-xl font-bold tracking-tight ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                Audit Station <span className="text-emerald-500">v2.0</span>
+                Review Task
               </h1>
-              <p className={`text-[10px] font-bold uppercase tracking-[0.2em] ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-                {task?.projectId?.name || 'Project Detail'}
+              <p className={`text-xs font-medium ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                {task?.projectId?.name || 'Project Detail'} • ID: {id.slice(-8)}
               </p>
             </div>
           </div>
@@ -613,7 +613,7 @@ const ReviewerTask = () => {
                 ))
               ) : (
                 <div className={`text-center py-10 ${darkMode ? 'text-gray-600' : 'text-gray-300'}`}>
-                  <p className="text-2xl mb-2">🔭</p>
+                  <p className="text-2xl mb-2"></p>
                   <p className="text-[10px] font-bold uppercase tracking-widest">No objects found</p>
                 </div>
               )}
@@ -1158,142 +1158,6 @@ const ReviewerTask = () => {
               </div>
             )}
 
-            {/* Quality Metrics - Circular Progress */}
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <h3 className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                  QUALITY METRICS
-                </h3>
-                <button
-                  onClick={() => {
-                    alert(`GIẢI THÍCH CÁC THÔNG SỐ:\n\n` +
-                      `1. AVG CONFIDENCE: Độ tin cậy trung bình của tất cả các đối tượng được gán nhãn trong ảnh hiện tại.\n` +
-                      `2. CLASSES: Tổng số đối tượng (objects) đã được gán nhãn trong ảnh.\n` +
-                      `3. BATCH PROGRESS: Tiến độ xem xét - số task đã xem / tổng số task trong hàng đợi.\n` +
-                      `4. ACCURACY: Tỷ lệ task được phê duyệt = Số task approved / Tổng số task đã review.\n` +
-                      `   Hiện tại: ${reviewStats.approvedCount || 0} approved / ${reviewStats.totalReviewed || 0} reviewed = ${accuracy.toFixed(1)}%\n` +
-                      `5. REJECTION: Tỷ lệ task bị từ chối = Số task rejected / Tổng số task đã review.\n` +
-                      `   Hiện tại: ${reviewStats.rejectedCount || 0} rejected / ${reviewStats.totalReviewed || 0} reviewed = ${rejection.toFixed(1)}%\n\n` +
-                      `Lưu ý: Các thông số này được tính dựa trên TẤT CẢ các task đã được bạn review (approved hoặc rejected), không chỉ các task trong hàng đợi hiện tại.`
-                    );
-                  }}
-                  className={`text-xs px-2 py-1 rounded ${darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-                  title="Click để xem giải thích chi tiết về các thông số"
-                >
-                  ℹ️ Giải thích
-                </button>
-              </div>
-
-              {/* Batch Progress */}
-              <div className="mb-6">
-                <div className="flex items-center justify-between mb-2">
-                  <span
-                    className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}
-                    title="Tiến độ xem xét: số task đã xem / tổng số task trong hàng đợi"
-                  >
-                    Batch Progress
-                  </span>
-                  <span className={`text-sm font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                    {Math.round(batchProgress)}%
-                  </span>
-                </div>
-                <div className={`w-full ${darkMode ? 'bg-gray-700' : 'bg-gray-200'} rounded-full h-3 overflow-hidden`}>
-                  <div
-                    className="bg-gradient-to-r from-emerald-400 to-teal-500 h-3 rounded-full transition-all duration-500 shadow-lg"
-                    style={{ width: `${Math.max(0, Math.min(100, batchProgress))}%` }}
-                  ></div>
-                </div>
-                <div className={`text-xs mt-1 ${darkMode ? 'text-gray-500' : 'text-gray-500'}`}>
-                  {currentTaskIndex >= 0 ? `${currentTaskIndex + 1} / ${pendingTasks.length} tasks` : '0 / 0 tasks'}
-                </div>
-              </div>
-
-              {/* Circular Progress Charts */}
-              <div className="grid grid-cols-2 gap-4">
-                {/* Accuracy */}
-                <div
-                  className="relative w-32 h-32 mx-auto cursor-help"
-                  title={`Tỷ lệ task được phê duyệt: ${reviewStats.approvedCount || 0} approved / ${reviewStats.totalReviewed || 0} đã review = ${accuracy.toFixed(1)}%`}
-                >
-                  <svg className="transform -rotate-90 w-32 h-32">
-                    <circle
-                      cx="64"
-                      cy="64"
-                      r="56"
-                      stroke={darkMode ? '#374151' : '#e5e7eb'}
-                      strokeWidth="12"
-                      fill="none"
-                    />
-                    <circle
-                      cx="64"
-                      cy="64"
-                      r="56"
-                      stroke="#10b981"
-                      strokeWidth="12"
-                      fill="none"
-                      strokeDasharray={`${(Math.min(100, Math.max(0, accuracy)) / 100) * 352} 352`}
-                      strokeLinecap="round"
-                      className="transition-all duration-1000"
-                    />
-                  </svg>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                      {accuracy.toFixed(1)}
-                    </span>
-                    <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                      ACCURACY
-                    </span>
-                  </div>
-                </div>
-
-                {/* Rejection */}
-                <div
-                  className="relative w-32 h-32 mx-auto cursor-help"
-                  title={`Tỷ lệ task bị từ chối: ${reviewStats.rejectedCount || 0} rejected / ${reviewStats.totalReviewed || 0} đã review = ${rejection.toFixed(1)}%`}
-                >
-                  <svg className="transform -rotate-90 w-32 h-32">
-                    <circle
-                      cx="64"
-                      cy="64"
-                      r="56"
-                      stroke={darkMode ? '#374151' : '#e5e7eb'}
-                      strokeWidth="12"
-                      fill="none"
-                    />
-                    <circle
-                      cx="64"
-                      cy="64"
-                      r="56"
-                      stroke="#ef4444"
-                      strokeWidth="12"
-                      fill="none"
-                      strokeDasharray={`${(Math.min(100, Math.max(0, rejection)) / 100) * 352} 352`}
-                      strokeLinecap="round"
-                      className="transition-all duration-1000"
-                    />
-                  </svg>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center">
-                    <span className={`text-2xl font-bold ${darkMode ? 'text-red-400' : 'text-red-600'}`}>
-                      {rejection.toFixed(1)}%
-                    </span>
-                    <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                      REJECTION
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <div className={`text-xs mt-2 text-center ${darkMode ? 'text-gray-500' : 'text-gray-500'}`}>
-                <span className="cursor-help" title="Hover vào các biểu đồ để xem giải thích chi tiết">
-                  💡 Hover để xem giải thích
-                </span>
-                {reviewStats.totalReviewed > 0 && (
-                  <div className={`text-xs mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                    ({reviewStats.approvedCount || 0} approved, {reviewStats.rejectedCount || 0} rejected)
-                  </div>
-                )}
-              </div>
-            </div>
-
             {/* Error Classification - Tiles with Icons */}
             <div>
               <h3 className={`font-bold mb-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
@@ -1386,59 +1250,60 @@ const ReviewerTask = () => {
       </div>
 
       {/* Floating Action Dock */}
-      {!isReviewed && (
-        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 px-6 py-4 rounded-2xl shadow-2xl ${darkMode
-          ? 'bg-gray-800/90 backdrop-blur-xl border border-gray-700'
-          : 'bg-white/90 backdrop-blur-xl border border-gray-200/50'
-          }`}>
-          <button
-            onClick={handleSkip}
-            className={`px-6 py-3 rounded-xl font-bold transition-all transform hover:scale-105 ${darkMode
-              ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-          >
-            <span className="mr-2"></span> Skip
-          </button>
-          <button
-            onClick={handleReject}
-            disabled={processing || !reviewComments.trim() || isReviewed}
-            className="px-8 py-3 bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-xl font-bold shadow-lg shadow-red-500/50 transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-            title={isReviewed ? 'Task này đã được đánh giá rồi' : (!reviewComments.trim() ? 'Vui lòng nhập nhận xét trước khi từ chối' : '')}
-          >
-            <span className="mr-2">✕</span> Reject
-          </button>
-          <button
-            onClick={handleApprove}
-            disabled={processing || isReviewed}
-            className="px-8 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl font-bold shadow-lg shadow-emerald-500/50 transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-            title={isReviewed ? 'Task này đã được đánh giá rồi' : ''}
-          >
-            <span className="mr-2">✓</span> Approve Task
-          </button>
-          <div className={`flex items-center gap-2 ml-4 pl-4 border-l ${darkMode ? 'border-gray-700' : 'border-gray-300'}`}>
-            <span className={`text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-              AUTO-NEXT
-            </span>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={autoNext}
-                onChange={(e) => setAutoNext(e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className={`w-12 h-6 rounded-full peer transition-all ${autoNext
-                ? darkMode ? 'bg-emerald-600' : 'bg-emerald-500'
-                : darkMode ? 'bg-gray-700' : 'bg-gray-300'
-                } peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300/50`}>
-                <div className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-all ${autoNext ? 'translate-x-6' : 'translate-x-0'
-                  }`}></div>
-              </div>
-            </label>
+      {
+        !isReviewed && (
+          <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-4 px-6 py-4 rounded-2xl shadow-2xl ${darkMode
+            ? 'bg-gray-800/90 backdrop-blur-xl border border-gray-700'
+            : 'bg-white/90 backdrop-blur-xl border border-gray-200/50'
+            }`}>
+            <button
+              onClick={handleSkip}
+              className={`px-6 py-3 rounded-xl font-bold transition-all transform hover:scale-105 ${darkMode
+                ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+            >
+              <span className="mr-2"></span> Skip
+            </button>
+            <button
+              onClick={handleReject}
+              disabled={processing || !reviewComments.trim() || isReviewed}
+              className="px-8 py-3 bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-xl font-bold shadow-lg shadow-red-500/50 transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+              title={isReviewed ? 'Task này đã được đánh giá rồi' : (!reviewComments.trim() ? 'Vui lòng nhập nhận xét trước khi từ chối' : '')}
+            >
+              <span className="mr-2">✕</span> Reject
+            </button>
+            <button
+              onClick={handleApprove}
+              disabled={processing || isReviewed}
+              className="px-8 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl font-bold shadow-lg shadow-emerald-500/50 transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+              title={isReviewed ? 'Task này đã được đánh giá rồi' : ''}
+            >
+              <span className="mr-2">✓</span> Approve Task
+            </button>
+            <div className={`flex items-center gap-2 ml-4 pl-4 border-l ${darkMode ? 'border-gray-700' : 'border-gray-300'}`}>
+              <span className={`text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                AUTO-NEXT
+              </span>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={autoNext}
+                  onChange={(e) => setAutoNext(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className={`w-12 h-6 rounded-full peer transition-all ${autoNext
+                  ? darkMode ? 'bg-emerald-600' : 'bg-emerald-500'
+                  : darkMode ? 'bg-gray-700' : 'bg-gray-300'
+                  } peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300/50`}>
+                  <div className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-all ${autoNext ? 'translate-x-6' : 'translate-x-0'
+                    }`}></div>
+                </div>
+              </label>
+            </div>
           </div>
-        </div>
-      )}
-
+        )
+      }
     </div>
   );
 };
