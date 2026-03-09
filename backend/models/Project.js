@@ -76,6 +76,22 @@ const projectSchema = new mongoose.Schema({
     enum: ['YOLO', 'VOC', 'COCO', 'JSON', 'CSV'],
     default: 'JSON'
   },
+  projectReview: {
+    status: {
+      type: String,
+      enum: ['pending', 'approved', 'rejected'],
+      default: 'pending'
+    },
+    reviewedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    reviewedAt: Date,
+    comment: {
+      type: String,
+      default: ''
+    }
+  },
   createdAt: {
     type: Date,
     default: Date.now

@@ -16,6 +16,75 @@ const normalizeId = (id) => {
   return String(id);
 };
 
+const stableLabelKey = (value) => {
+  if (value == null) return '__NULL__';
+  if (typeof value === 'string') return `str:${value}`;
+  if (typeof value === 'number' || typeof value === 'boolean') return `prim:${String(value)}`;
+  if (typeof value === 'object') {
+    if (typeof value.label === 'string') return `label:${value.label}`;
+    if (Array.isArray(value.objects)) {
+      const labels = value.objects
+        .map((o) => o?.label)
+        .filter(Boolean)
+        .sort();
+      if (labels.length > 0) return `objects:${labels.join('|')}`;
+    }
+    try {
+      return `json:${JSON.stringify(value)}`;
+    } catch {
+      return '__UNSERIALIZABLE__';
+    }
+  }
+  return `other:${String(value)}`;
+};
+
+const computeConsensus = (task) => {
+  const candidates = Array.isArray(task?.annotatorLabels) ? task.annotatorLabels : [];
+  const pool = candidates.length > 0
+    ? candidates.map((entry) => entry?.labels).filter((labels) => labels != null)
+    : (task?.labels ? [task.labels] : []);
+
+  if (pool.length === 0) {
+    return {
+      consensusLabel: null,
+      consensusScore: null,
+      consensusMeta: {
+        method: 'none',
+        winningVotes: 0,
+        totalVotes: 0,
+        isTie: false,
+        needsReview: true,
+      },
+    };
+  }
+
+  const tally = new Map();
+  const samples = new Map();
+  pool.forEach((labels) => {
+    const key = stableLabelKey(labels);
+    tally.set(key, (tally.get(key) || 0) + 1);
+    if (!samples.has(key)) samples.set(key, labels);
+  });
+
+  const sorted = [...tally.entries()].sort((a, b) => b[1] - a[1]);
+  const [winnerKey, winnerVotes] = sorted[0];
+  const secondVotes = sorted[1]?.[1] || 0;
+  const totalVotes = pool.length;
+  const isTie = winnerVotes === secondVotes && sorted.length > 1;
+
+  return {
+    consensusLabel: isTie ? null : samples.get(winnerKey),
+    consensusScore: Number((winnerVotes / totalVotes).toFixed(4)),
+    consensusMeta: {
+      method: 'majority_vote',
+      winningVotes: winnerVotes,
+      totalVotes,
+      isTie,
+      needsReview: isTie,
+    },
+  };
+};
+
 // Helper function to normalize path to relative path from backend root
 const normalizePath = (filePath) => {
   if (!filePath) return '';
@@ -168,6 +237,88 @@ router.get('/:id', auth, async (req, res) => {
   }
 });
 
+// Get task consensus + reviewer vote summary
+router.get('/:id/consensus-summary', auth, async (req, res) => {
+  try {
+    const task = await Task.findById(req.params.id)
+      .populate('projectId', 'name managerId')
+      .populate('annotatorId', 'username fullName')
+      .populate('reviewers.reviewerId', 'username fullName')
+      .populate('reviewerId', 'username fullName')
+      .select('status labels annotatorLabels consensusLabel consensusScore consensusMeta reviewers reviewerId updatedAt reviewedAt submittedAt');
+
+    if (!task) {
+      return res.status(404).json({ message: 'Task not found' });
+    }
+
+    if (req.user.role === 'annotator') {
+      const annotatorId = normalizeId(task.annotatorId);
+      if (annotatorId !== normalizeId(req.user._id)) {
+        return res.status(403).json({ message: 'Not authorized to view this task summary' });
+      }
+    } else if (req.user.role === 'manager') {
+      const projectId = task.projectId?._id?.toString() || task.projectId?.toString();
+      const project = await Project.findById(projectId).select('managerId');
+      const managerId = normalizeId(project?.managerId);
+      if (managerId !== normalizeId(req.user._id)) {
+        return res.status(403).json({ message: 'Not authorized to view this task summary' });
+      }
+    } else if (req.user.role === 'reviewer') {
+      const isAssigned = Array.isArray(task.reviewers)
+        && task.reviewers.some((r) => normalizeId(r.reviewerId) === normalizeId(req.user._id));
+      const isPrimaryReviewer = normalizeId(task.reviewerId) === normalizeId(req.user._id);
+      if (!isAssigned && !isPrimaryReviewer && task.status !== 'submitted') {
+        return res.status(403).json({ message: 'Not authorized to view this task summary' });
+      }
+    }
+
+    const reviewers = Array.isArray(task.reviewers) ? task.reviewers : [];
+    const approveVotes = reviewers.filter((r) => r.status === 'approved').length;
+    const rejectVotes = reviewers.filter((r) => r.status === 'rejected').length;
+    const pendingVotes = reviewers.filter((r) => r.status === 'pending').length;
+    const decidedVotes = approveVotes + rejectVotes;
+    const totalVotes = reviewers.length;
+
+    const consensus = task.consensusLabel != null || task.consensusMeta
+      ? {
+          label: task.consensusLabel ?? null,
+          score: task.consensusScore ?? null,
+          method: task.consensusMeta?.method || 'none',
+          winningVotes: task.consensusMeta?.winningVotes || 0,
+          totalVotes: task.consensusMeta?.totalVotes || 0,
+          isTie: Boolean(task.consensusMeta?.isTie),
+          needsReview: Boolean(task.consensusMeta?.needsReview),
+          decidedAt: task.consensusMeta?.decidedAt || null,
+        }
+      : computeConsensus(task);
+
+    res.json({
+      taskId: task._id,
+      status: task.status,
+      consensus,
+      reviewerVotes: {
+        approveVotes,
+        rejectVotes,
+        pendingVotes,
+        decidedVotes,
+        totalVotes,
+        progressLabel: `${decidedVotes}/${totalVotes}`,
+      },
+      finalDecision: {
+        status: task.status,
+        reviewedAt: task.reviewedAt || null,
+        decidedBy: task.reviewerId || null,
+      },
+      timestamps: {
+        submittedAt: task.submittedAt || null,
+        updatedAt: task.updatedAt || null,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
 // Assign tasks to annotators (Manager only)
 router.post('/assign', auth, authorize('manager', 'admin'), async (req, res) => {
   try {
@@ -234,30 +385,31 @@ router.post('/assign', auth, authorize('manager', 'admin'), async (req, res) => 
       return res.status(400).json({ message: 'Some reviewers are invalid or inactive' });
     }
 
-    // Check for existing tasks to avoid duplicates
+    // Incremental assignment: create only missing (file, annotator) tasks
     const existingTasks = await Task.find({
       projectId,
       datasetId,
       annotatorId: { $in: annotatorIds }
-    });
+    }).select('annotatorId dataItem.filename dataItem.path');
 
-    if (existingTasks.length > 0) {
-      return res.status(400).json({ 
-        message: `Tasks already exist for this dataset and selected annotators. Found ${existingTasks.length} existing tasks.` 
-      });
-    }
+    const existingKeys = new Set(
+      existingTasks.map((t) => `${normalizeId(t.annotatorId)}::${t?.dataItem?.filename || ''}::${normalizePath(t?.dataItem?.path || '')}`)
+    );
 
     const tasks = [];
     for (const file of dataset.files) {
       for (const annotatorId of annotatorIds) {
+        const key = `${normalizeId(annotatorId)}::${file.filename}::${normalizePath(file.path)}`;
+        if (existingKeys.has(key)) continue;
+
         const task = new Task({
           projectId,
           datasetId,
-          annotatorId, // This should be ObjectId
+          annotatorId,
           dataItem: {
             filename: file.filename,
             originalName: file.originalName || file.filename,
-            path: normalizePath(file.path), // Normalize path to ensure relative path
+            path: normalizePath(file.path),
             mimeType: file.mimeType || 'application/octet-stream'
           },
           status: 'assigned',
@@ -267,14 +419,15 @@ router.post('/assign', auth, authorize('manager', 'admin'), async (req, res) => 
           }))
         });
         tasks.push(task);
-        console.log(`Creating task for annotator: ${annotatorId}, file: ${file.filename}`);
       }
     }
-    
-    console.log(`Total tasks to create: ${tasks.length} for ${annotatorIds.length} annotators`);
 
     if (tasks.length === 0) {
-      return res.status(400).json({ message: 'No tasks to create' });
+      return res.status(200).json({
+        message: 'Không có task mới để thêm. Các annotator đã được gán đầy đủ cho dataset này.',
+        tasksCreated: 0,
+        skippedExisting: existingTasks.length,
+      });
     }
 
     await Task.insertMany(tasks);
@@ -533,6 +686,7 @@ router.post('/submit-batch', auth, authorize('annotator'), async (req, res) => {
     // Set only pending/rework tasks to submitted
     const now = new Date();
     for (const task of tasksToSubmit) {
+      const consensus = computeConsensus(task);
       // Ensure reviewer assignment exists
       if (!task.reviewers || task.reviewers.length === 0) {
         return res.status(400).json({ message: 'Task must have at least one reviewer assigned before submission' });
@@ -547,6 +701,12 @@ router.post('/submit-batch', auth, authorize('annotator'), async (req, res) => {
       }));
 
       task.reviewNotes = [];
+      task.consensusLabel = consensus.consensusLabel;
+      task.consensusScore = consensus.consensusScore;
+      task.consensusMeta = {
+        ...consensus.consensusMeta,
+        decidedAt: now,
+      };
       task.status = 'submitted';
       task.submittedAt = now;
       task.updatedAt = now;
@@ -671,9 +831,18 @@ router.post('/:id/submit', auth, authorize('annotator'), async (req, res) => {
       }
     }
 
+    const now = new Date();
+    const consensus = computeConsensus(task);
+
+    task.consensusLabel = consensus.consensusLabel;
+    task.consensusScore = consensus.consensusScore;
+    task.consensusMeta = {
+      ...consensus.consensusMeta,
+      decidedAt: now,
+    };
     task.status = 'submitted';
-    task.submittedAt = new Date();
-    task.updatedAt = new Date();
+    task.submittedAt = now;
+    task.updatedAt = now;
     await task.save();
     
     // Log task submission with reviewers info for debugging

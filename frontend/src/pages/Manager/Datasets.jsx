@@ -59,6 +59,11 @@ const Datasets = () => {
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusByDataset, setStatusByDataset] = useState({});
+  const [annotatorDetailDialogOpen, setAnnotatorDetailDialogOpen] = useState(false);
+  const [annotatorDetailLoading, setAnnotatorDetailLoading] = useState(false);
+  const [annotatorDetailError, setAnnotatorDetailError] = useState('');
+  const [annotatorDetail, setAnnotatorDetail] = useState(null);
+  const [annotatorTaskFilter, setAnnotatorTaskFilter] = useState('all');
 
   const getAuthToken = () => sessionStorage.getItem('token') || localStorage.getItem('token');
 
@@ -237,6 +242,32 @@ const Datasets = () => {
     }
   };
 
+  const formatDateTime = (value) => {
+    if (!value) return '-';
+    const dt = new Date(value);
+    if (Number.isNaN(dt.getTime())) return '-';
+    return dt.toLocaleString('vi-VN');
+  };
+
+  const handleOpenAnnotatorDetail = async (datasetId, annotatorId, annotatorName) => {
+    setAnnotatorDetailDialogOpen(true);
+    setAnnotatorTaskFilter('all');
+    setAnnotatorDetailLoading(true);
+    setAnnotatorDetailError('');
+    setAnnotatorDetail(null);
+
+    try {
+      const response = await axios.get(`${API_URL}/api/datasets/${datasetId}/annotators/${annotatorId}/tasks`, {
+        headers: { Authorization: `Bearer ${getAuthToken()}` },
+      });
+      setAnnotatorDetail({ ...response.data, annotatorName });
+    } catch (err) {
+      setAnnotatorDetailError(err.response?.data?.message || err.message || 'Không thể tải chi tiết annotator');
+    } finally {
+      setAnnotatorDetailLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
@@ -289,9 +320,8 @@ const Datasets = () => {
               .filter((ds) => !searchTerm.trim() || ds.name.toLowerCase().includes(searchTerm.toLowerCase()))
               .map((dataset) => {
                 const stat = statusByDataset[dataset._id];
-                const finalProgress = stat?.finalRate ?? stat?.completionRate ?? 0;
-                const lifecycleProgress = stat?.lifecycleRate ?? 0;
                 const rawCount = stat?.totalRawItems || dataset.totalItems || 0;
+                const totalTasks = stat?.totalTasks ?? 0;
                 const counts = stat?.counts || {};
                 const pendingAnnotation = counts.pendingAnnotation ?? 0;
                 const submitted = counts.submitted ?? 0;
@@ -300,8 +330,16 @@ const Datasets = () => {
                 const approved = counts.approved ?? stat?.totalFinalItems ?? 0;
                 const rejected = counts.rejected ?? 0;
                 const finalCount = counts.final ?? stat?.totalFinalItems ?? 0;
+
+                const taskLifecycleProgress = stat?.lifecycleRate ?? 0;
+                const taskFinalProgress = stat?.finalRate ?? stat?.completionRate ?? 0;
+                const rawLifecycleProgress = stat?.rawProgress?.lifecycleRate ?? 0;
+                const rawFinalProgress = stat?.rawProgress?.finalRate ?? 0;
+                const rawCompletedCount = stat?.rawProgress?.completed ?? 0;
+                const rawFinalCount = stat?.rawProgress?.final ?? 0;
+
                 const canExport = finalCount > 0;
-                const isReviewCompleted = rawCount > 0 && completed >= rawCount;
+                const isReviewCompleted = pendingAnnotation === 0 && submitted === 0 && returnedToAnnotator === 0;
                 const majorityThreshold = stat?.majorityThreshold;
                 const majorityRuleLabel = stat?.majorityRuleLabel || (majorityThreshold?.required && majorityThreshold?.total
                   ? `${majorityThreshold.required}/${majorityThreshold.total}`
@@ -313,6 +351,31 @@ const Datasets = () => {
                 const decidedVotes = votes.decidedVotes ?? (approveVotes + rejectVotes);
                 const totalVotes = votes.totalVotes ?? (approveVotes + rejectVotes + pendingVotes);
                 const voteProgressLabel = votes.progressLabel || `${decidedVotes}/${totalVotes}`;
+                const consensusReadyCount = stat?.consensus?.consensusReadyCount ?? 0;
+                const consensusNeedsReviewCount = stat?.consensus?.needsReviewCount ?? 0;
+                const avgConsensusScore = typeof stat?.consensus?.avgConsensusScore === 'number'
+                  ? stat.consensus.avgConsensusScore
+                  : null;
+                const consensusCoverageLabel = totalTasks > 0
+                  ? `${consensusReadyCount}/${totalTasks}`
+                  : `${consensusReadyCount}`;
+                const consensusScoreLabel = avgConsensusScore == null
+                  ? '-'
+                  : `${Math.round(avgConsensusScore * 100)}%`;
+                const annotatorStats = Array.isArray(stat?.annotators) ? stat.annotators : [];
+
+                const reviewState = (() => {
+                  if ((pendingAnnotation + submitted) > 0) {
+                    return { label: 'Trạng thái review: Đang xử lý', color: '#93c5fd', bg: 'rgba(59,130,246,0.15)' };
+                  }
+                  if (returnedToAnnotator > 0 || rejected > 0) {
+                    return { label: 'Trạng thái review: Cần làm lại', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' };
+                  }
+                  if (approved > 0) {
+                    return { label: 'Trạng thái review: Đạt', color: '#4ade80', bg: 'rgba(34,197,94,0.15)' };
+                  }
+                  return { label: 'Trạng thái review: Chưa có dữ liệu', color: '#94a3b8', bg: 'rgba(100,116,139,0.2)' };
+                })();
 
                 return (
                   <Grid item xs={12} md={6} lg={4} key={dataset._id}>
@@ -329,7 +392,7 @@ const Datasets = () => {
                             <Box sx={{ mt: 1, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                               <Chip
                                 size="small"
-                                label={`Review Completed: ${isReviewCompleted ? 'Yes' : 'No'}`}
+                                label={`Đã review xong: ${isReviewCompleted ? 'Có' : 'Chưa'}`}
                                 sx={{
                                   bgcolor: isReviewCompleted ? 'rgba(34,197,94,0.15)' : 'rgba(248,113,113,0.15)',
                                   color: isReviewCompleted ? '#4ade80' : '#fca5a5',
@@ -339,7 +402,7 @@ const Datasets = () => {
                               />
                               <Chip
                                 size="small"
-                                label={`Export Ready: ${canExport ? 'Yes' : 'No'}`}
+                                label={`Có thể export: ${canExport ? 'Có' : 'Chưa'}`}
                                 sx={{
                                   bgcolor: canExport ? 'rgba(34,197,94,0.15)' : 'rgba(248,113,113,0.15)',
                                   color: canExport ? '#4ade80' : '#fca5a5',
@@ -349,7 +412,17 @@ const Datasets = () => {
                               />
                               <Chip
                                 size="small"
-                                label={`Majority Rule: ${majorityRuleLabel}`}
+                                label={reviewState.label}
+                                sx={{
+                                  bgcolor: reviewState.bg,
+                                  color: reviewState.color,
+                                  border: '1px solid #334155',
+                                  fontWeight: 700,
+                                }}
+                              />
+                              <Chip
+                                size="small"
+                                label={`Luật đa số: ${majorityRuleLabel}`}
                                 sx={{
                                   bgcolor: 'rgba(59,130,246,0.15)',
                                   color: '#93c5fd',
@@ -359,7 +432,7 @@ const Datasets = () => {
                               />
                               <Chip
                                 size="small"
-                                label={`Vote Progress: ${voteProgressLabel}`}
+                                label={`Tiến độ reviewer vote: ${voteProgressLabel}`}
                                 sx={{
                                   bgcolor: totalVotes > 0 ? 'rgba(59,130,246,0.15)' : 'rgba(100,116,139,0.2)',
                                   color: totalVotes > 0 ? '#93c5fd' : '#94a3b8',
@@ -369,10 +442,30 @@ const Datasets = () => {
                               />
                               <Chip
                                 size="small"
-                                label={`Approved Coverage: ${finalCount}/${rawCount}`}
+                                label={`Task đạt (approved): ${finalCount}/${totalTasks}`}
                                 sx={{
                                   bgcolor: finalCount > 0 ? 'rgba(34,197,94,0.15)' : 'rgba(100,116,139,0.2)',
                                   color: finalCount > 0 ? '#86efac' : '#94a3b8',
+                                  border: '1px solid #334155',
+                                  fontWeight: 700,
+                                }}
+                              />
+                              <Chip
+                                size="small"
+                                label={`Coverage consensus: ${consensusCoverageLabel}`}
+                                sx={{
+                                  bgcolor: consensusReadyCount > 0 ? 'rgba(14,165,233,0.18)' : 'rgba(100,116,139,0.2)',
+                                  color: consensusReadyCount > 0 ? '#7dd3fc' : '#94a3b8',
+                                  border: '1px solid #334155',
+                                  fontWeight: 700,
+                                }}
+                              />
+                              <Chip
+                                size="small"
+                                label={`Điểm consensus TB: ${consensusScoreLabel}`}
+                                sx={{
+                                  bgcolor: avgConsensusScore != null ? 'rgba(16,185,129,0.16)' : 'rgba(100,116,139,0.2)',
+                                  color: avgConsensusScore != null ? '#6ee7b7' : '#94a3b8',
                                   border: '1px solid #334155',
                                   fontWeight: 700,
                                 }}
@@ -384,20 +477,32 @@ const Datasets = () => {
                           </IconButton>
                         </Box>
 
-                        <Typography variant="caption" sx={{ color: '#94a3b8' }}>Lifecycle Progress (Completed / Raw)</Typography>
-                        <LinearProgress variant="determinate" value={lifecycleProgress} sx={{ mt: 1, mb: 1, height: 8, borderRadius: 4, bgcolor: '#0f172a', '& .MuiLinearProgress-bar': { bgcolor: '#38bdf8' } }} />
+                        <Typography variant="caption" sx={{ color: '#94a3b8' }}>1) Tiến độ task (đã chấm / tổng task)</Typography>
+                        <LinearProgress variant="determinate" value={taskLifecycleProgress} sx={{ mt: 1, mb: 1, height: 8, borderRadius: 4, bgcolor: '#0f172a', '& .MuiLinearProgress-bar': { bgcolor: '#38bdf8' } }} />
                         <Typography variant="body2" sx={{ color: '#cbd5e1', mb: 1 }}>
-                          Completed {completed} / Raw {rawCount} items ({lifecycleProgress}%)
+                          Đã chấm {completed} / Tổng {totalTasks} task ({taskLifecycleProgress}%)
                         </Typography>
 
-                        <Typography variant="caption" sx={{ color: '#94a3b8' }}>Final Dataset Progress (Approved / Raw)</Typography>
-                        <LinearProgress variant="determinate" value={finalProgress} sx={{ mt: 1, mb: 1, height: 8, borderRadius: 4, bgcolor: '#0f172a', '& .MuiLinearProgress-bar': { bgcolor: '#22c55e' } }} />
+                        <Typography variant="caption" sx={{ color: '#94a3b8' }}>2) Tỷ lệ task đạt (approved / tổng task)</Typography>
+                        <LinearProgress variant="determinate" value={taskFinalProgress} sx={{ mt: 1, mb: 1, height: 8, borderRadius: 4, bgcolor: '#0f172a', '& .MuiLinearProgress-bar': { bgcolor: '#22c55e' } }} />
                         <Typography variant="body2" sx={{ color: '#cbd5e1', mb: 1 }}>
-                          Final {finalCount} / Raw {rawCount} items ({finalProgress}%)
+                          Approved {finalCount} / Tổng {totalTasks} task ({taskFinalProgress}%)
+                        </Typography>
+
+                        <Typography variant="caption" sx={{ color: '#94a3b8' }}>3) Bao phủ raw đã chấm xong (raw item đã có kết quả / tổng raw)</Typography>
+                        <LinearProgress variant="determinate" value={rawLifecycleProgress} sx={{ mt: 1, mb: 1, height: 8, borderRadius: 4, bgcolor: '#0f172a', '& .MuiLinearProgress-bar': { bgcolor: '#f59e0b' } }} />
+                        <Typography variant="body2" sx={{ color: '#cbd5e1', mb: 1 }}>
+                          Raw đã chấm xong {rawCompletedCount} / Tổng raw {rawCount} ({rawLifecycleProgress}%)
+                        </Typography>
+
+                        <Typography variant="caption" sx={{ color: '#94a3b8' }}>4) Bao phủ raw đạt (raw có ít nhất 1 task approved / tổng raw)</Typography>
+                        <LinearProgress variant="determinate" value={rawFinalProgress} sx={{ mt: 1, mb: 1, height: 8, borderRadius: 4, bgcolor: '#0f172a', '& .MuiLinearProgress-bar': { bgcolor: '#10b981' } }} />
+                        <Typography variant="body2" sx={{ color: '#cbd5e1', mb: 1 }}>
+                          Raw đạt {rawFinalCount} / Tổng raw {rawCount} ({rawFinalProgress}%)
                         </Typography>
 
                         <Box sx={{ mt: 1.5, p: 1.5, borderRadius: 2, border: '1px solid #334155', bgcolor: '#0f172a' }}>
-                          <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mb: 1 }}>DATASET LIFECYCLE</Typography>
+                          <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mb: 1 }}>TỔNG QUAN DATASET (theo task)</Typography>
                           <Grid container spacing={1}>
                             <Grid item xs={6}>
                               <Typography variant="caption" sx={{ color: '#94a3b8' }}>Raw Items</Typography>
@@ -431,7 +536,25 @@ const Datasets = () => {
                         </Box>
 
                         <Box sx={{ mt: 1.5, p: 1.5, borderRadius: 2, border: '1px solid #334155', bgcolor: '#0b1220' }}>
-                          <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mb: 1 }}>REVIEWER VOTES (ALL ITEMS)</Typography>
+                          <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mb: 1 }}>ĐỒNG THUẬN ANNOTATOR (consensus)</Typography>
+                          <Grid container spacing={1}>
+                            <Grid item xs={6}>
+                              <Typography variant="caption" sx={{ color: '#94a3b8' }}>Consensus Ready</Typography>
+                              <Typography variant="body2" fontWeight={700} sx={{ color: '#38bdf8' }}>{consensusReadyCount}</Typography>
+                            </Grid>
+                            <Grid item xs={6}>
+                              <Typography variant="caption" sx={{ color: '#94a3b8' }}>Needs Review</Typography>
+                              <Typography variant="body2" fontWeight={700} sx={{ color: '#f59e0b' }}>{consensusNeedsReviewCount}</Typography>
+                            </Grid>
+                            <Grid item xs={12}>
+                              <Typography variant="caption" sx={{ color: '#94a3b8' }}>Average Consensus Score</Typography>
+                              <Typography variant="body2" fontWeight={700} sx={{ color: '#6ee7b7' }}>{consensusScoreLabel}</Typography>
+                            </Grid>
+                          </Grid>
+                        </Box>
+
+                        <Box sx={{ mt: 1.5, p: 1.5, borderRadius: 2, border: '1px solid #334155', bgcolor: '#0b1220' }}>
+                          <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mb: 1 }}>REVIEWER VOTE (toàn bộ task)</Typography>
                           <Grid container spacing={1}>
                             <Grid item xs={6}>
                               <Typography variant="caption" sx={{ color: '#94a3b8' }}>Approve Votes</Typography>
@@ -454,6 +577,41 @@ const Datasets = () => {
                               <Typography variant="body2" fontWeight={700}>{totalVotes}</Typography>
                             </Grid>
                           </Grid>
+                        </Box>
+
+                        <Box sx={{ mt: 1.5, p: 1.5, borderRadius: 2, border: '1px solid #334155', bgcolor: '#0b1220' }}>
+                          <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mb: 1 }}>ANNOTATOR PERFORMANCE (THIS DATASET)</Typography>
+                          {annotatorStats.length === 0 ? (
+                            <Typography variant="body2" sx={{ color: '#94a3b8' }}>No annotator stats yet.</Typography>
+                          ) : (
+                            <Grid container spacing={1}>
+                              {annotatorStats.slice(0, 6).map((a) => (
+                                <Grid item xs={12} key={a.annotatorId}>
+                                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', p: 1, borderRadius: 1.5, bgcolor: '#0f172a', border: '1px solid #334155' }}>
+                                    <Box>
+                                      <Typography variant="body2" sx={{ color: '#e2e8f0', fontWeight: 700 }}>{a.annotatorName}</Typography>
+                                      <Typography variant="caption" sx={{ color: '#94a3b8' }}>
+                                        Approved <span style={{ color: '#22c55e', fontWeight: 700 }}>{a.approved}</span>
+                                        {' · '}
+                                        Rejected <span style={{ color: '#f87171', fontWeight: 700 }}>{a.rejected}</span>
+                                        {' · '}
+                                        Pending <span style={{ color: '#f59e0b', fontWeight: 700 }}>{a.pending}</span>
+                                        {' · '}
+                                        Pass {a.passRate}%
+                                      </Typography>
+                                    </Box>
+                                    <Button
+                                      size="small"
+                                      onClick={() => handleOpenAnnotatorDetail(dataset._id, a.annotatorId, a.annotatorName)}
+                                      sx={{ textTransform: 'none', color: '#93c5fd', fontWeight: 700 }}
+                                    >
+                                      View tasks
+                                    </Button>
+                                  </Box>
+                                </Grid>
+                              ))}
+                            </Grid>
+                          )}
                         </Box>
                       </CardContent>
 
@@ -490,6 +648,99 @@ const Datasets = () => {
           </Grid>
         </Box>
       </Box>
+
+      <Dialog
+        open={annotatorDetailDialogOpen}
+        onClose={() => setAnnotatorDetailDialogOpen(false)}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{ sx: { bgcolor: '#1e293b', color: '#e2e8f0', border: '1px solid #334155' } }}
+      >
+        <DialogTitle sx={{ fontWeight: 700 }}>
+          Annotator Task Detail {annotatorDetail?.annotatorName ? `- ${annotatorDetail.annotatorName}` : ''}
+        </DialogTitle>
+        <DialogContent dividers sx={{ borderColor: '#334155' }}>
+          {annotatorDetailLoading && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
+              <CircularProgress />
+            </Box>
+          )}
+          {!annotatorDetailLoading && annotatorDetailError && (
+            <Alert severity="error" sx={{ mb: 2 }}>{annotatorDetailError}</Alert>
+          )}
+          {!annotatorDetailLoading && !annotatorDetailError && annotatorDetail && (
+            <>
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 2 }}>
+                <Chip size="small" label={`Total: ${annotatorDetail.totals?.total ?? 0}`} />
+                <Chip size="small" label={`Approved: ${annotatorDetail.totals?.approved ?? 0}`} sx={{ color: '#22c55e', border: '1px solid #334155' }} />
+                <Chip size="small" label={`Rejected: ${annotatorDetail.totals?.rejected ?? 0}`} sx={{ color: '#f87171', border: '1px solid #334155' }} />
+                <Chip size="small" label={`Submitted: ${annotatorDetail.totals?.submitted ?? 0}`} sx={{ color: '#93c5fd', border: '1px solid #334155' }} />
+                <Chip size="small" label={`Pending: ${annotatorDetail.totals?.pending ?? 0}`} sx={{ color: '#f59e0b', border: '1px solid #334155' }} />
+              </Box>
+
+              <Stack direction="row" spacing={1} sx={{ mb: 2, flexWrap: 'wrap' }}>
+                {[
+                  { id: 'all', label: 'All' },
+                  { id: 'approved', label: 'Approved' },
+                  { id: 'rejected', label: 'Rejected' },
+                  { id: 'submitted', label: 'Submitted' },
+                  { id: 'pending', label: 'Pending' },
+                ].map((f) => (
+                  <Button
+                    key={f.id}
+                    size="small"
+                    variant={annotatorTaskFilter === f.id ? 'contained' : 'outlined'}
+                    onClick={() => setAnnotatorTaskFilter(f.id)}
+                    sx={{ textTransform: 'none', borderRadius: 2 }}
+                  >
+                    {f.label}
+                  </Button>
+                ))}
+              </Stack>
+
+              <Box sx={{ maxHeight: 420, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 1 }}>
+                {(annotatorDetail.tasks || [])
+                  .filter((t) => {
+                    if (annotatorTaskFilter === 'all') return true;
+                    if (annotatorTaskFilter === 'pending') return ['assigned', 'in_progress', 'completed', 'revised'].includes(t.status);
+                    return t.status === annotatorTaskFilter;
+                  })
+                  .map((t) => (
+                    <Box key={t.taskId} sx={{ p: 1.25, border: '1px solid #334155', borderRadius: 1.5, bgcolor: '#0f172a' }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                          {t.annotationSummary || 'Chưa có kết quả gán nhãn'}
+                        </Typography>
+                        <Button size="small" onClick={() => navigate(`/annotator/tasks/${t.taskId}`)} sx={{ textTransform: 'none', color: '#93c5fd' }}>
+                          Open task
+                        </Button>
+                      </Box>
+                      <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block' }}>
+                        Status: {t.status} · Consensus: {t.consensusScore == null ? '-' : `${Math.round(t.consensusScore * 100)}%`}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block' }}>
+                        Submitted: {formatDateTime(t.submittedAt)} · Reviewed: {formatDateTime(t.reviewedAt)}
+                      </Typography>
+                      {t.errorCategory ? (
+                        <Typography variant="caption" sx={{ color: '#f59e0b', display: 'block' }}>
+                          Error: {t.errorCategory}
+                        </Typography>
+                      ) : null}
+                      {t.reviewComments ? (
+                        <Typography variant="caption" sx={{ color: '#cbd5e1', display: 'block' }}>
+                          Review note: {t.reviewComments}
+                        </Typography>
+                      ) : null}
+                    </Box>
+                  ))}
+              </Box>
+            </>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setAnnotatorDetailDialogOpen(false)} sx={{ textTransform: 'none', fontWeight: 700, color: '#cbd5e1' }}>Close</Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} maxWidth="md" fullWidth PaperProps={{ sx: { bgcolor: '#1e293b', color: '#e2e8f0', border: '1px solid #334155' } }}>
         <DialogTitle sx={{ fontWeight: 700 }}>Create New Dataset</DialogTitle>

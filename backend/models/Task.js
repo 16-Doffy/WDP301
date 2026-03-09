@@ -30,6 +30,58 @@ const taskSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.Mixed,
     default: {}
   },
+  // Multi-annotator consensus fields (non-breaking, optional)
+  annotatorLabels: [
+    {
+      annotatorId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      },
+      labels: {
+        type: mongoose.Schema.Types.Mixed,
+        default: {}
+      },
+      submittedAt: Date,
+      taskId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Task'
+      }
+    }
+  ],
+  consensusLabel: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null
+  },
+  consensusScore: {
+    type: Number,
+    min: 0,
+    max: 1,
+    default: null
+  },
+  consensusMeta: {
+    method: {
+      type: String,
+      enum: ['majority_vote', 'manual', 'none'],
+      default: 'none'
+    },
+    winningVotes: {
+      type: Number,
+      default: 0
+    },
+    totalVotes: {
+      type: Number,
+      default: 0
+    },
+    isTie: {
+      type: Boolean,
+      default: false
+    },
+    needsReview: {
+      type: Boolean,
+      default: false
+    },
+    decidedAt: Date
+  },
   sentenceFeedbacks: {
     type: mongoose.Schema.Types.Mixed,
     default: {}

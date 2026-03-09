@@ -63,6 +63,12 @@ const CreateProject = () => {
     severity: 'info',
   });
 
+  const getAuthToken = () => sessionStorage.getItem('token');
+  const getAuthHeaders = () => {
+    const token = getAuthToken();
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
   const showNotification = (message, severity = 'info') => {
     setNotification({ open: true, message, severity });
   };
@@ -117,9 +123,7 @@ const CreateProject = () => {
   const fetchDatasets = async () => {
     try {
       const response = await axios.get(`${API_URL}/api/datasets`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
+        headers: getAuthHeaders()
       });
       const allDatasets = response.data || [];
       console.log('All datasets from API:', allDatasets);
@@ -203,9 +207,7 @@ const CreateProject = () => {
         deadline: formData.deadline || undefined,
         exportFormat: formData.exportFormat || 'JSON',
       }, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
+        headers: getAuthHeaders()
       });
       showNotification('Đã lưu draft thành công!');
       navigate('/manager/projects');
@@ -268,9 +270,7 @@ const CreateProject = () => {
         deadline: formData.deadline || undefined,
         exportFormat: formData.exportFormat || 'JSON',
       }, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
+        headers: getAuthHeaders()
       });
       const projectId = projectRes.data._id;
 
@@ -279,9 +279,7 @@ const CreateProject = () => {
         await axios.put(`${API_URL}/api/datasets/${datasetId}`, {
           projectId: projectId
         }, {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          }
+          headers: getAuthHeaders()
         });
       }
 
@@ -293,9 +291,7 @@ const CreateProject = () => {
           annotatorIds: selectedAnnotators,
           reviewerIds: selectedReviewers,
         }, {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          }
+          headers: getAuthHeaders()
         });
       }
 

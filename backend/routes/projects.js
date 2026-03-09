@@ -7,6 +7,28 @@ const { createActivityLog } = require('./activityLogs');
 
 const router = express.Router();
 
+const computeProjectReviewSnapshot = async (projectId) => {
+  const tasks = await Task.find({ projectId }).select('status');
+
+  const total = tasks.length;
+  const approved = tasks.filter((t) => t.status === 'approved').length;
+  const rejected = tasks.filter((t) => t.status === 'rejected').length;
+  const submitted = tasks.filter((t) => t.status === 'submitted').length;
+  const pending = tasks.filter((t) => ['assigned', 'in_progress', 'completed', 'revised'].includes(t.status)).length;
+  const actionableLeft = submitted + pending;
+
+  let suggestedStatus = 'pending';
+  if (total > 0 && actionableLeft === 0) {
+    suggestedStatus = rejected > 0 ? 'rejected' : (approved > 0 ? 'approved' : 'pending');
+  }
+
+  return {
+    totals: { total, approved, rejected, submitted, pending },
+    actionableLeft,
+    suggestedStatus,
+  };
+};
+
 // Get all projects
 router.get('/', auth, async (req, res) => {
   try {
@@ -17,8 +39,20 @@ router.get('/', auth, async (req, res) => {
     
     const projects = await Project.find(query)
       .populate('managerId', 'username fullName email')
+      .populate('projectReview.reviewedBy', 'username fullName')
       .sort({ createdAt: -1 });
-    res.json(projects);
+
+    const withSnapshot = await Promise.all(
+      projects.map(async (p) => {
+        const snapshot = await computeProjectReviewSnapshot(p._id);
+        return {
+          ...p.toObject(),
+          projectReviewSnapshot: snapshot,
+        };
+      })
+    );
+
+    res.json(withSnapshot);
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
@@ -28,7 +62,8 @@ router.get('/', auth, async (req, res) => {
 router.get('/:id', auth, async (req, res) => {
   try {
     const project = await Project.findById(req.params.id)
-      .populate('managerId', 'username fullName email');
+      .populate('managerId', 'username fullName email')
+      .populate('projectReview.reviewedBy', 'username fullName');
     
     if (!project) {
       return res.status(404).json({ message: 'Project not found' });
@@ -48,7 +83,9 @@ router.get('/:id', auth, async (req, res) => {
       }}
     ]);
 
-    res.json({ project, stats });
+    const projectReviewSnapshot = await computeProjectReviewSnapshot(project._id);
+
+    res.json({ project, stats, projectReviewSnapshot });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
@@ -325,6 +362,45 @@ router.get('/:id/quality', auth, authorize('manager'), async (req, res) => {
     });
 
     res.json(stats);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Reviewer project-level decision (approve/reject after task review)
+router.post('/:id/review-decision', auth, authorize('reviewer', 'admin'), async (req, res) => {
+  try {
+    const { status, comment } = req.body;
+    if (!['approved', 'rejected'].includes(status)) {
+      return res.status(400).json({ message: 'status must be approved or rejected' });
+    }
+
+    const project = await Project.findById(req.params.id);
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    const snapshot = await computeProjectReviewSnapshot(project._id);
+    if (snapshot.actionableLeft > 0) {
+      return res.status(400).json({
+        message: 'Cannot finalize project decision yet. Some tasks are still pending/submitted.',
+        snapshot,
+      });
+    }
+
+    project.projectReview = {
+      status,
+      reviewedBy: req.user._id,
+      reviewedAt: new Date(),
+      comment: (comment || '').trim(),
+    };
+    await project.save();
+
+    await project.populate('projectReview.reviewedBy', 'username fullName');
+
+    res.json({
+      message: `Project marked as ${status}`,
+      project,
+      projectReviewSnapshot: snapshot,
+    });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }

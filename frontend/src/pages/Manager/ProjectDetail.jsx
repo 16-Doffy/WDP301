@@ -8406,7 +8406,7 @@ const ManagerProjectDetail = () => {
 
 
 
-            Authorization: `Bearer ${localStorage.getItem('token')}`,
+            Authorization: `Bearer ${(sessionStorage.getItem('token') || localStorage.getItem('token'))}`,
 
 
 

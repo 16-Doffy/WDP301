@@ -63,6 +63,40 @@ const ensureDir = (dirPath) => {
   if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
 };
 
+const summarizeAnnotationResult = (labels) => {
+  if (!labels || typeof labels !== 'object') return 'Chưa có kết quả gán nhãn';
+
+  if (Array.isArray(labels.objects)) {
+    if (labels.objects.length === 0) return 'Image: 0 object';
+    const byLabel = labels.objects.reduce((acc, obj) => {
+      const key = obj?.label || 'unknown';
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+    const parts = Object.entries(byLabel).map(([k, v]) => `${k}: ${v}`);
+    return `Image objects (${labels.objects.length}): ${parts.join(', ')}`;
+  }
+
+  if (Array.isArray(labels.spans)) {
+    if (labels.spans.length === 0) return 'Text: 0 span';
+    const byLabel = labels.spans.reduce((acc, span) => {
+      const key = span?.label || 'unknown';
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+    const parts = Object.entries(byLabel).map(([k, v]) => `${k}: ${v}`);
+    return `Text spans (${labels.spans.length}): ${parts.join(', ')}`;
+  }
+
+  if (typeof labels.label === 'string' && labels.label.trim()) {
+    return `Classification: ${labels.label}`;
+  }
+
+  const keys = Object.keys(labels);
+  if (keys.length === 0) return 'Chưa có kết quả gán nhãn';
+  return `Annotation keys: ${keys.join(', ')}`;
+};
+
 // Helper function to normalize path to relative path from backend root
 const normalizePath = (filePath) => {
   if (!filePath) return '';
@@ -411,13 +445,26 @@ router.get('/:id/status', auth, authorize('manager', 'admin'), async (req, res) 
       return res.status(403).json({ message: 'Not authorized' });
     }
 
-    const tasks = await Task.find({ datasetId: dataset._id }).select('status dataItem labels reviewedAt reviewers');
+    const tasks = await Task.find({ datasetId: dataset._id })
+      .select('status dataItem labels reviewedAt reviewers consensusLabel consensusScore consensusMeta annotatorId')
+      .populate('annotatorId', 'username fullName');
 
     const approvedTasks = tasks.filter((t) => t.status === 'approved');
     const rejectedTasks = tasks.filter((t) => t.status === 'rejected');
     const submittedTasks = tasks.filter((t) => t.status === 'submitted');
     const pendingAnnotationTasks = tasks.filter((t) => ['assigned', 'in_progress', 'completed'].includes(t.status));
     const returnedToAnnotatorTasks = tasks.filter((t) => t.status === 'revised');
+
+    const consensusReadyTasks = tasks.filter((t) => t.consensusLabel != null);
+    const consensusNeedsReviewTasks = tasks.filter((t) => t.consensusMeta?.needsReview === true);
+    const avgConsensusScore = consensusReadyTasks.length > 0
+      ? Number(
+          (
+            consensusReadyTasks.reduce((sum, t) => sum + (Number(t.consensusScore) || 0), 0) /
+            consensusReadyTasks.length
+          ).toFixed(4)
+        )
+      : 0;
 
     const completedTasksCount = approvedTasks.length + rejectedTasks.length;
 
@@ -461,16 +508,65 @@ router.get('/:id/status', auth, authorize('manager', 'admin'), async (req, res) 
     }));
 
     const totalRawItems = dataset.totalItems || dataset.files?.length || 0;
-    const baseCount = totalRawItems > 0 ? totalRawItems : tasks.length;
-    const lifecycleRate = baseCount > 0 ? Number(((completedTasksCount / baseCount) * 100).toFixed(2)) : 0;
-    const finalRate = baseCount > 0 ? Number(((finalItems.length / baseCount) * 100).toFixed(2)) : 0;
+    const totalTasks = tasks.length;
+    const taskLifecycleRate = totalTasks > 0 ? Number(((completedTasksCount / totalTasks) * 100).toFixed(2)) : 0;
+    const taskFinalRate = totalTasks > 0 ? Number(((finalItems.length / totalTasks) * 100).toFixed(2)) : 0;
+
+    const perRawStatus = new Map();
+    tasks.forEach((task) => {
+      const key = task?.dataItem?.path || task?.dataItem?.filename || task?._id?.toString();
+      const prev = perRawStatus.get(key) || { completed: 0, approved: 0, total: 0 };
+      prev.total += 1;
+      if (task.status === 'approved' || task.status === 'rejected') prev.completed += 1;
+      if (task.status === 'approved') prev.approved += 1;
+      perRawStatus.set(key, prev);
+    });
+
+    let rawCompletedCount = 0;
+    let rawFinalCount = 0;
+    perRawStatus.forEach((entry) => {
+      if (entry.completed === entry.total && entry.total > 0) rawCompletedCount += 1;
+      if (entry.approved > 0) rawFinalCount += 1;
+    });
+
+    const rawBase = totalRawItems > 0 ? totalRawItems : perRawStatus.size;
+    const rawLifecycleRate = rawBase > 0 ? Number(((rawCompletedCount / rawBase) * 100).toFixed(2)) : 0;
+    const rawFinalRate = rawBase > 0 ? Number(((rawFinalCount / rawBase) * 100).toFixed(2)) : 0;
+
+    const annotatorStatsMap = new Map();
+    tasks.forEach((task) => {
+      const annotatorId = task?.annotatorId?._id?.toString?.() || task?.annotatorId?.toString?.() || 'unknown';
+      const annotatorName = task?.annotatorId?.fullName || task?.annotatorId?.username || 'Unknown annotator';
+      const prev = annotatorStatsMap.get(annotatorId) || {
+        annotatorId,
+        annotatorName,
+        total: 0,
+        approved: 0,
+        rejected: 0,
+        pending: 0,
+      };
+
+      prev.total += 1;
+      if (task.status === 'approved') prev.approved += 1;
+      else if (task.status === 'rejected') prev.rejected += 1;
+      else prev.pending += 1;
+
+      annotatorStatsMap.set(annotatorId, prev);
+    });
+
+    const annotatorStats = [...annotatorStatsMap.values()]
+      .map((entry) => ({
+        ...entry,
+        passRate: entry.total > 0 ? Number(((entry.approved / entry.total) * 100).toFixed(2)) : 0,
+      }))
+      .sort((a, b) => b.approved - a.approved || a.rejected - b.rejected);
 
     res.json({
       datasetId: dataset._id,
       datasetName: dataset.name,
       type: dataset.type,
       totalRawItems,
-      totalTasks: tasks.length,
+      totalTasks,
       totalFinalItems: finalItems.length,
       totalPendingItems: pendingAnnotationTasks.length + submittedTasks.length + returnedToAnnotatorTasks.length,
       counts: {
@@ -483,9 +579,15 @@ router.get('/:id/status', auth, authorize('manager', 'admin'), async (req, res) 
         rejected: rejectedTasks.length,
         final: finalItems.length,
       },
-      lifecycleRate,
-      finalRate,
-      completionRate: finalRate,
+      lifecycleRate: taskLifecycleRate,
+      finalRate: taskFinalRate,
+      completionRate: taskFinalRate,
+      rawProgress: {
+        completed: rawCompletedCount,
+        final: rawFinalCount,
+        lifecycleRate: rawLifecycleRate,
+        finalRate: rawFinalRate,
+      },
       majorityThreshold: {
         required: majorityRequired,
         total: reviewersPerItem,
@@ -499,8 +601,64 @@ router.get('/:id/status', auth, authorize('manager', 'admin'), async (req, res) 
         totalVotes,
         progressLabel: `${decidedVotes}/${totalVotes}`,
       },
+      consensus: {
+        consensusReadyCount: consensusReadyTasks.length,
+        needsReviewCount: consensusNeedsReviewTasks.length,
+        avgConsensusScore,
+      },
+      annotators: annotatorStats,
       finalItems,
     });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Get annotator-level task breakdown for a dataset (manager/admin)
+router.get('/:id/annotators/:annotatorId/tasks', auth, authorize('manager', 'admin'), async (req, res) => {
+  try {
+    const dataset = await Dataset.findById(req.params.id);
+    if (!dataset) return res.status(404).json({ message: 'Dataset not found' });
+
+    if (dataset.managerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    const tasks = await Task.find({
+      datasetId: dataset._id,
+      annotatorId: req.params.annotatorId,
+    })
+      .select('status dataItem submittedAt reviewedAt reviewComments errorCategory consensusScore consensusMeta labels')
+      .sort({ updatedAt: -1 });
+
+    const payload = {
+      dataset: {
+        id: dataset._id,
+        name: dataset.name,
+      },
+      annotatorId: req.params.annotatorId,
+      totals: {
+        total: tasks.length,
+        approved: tasks.filter((t) => t.status === 'approved').length,
+        rejected: tasks.filter((t) => t.status === 'rejected').length,
+        submitted: tasks.filter((t) => t.status === 'submitted').length,
+        pending: tasks.filter((t) => ['assigned', 'in_progress', 'completed', 'revised'].includes(t.status)).length,
+      },
+      tasks: tasks.map((t) => ({
+        taskId: t._id,
+        annotationSummary: summarizeAnnotationResult(t.labels),
+        labels: t.labels || {},
+        status: t.status,
+        submittedAt: t.submittedAt,
+        reviewedAt: t.reviewedAt,
+        reviewComments: t.reviewComments || '',
+        errorCategory: t.errorCategory || '',
+        consensusScore: typeof t.consensusScore === 'number' ? t.consensusScore : null,
+        needsConsensusReview: Boolean(t?.consensusMeta?.needsReview),
+      })),
+    };
+
+    res.json(payload);
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }

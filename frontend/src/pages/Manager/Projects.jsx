@@ -268,11 +268,31 @@ const ManagerProjects = () => {
                           </Box>
                         </TableCell>
                         <TableCell>
-                          <Chip
-                            label={project.status?.toUpperCase() || 'DRAFT'}
-                            size="small"
-                            sx={{ ...statusStyle, fontWeight: 700 }}
-                          />
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            <Chip
+                              label={project.status?.toUpperCase() || 'DRAFT'}
+                              size="small"
+                              sx={{ ...statusStyle, fontWeight: 700 }}
+                            />
+                            <Chip
+                              label={`Review: ${(project?.projectReview?.status || project?.projectReviewSnapshot?.suggestedStatus || 'pending').toUpperCase()}`}
+                              size="small"
+                              sx={{
+                                bgcolor: (project?.projectReview?.status || project?.projectReviewSnapshot?.suggestedStatus) === 'approved'
+                                  ? 'rgba(16,185,129,0.18)'
+                                  : (project?.projectReview?.status || project?.projectReviewSnapshot?.suggestedStatus) === 'rejected'
+                                    ? 'rgba(239,68,68,0.18)'
+                                    : 'rgba(245,158,11,0.18)',
+                                color: (project?.projectReview?.status || project?.projectReviewSnapshot?.suggestedStatus) === 'approved'
+                                  ? '#34d399'
+                                  : (project?.projectReview?.status || project?.projectReviewSnapshot?.suggestedStatus) === 'rejected'
+                                    ? '#f87171'
+                                    : '#fbbf24',
+                                border: '1px solid #374151',
+                                fontWeight: 700,
+                              }}
+                            />
+                          </Stack>
                         </TableCell>
                         <TableCell>
                           <Stack direction="row" spacing={0.5} alignItems="center">
