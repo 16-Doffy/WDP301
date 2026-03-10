@@ -30,10 +30,8 @@ import {
 } from '@mui/icons-material';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
-import { useAuth } from '../../context/AuthContext';
 
 const CreateProject = () => {
-  const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [formData, setFormData] = useState({
@@ -244,6 +242,10 @@ const CreateProject = () => {
     }
     if (selectedAnnotators.length === 0) {
       showNotification('Vui lòng chọn ít nhất một annotator');
+      return;
+    }
+    if (selectedAnnotators.length % 2 === 0) {
+      showNotification('Số annotator phải là số lẻ (1, 3, 5, ...). Vui lòng bỏ bớt hoặc thêm 1 annotator.');
       return;
     }
     if (selectedReviewers.length === 0) {

@@ -8,12 +8,10 @@ import {
   FormControl,
   InputLabel,
   Chip,
-  IconButton,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
-  TextField,
   Typography,
   Alert,
   Radio,
@@ -22,10 +20,6 @@ import {
   FormLabel,
 } from '@mui/material';
 import {
-  ZoomIn as ZoomInIcon,
-  ZoomOut as ZoomOutIcon,
-  Delete as DeleteIcon,
-  Add as AddIcon,
   Undo as UndoIcon,
 } from '@mui/icons-material';
 
@@ -36,15 +30,14 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
   const [zoom, setZoom] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
-  const [isPanning, setIsPanning] = useState(false);
   const [spacePressed, setSpacePressed] = useState(false);
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawStart, setDrawStart] = useState(null);
   const [dragStart, setDragStart] = useState(null);
   const [currentBox, setCurrentBox] = useState(null);
   const [selectedAnnotation, setSelectedAnnotation] = useState(null);
-  const [showLabelDialog, setShowLabelDialog] = useState(false);
   const [showAnswerDialog, setShowAnswerDialog] = useState(false);
+  const [activeLabel, setActiveLabel] = useState('');
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [editingAnnotation, setEditingAnnotation] = useState(null);
   const [pendingAnnotation, setPendingAnnotation] = useState(null);
@@ -79,7 +72,8 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
       // Mark that we're syncing from parent to prevent infinite loop
       isSyncingFromParentRef.current = true;
       
-      // Reset everything when image or initial annotations change
+      if (imageChanged) {
+        // New task/image: reset full tool state
       setAnnotations(initialAnnotations || []);
       setAnnotationHistory([initialAnnotations || []]);
       setHistoryIndex(0);
@@ -88,15 +82,19 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
       setPosition({ x: 0, y: 0 });
       setCurrentBox(null);
       setPendingAnnotation(null);
-      setShowLabelDialog(false);
       setShowAnswerDialog(false);
+        setActiveLabel('');
       setShowEditDialog(false);
-      prevAnnotationsRef.current = JSON.stringify(initialAnnotations || []);
       
-      // Reset scroll position
       if (containerRef.current) {
         containerRef.current.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+        }
+      } else {
+        // Same image/task: only sync annotations, keep currently selected label
+        setAnnotations(initialAnnotations || []);
       }
+
+      prevAnnotationsRef.current = JSON.stringify(initialAnnotations || []);
       
       // Reset sync flag after a short delay to allow state to update
       setTimeout(() => {
@@ -163,7 +161,6 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
     }
 
     if (shouldPan) {
-      setIsPanning(true);
       setIsDragging(true);
       setDragStart({
         x: e.clientX,
@@ -244,6 +241,14 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
     if (isDrawing && drawStart && currentBox) {
       const coords = getImageCoordinates(e);
       if (coords && Math.abs(currentBox.width) > 1 && Math.abs(currentBox.height) > 1) {
+        if (!activeLabel) {
+          alert('Vui lòng chọn label trước khi khoanh vùng.');
+          setIsDrawing(false);
+          setDrawStart(null);
+          setCurrentBox(null);
+          return;
+        }
+
         const bbox = [
           Math.min(drawStart.x, coords.x),
           Math.min(drawStart.y, coords.y),
@@ -251,63 +256,36 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
           Math.max(drawStart.y, coords.y),
         ];
 
-        setPendingAnnotation({
+        const newAnnotation = {
+          id: Date.now(),
+          label: activeLabel,
           bbox,
-          label: null,
+          confidence: 1.0,
+          type: 'bbox',
           answer: null,
-        });
+        };
 
-        setShowLabelDialog(true);
+        if (questions && questions.length > 0) {
+          setPendingAnnotation(newAnnotation);
+          setShowAnswerDialog(true);
       } else {
+          const updatedAnnotations = [...annotations, newAnnotation];
+          saveToHistory(updatedAnnotations);
+          setAnnotations(updatedAnnotations);
+        }
+      }
+
         setIsDrawing(false);
         setDrawStart(null);
         setCurrentBox(null);
-      }
     }
 
     if (isDragging) {
       setIsDragging(false);
-      setIsPanning(false);
       setDragStart(null);
     }
   };
 
-  const handleCancelAnnotation = () => {
-    setShowLabelDialog(false);
-    setPendingAnnotation(null);
-    setIsDrawing(false);
-    setDrawStart(null);
-    setCurrentBox(null);
-  };
-
-  const handleAddAnnotation = (label) => {
-    if (readOnly) return;
-    if (!label || !pendingAnnotation) return;
-    
-    const newAnnotation = {
-      id: Date.now(),
-      label: label,
-      bbox: pendingAnnotation.bbox,
-      confidence: 1.0,
-      type: 'bbox',
-      answer: null, // Will be set when answer is selected
-    };
-    
-    setPendingAnnotation({ ...newAnnotation });
-    
-    // If there are questions, show answer dialog
-    if (questions && questions.length > 0) {
-      setShowLabelDialog(false);
-      setShowAnswerDialog(true);
-    } else {
-      // No questions, just add the annotation with answer = null
-      const updatedAnnotations = [...annotations, newAnnotation];
-      saveToHistory(updatedAnnotations);
-      setAnnotations(updatedAnnotations);
-      setShowLabelDialog(false);
-      setPendingAnnotation(null);
-    }
-  };
 
   const handleSelectAnswer = (answer) => {
     if (readOnly) return;
@@ -504,41 +482,6 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
   };
 
 
-  const handleZoomIn = () => {
-    if (!containerRef.current) {
-      setZoom(prevZoom => Math.min(prevZoom + 0.2, 5));
-      return;
-    }
-    const rect = containerRef.current.getBoundingClientRect();
-    const centerX = rect.width / 2 + containerRef.current.scrollLeft;
-    const centerY = rect.height / 2 + containerRef.current.scrollTop;
-    const nextZoom = Math.min(zoom + 0.2, 5);
-    const contentX = (centerX - position.x) / zoom;
-    const contentY = (centerY - position.y) / zoom;
-    setZoom(nextZoom);
-    setPosition({
-      x: centerX - contentX * nextZoom,
-      y: centerY - contentY * nextZoom,
-    });
-  };
-
-  const handleZoomOut = () => {
-    if (!containerRef.current) {
-      setZoom(prevZoom => Math.max(prevZoom - 0.2, 0.1));
-      return;
-    }
-    const rect = containerRef.current.getBoundingClientRect();
-    const centerX = rect.width / 2 + containerRef.current.scrollLeft;
-    const centerY = rect.height / 2 + containerRef.current.scrollTop;
-    const nextZoom = Math.max(zoom - 0.2, 0.1);
-    const contentX = (centerX - position.x) / zoom;
-    const contentY = (centerY - position.y) / zoom;
-    setZoom(nextZoom);
-    setPosition({
-      x: centerX - contentX * nextZoom,
-      y: centerY - contentY * nextZoom,
-    });
-  };
 
   const handleReset = () => {
     if (readOnly) return;
@@ -579,7 +522,6 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
       if (e.code === 'Space') {
         setSpacePressed(false);
         setIsDragging(false);
-        setIsPanning(false);
         setDragStart(null);
       }
     };
@@ -697,8 +639,36 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
         >
           <Typography variant="h6">Image Annotation Tool</Typography>
           <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', width: { xs: '100%', md: 'auto' }, justifyContent: { xs: 'flex-start', md: 'flex-end' } }}>
+            <FormControl size="small" sx={{ minWidth: 220 }} disabled={readOnly || labelSet.length === 0}>
+              <InputLabel id="active-label-select">Label đang chọn</InputLabel>
+              <Select
+                labelId="active-label-select"
+                value={activeLabel}
+                label="Label đang chọn"
+                onChange={(e) => setActiveLabel(e.target.value)}
+              >
+                {labelSet.map((label, idx) => (
+                  <MenuItem key={idx} value={label.name || label}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      {label.color && (
+                        <Box
+                          sx={{
+                            width: 12,
+                            height: 12,
+                            bgcolor: label.color,
+                            borderRadius: '50%',
+                            border: '1px solid #ccc',
+                          }}
+                        />
+                      )}
+                      <Typography variant="body2">{label.name || label}</Typography>
+                    </Box>
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
             <Typography variant="body2" sx={{ alignSelf: 'center', whiteSpace: 'nowrap' }}>
-              Kéo chuột để khoanh vùng
+              {activeLabel ? 'Đã chọn label, kéo chuột để khoanh vùng' : 'Chọn label trước rồi mới khoanh vùng'}
             </Typography>
             <Button 
               size="small" 
@@ -795,7 +765,7 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
                 setCurrentBox(null);
               }
             }}
-            onLoad={(e) => {
+            onLoad={() => {
               // Reset zoom and position when image loads
               if (imageRef.current && containerRef.current) {
                 setZoom(1);
@@ -923,71 +893,6 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
       </Paper>
 
 
-      {/* Label Selection Dialog */}
-      <Dialog open={showLabelDialog} onClose={() => {
-        setShowLabelDialog(false);
-        setPendingAnnotation(null);
-      }} maxWidth="sm" fullWidth>
-        <DialogTitle>Chọn Label cho vùng đã khoanh</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" sx={{ mt: 1, mb: 2 }}>
-            Chọn label phù hợp:
-          </Typography>
-          <FormControl fullWidth sx={{ mt: 1 }}>
-            <InputLabel>Label *</InputLabel>
-            <Select
-              value=""
-              onChange={(e) => {
-                const label = e.target.value;
-                if (label) {
-                  handleAddAnnotation(label);
-                }
-              }}
-              label="Label *"
-              autoFocus
-            >
-              {labelSet.length === 0 ? (
-                <MenuItem disabled>Không có label nào. Manager cần thêm label vào project.</MenuItem>
-              ) : (
-                labelSet.map((label, idx) => (
-                  <MenuItem key={idx} value={label.name || label}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      {label.color && (
-                        <Box
-                          sx={{
-                            width: 16,
-                            height: 16,
-                            bgcolor: label.color,
-                            borderRadius: '50%',
-                            border: '1px solid #ccc',
-                          }}
-                        />
-                      )}
-                      <Typography>{label.name || label}</Typography>
-                      {label.description && (
-                        <Typography variant="caption" color="textSecondary" sx={{ ml: 1 }}>
-                          ({label.description})
-                        </Typography>
-                      )}
-                    </Box>
-                  </MenuItem>
-                ))
-              )}
-            </Select>
-          </FormControl>
-          {labelSet.length === 0 && (
-            <Alert severity="warning" sx={{ mt: 2 }}>
-              Manager chưa thiết lập bộ nhãn cho project này. Vui lòng liên hệ Manager.
-            </Alert>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => {
-            setShowLabelDialog(false);
-            setPendingAnnotation(null);
-          }}>Hủy</Button>
-        </DialogActions>
-      </Dialog>
 
       {/* Answer Selection Dialog */}
       <Dialog open={showAnswerDialog} onClose={() => {
@@ -997,7 +902,7 @@ const ImageAnnotator = ({ imageUrl, labelSet = [], questions = [], onAnnotations
         <DialogTitle>Chọn đáp án</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="textSecondary" gutterBottom>
-            Bạn đã khoanh vùng và chọn label: <strong>{pendingAnnotation?.label}</strong>
+            Label đã chọn: <strong>{pendingAnnotation?.label}</strong>
           </Typography>
           <Typography variant="body2" sx={{ mt: 2, mb: 2 }}>
             Vui lòng trả lời câu hỏi sau:
