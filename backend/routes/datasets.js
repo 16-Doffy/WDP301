@@ -630,6 +630,14 @@ router.get('/:id/items', auth, authorize('manager', 'admin'), async (req, res) =
     const tasks = await Task.find({ datasetId: dataset._id })
       .select('status dataItem labels annotatorId reviewedAt')
       .populate('annotatorId', 'username fullName')
+      .populate({
+        path: 'datasetId',
+        select: 'projectId',
+        populate: {
+          path: 'projectId',
+          select: 'labelSet'
+        }
+      })
       .lean();
 
     // Group tasks by dataItem to get status for each raw item
@@ -644,6 +652,17 @@ router.get('/:id/items', auth, authorize('manager', 'admin'), async (req, res) =
       if (!itemsMap.has(itemKey)) {
         // Extract just the filename from the path
         const filename = itemPath ? itemPath.split('/').pop() : (task.dataItem?.filename || '');
+        
+        // Get labelSet from project
+        let labelSet = [];
+        try {
+          if (task.datasetId?.projectId?.labelSet) {
+            labelSet = task.datasetId.projectId.labelSet;
+          }
+        } catch (e) {
+          // Ignore errors getting labelSet
+        }
+        
         itemsMap.set(itemKey, {
           id: itemKey,
           filename: task.dataItem?.filename || task.dataItem?.name || filename || 'Unknown',
@@ -651,6 +670,7 @@ router.get('/:id/items', auth, authorize('manager', 'admin'), async (req, res) =
           type: dataset.type,
           path: itemPath,
           imageUrl: filename ? `/uploads/datasets/${filename}` : '',
+          labelSet,
           annotations: [],
           status: 'pending',
           approvedCount: 0,

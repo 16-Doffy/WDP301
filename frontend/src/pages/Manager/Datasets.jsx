@@ -129,49 +129,106 @@ const Datasets = () => {
 
   const getAuthToken = () => sessionStorage.getItem('token') || localStorage.getItem('token');
 
-  // Calculate consensus/final labels from all annotations
+  // Helper to get label color
+  const getLabelColor = (labelName) => {
+    const labelSet = selectedItem?.labelSet || [];
+    const labelInfo = labelSet.find(l => (l.name || l) === labelName);
+    if (labelInfo?.color) {
+      return labelInfo.color;
+    }
+    // Generate a consistent color based on label name
+    const palette = ['#1976d2', '#16a34a', '#ea580c', '#9333ea', '#0f766e', '#dc2626', '#2563eb', '#8b5cf6', '#ec4899', '#14b8a6'];
+    let hash = 0;
+    for (let i = 0; i < labelName.length; i++) {
+      hash = labelName.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return palette[Math.abs(hash) % palette.length];
+  };
+
+  // Merge annotations - calculate final consensus labels with merged bounding boxes
   const getConsensusLabels = () => {
     if (!selectedItem?.annotations || selectedItem.annotations.length === 0) {
-      return { objects: [], votes: {} };
+      return { mergedAnnotations: [], groupedLabels: {} };
     }
     
+    // Use only approved annotations
     const approvedAnnotations = selectedItem.annotations.filter(a => a.status === 'approved');
     const annotationsToUse = approvedAnnotations.length > 0 ? approvedAnnotations : selectedItem.annotations;
     
-    // Count label votes
-    const labelVotes = {};
-    const allObjects = [];
+    if (annotationsToUse.length === 0) {
+      return { mergedAnnotations: [], groupedLabels: {} };
+    }
     
-    annotationsToUse.forEach(ann => {
+    // Group objects by label
+    const labelGroups = {};
+    
+    annotationsToUse.forEach((ann) => {
       if (ann.labels?.objects && Array.isArray(ann.labels.objects)) {
-        ann.labels.objects.forEach(obj => {
+        ann.labels.objects.forEach((obj) => {
           const label = obj.label;
-          labelVotes[label] = (labelVotes[label] || 0) + 1;
-          allObjects.push(obj);
+          if (!labelGroups[label]) {
+            labelGroups[label] = [];
+          }
+          labelGroups[label].push({
+            ...obj,
+            annotatorName: ann.annotator
+          });
         });
       }
     });
     
-    // Get consensus objects (majority vote)
-    const consensusObjects = [];
-    const totalVotes = annotationsToUse.length;
-    
-    // Group objects by similar label and bbox location
-    Object.entries(labelVotes).forEach(([label, voteCount]) => {
-      const objectsWithLabel = allObjects.filter(o => o.label === label);
-      // Take the first object with highest confidence as representative
-      objectsWithLabel.sort((a, b) => (b.confidence || 1) - (a.confidence || 1));
-      if (objectsWithLabel.length > 0) {
-        consensusObjects.push({
-          ...objectsWithLabel[0],
-          voteCount,
-          totalVotes,
-          consensusScore: totalVotes > 0 ? (voteCount / totalVotes) * 100 : 0
-        });
+    // Merge bounding boxes for each label (average bbox)
+    const mergedAnnotations = Object.entries(labelGroups).map(([label, objects]) => {
+      const labelColor = getLabelColor(label);
+      
+      if (objects.length === 1) {
+        return {
+          label,
+          labelColor,
+          bbox: objects[0].bbox,
+          confidence: objects[0].confidence || 1,
+          voteCount: objects.length,
+          totalAnnotations: annotationsToUse.length,
+          consensusScore: (1 / annotationsToUse.length) * 100,
+          mergedFrom: objects.map(o => o.annotatorName)
+        };
       }
+      
+      // Calculate average bbox
+      const bboxSums = [0, 0, 0, 0];
+      let totalConfidence = 0;
+      
+      objects.forEach(obj => {
+        const [x1, y1, x2, y2] = obj.bbox || [0, 0, 0, 0];
+        bboxSums[0] += x1;
+        bboxSums[1] += y1;
+        bboxSums[2] += x2;
+        bboxSums[3] += y2;
+        totalConfidence += (obj.confidence || 1);
+      });
+      
+      const avgBbox = bboxSums.map(sum => sum / objects.length);
+      
+      return {
+        label,
+        labelColor,
+        bbox: avgBbox,
+        confidence: totalConfidence / objects.length,
+        voteCount: objects.length,
+        totalAnnotations: annotationsToUse.length,
+        consensusScore: (objects.length / annotationsToUse.length) * 100,
+        mergedFrom: objects.map(o => o.annotatorName)
+      };
     });
     
-    return { objects: consensusObjects, votes: labelVotes, totalVotes };
+    // Sort by label name
+    mergedAnnotations.sort((a, b) => a.label.localeCompare(b.label));
+    
+    return { 
+      mergedAnnotations, 
+      groupedLabels: labelGroups, 
+      totalAnnotations: annotationsToUse.length 
+    };
   };
 
   useEffect(() => {
@@ -1093,7 +1150,7 @@ const Datasets = () => {
                           }}
                         />
                         {/* Draw bounding boxes - show consensus or individual annotation */}
-                        {imageLoaded && selectedItem.annotations && selectedItem.annotations.length > 0 && ((showConsensus && getConsensusLabels().objects.length > 0) || (!showConsensus && selectedItem.annotations[selectedAnnotationIndex]?.labels?.objects?.length > 0)) && (
+                        {imageLoaded && selectedItem.annotations && selectedItem.annotations.length > 0 && ((showConsensus && getConsensusLabels().mergedAnnotations.length > 0) || (!showConsensus && selectedItem.annotations[selectedAnnotationIndex]?.labels?.objects?.length > 0)) && (
                           <Box sx={{
                             position: 'absolute',
                             top: 0,
@@ -1107,13 +1164,18 @@ const Datasets = () => {
                               let objectsToDisplay = [];
                               if (showConsensus) {
                                 const consensus = getConsensusLabels();
-                                objectsToDisplay = consensus.objects;
+                                objectsToDisplay = consensus.mergedAnnotations;
                               } else {
                                 const ann = selectedItem.annotations[selectedAnnotationIndex];
                                 objectsToDisplay = ann?.labels?.objects || [];
                               }
                               
                               return objectsToDisplay.map((obj, idx) => {
+                                // Get label color - use from object (consensus) or calculate (individual)
+                                const labelColor = obj.labelColor || getLabelColor(obj.label);
+                                const displayColor = showConsensus ? labelColor : '#22c55e';
+                                const displayBgColor = showConsensus ? `${labelColor}26` : 'rgba(34, 197, 94, 0.15)';
+                                
                                 // bbox format in ImageAnnotator: [x1, y1, x2, y2] - coordinates as percentage
                                 const [x1, y1, x2, y2] = obj.bbox || [0, 0, 0, 0];
                                 const left = Math.min(x1, x2);
@@ -1131,8 +1193,8 @@ const Datasets = () => {
                                       width: `${width}%`,
                                       height: `${height}%`,
                                       border: '2px solid',
-                                      borderColor: showConsensus ? '#8b5cf6' : '#22c55e',
-                                      bgcolor: showConsensus ? 'rgba(139, 92, 246, 0.15)' : 'rgba(34, 197, 94, 0.15)',
+                                      borderColor: displayColor,
+                                      bgcolor: displayBgColor,
                                       borderRadius: '4px',
                                       display: 'flex',
                                       alignItems: 'flex-start',
@@ -1142,7 +1204,7 @@ const Datasets = () => {
                                     <Typography
                                       variant="caption"
                                       sx={{
-                                        bgcolor: showConsensus ? '#8b5cf6' : '#22c55e',
+                                        bgcolor: displayColor,
                                         color: '#fff',
                                         px: 0.75,
                                         py: 0.25,
@@ -1152,6 +1214,9 @@ const Datasets = () => {
                                         whiteSpace: 'nowrap',
                                       }}
                                     >
+                                      {showConsensus && (
+                                        <span style={{ marginRight: 4 }}>{idx + 1}</span>
+                                      )}
                                       {obj.label}
                                       {showConsensus && obj.consensusScore !== undefined && (
                                         <span style={{ opacity: 0.8, fontSize: 10, marginLeft: 4 }}>
@@ -1237,36 +1302,45 @@ const Datasets = () => {
                         ))}
                       </Stack>
                       
-                      {/* Consensus/Votes Info */}
+                      {/* Consensus/Votes Info - Show merged final annotations */}
                       {showConsensus && (
                         <Box sx={{ bgcolor: 'rgba(139, 92, 246, 0.1)', borderRadius: 1, p: 1.5, border: '1px solid rgba(139, 92, 246, 0.3)' }}>
                           <Typography variant="caption" sx={{ color: '#a78bfa', fontWeight: 700, display: 'block', mb: 1 }}>
-                            Consensus / Final Labels
+                            Final Labels (Merged)
                           </Typography>
                           {(() => {
                             const consensus = getConsensusLabels();
-                            if (consensus.objects.length === 0) {
-                              return <Typography variant="caption" sx={{ color: '#94a3b8' }}>No annotations yet</Typography>;
+                            if (consensus.mergedAnnotations.length === 0) {
+                              return <Typography variant="caption" sx={{ color: '#94a3b8' }}>No approved annotations yet</Typography>;
                             }
+                            
                             return (
                               <>
                                 <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mb: 1 }}>
-                                  {consensus.objects.length} object(s) detected • {consensus.totalVotes} vote(s)
+                                  {consensus.mergedAnnotations.length} final object(s) from {consensus.totalAnnotations} annotation(s)
                                 </Typography>
-                                {consensus.objects.map((obj, idx) => (
-                                  <Box key={idx} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                                    <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#22c55e' }} />
-                                    <Typography variant="caption" sx={{ color: '#e2e8f0', fontWeight: 600 }}>
-                                      {obj.label}
-                                    </Typography>
-                                    <Typography variant="caption" sx={{ color: '#94a3b8' }}>
-                                      {obj.voteCount}/{consensus.totalVotes} votes
-                                    </Typography>
-                                    <Typography variant="caption" sx={{ color: '#22c55e', fontWeight: 600 }}>
-                                      ({Math.round(obj.consensusScore)}%)
-                                    </Typography>
-                                  </Box>
-                                ))}
+                                
+                                {/* Show merged annotations - one per label */}
+                                {consensus.mergedAnnotations.map((obj, idx) => {
+                                  const labelColor = obj.labelColor || getLabelColor(obj.label);
+                                  return (
+                                    <Box key={idx} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                                      <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: 10 }}>
+                                        {idx + 1}.
+                                      </Typography>
+                                      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: labelColor }} />
+                                      <Typography variant="caption" sx={{ color: '#e2e8f0', fontWeight: 600 }}>
+                                        {obj.label}
+                                      </Typography>
+                                      <Typography variant="caption" sx={{ color: labelColor, fontWeight: 600 }}>
+                                        {Math.round(obj.consensusScore)}%
+                                      </Typography>
+                                      <Typography variant="caption" sx={{ color: '#64748b', fontSize: 10 }}>
+                                        (from {obj.mergedFrom?.join(', ')})
+                                      </Typography>
+                                    </Box>
+                                  );
+                                })}
                               </>
                             );
                           })()}
