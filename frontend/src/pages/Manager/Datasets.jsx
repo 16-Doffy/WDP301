@@ -19,6 +19,16 @@ import {
   CircularProgress,
   Stack,
   LinearProgress,
+  Checkbox,
+  FormControlLabel,
+  Radio,
+  RadioGroup,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -26,9 +36,40 @@ import {
   CloudUpload as CloudUploadIcon,
   Search as SearchIcon,
   Download as DownloadIcon,
+  CheckCircle as CheckCircleIcon,
+  Cancel as CancelIcon,
+  Pending as PendingIcon,
+  Dataset as DatasetIcon,
 } from '@mui/icons-material';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
+
+const getFullImageUrl = (path, imageUrl, filename) => {
+  // Build base URL - remove any trailing slashes
+  const baseUrl = API_URL.replace(/\/+$/, '');
+  
+  // Priority: imageUrl > path > filename
+  let relativePath = '';
+  if (imageUrl) {
+    // imageUrl might already have uploads/ in it
+    relativePath = imageUrl.replace(/^\/+/, '');
+  } else if (path) {
+    if (path.includes('uploads/')) {
+      // Path already has uploads/, just clean it
+      relativePath = path.replace(/^\/+/, '');
+    } else {
+      // Just filename, add uploads/datasets/
+      relativePath = `uploads/datasets/${path}`;
+    }
+  } else if (filename) {
+    relativePath = `uploads/datasets/${filename}`;
+  }
+  
+  if (relativePath) {
+    return `${baseUrl}/${relativePath}`;
+  }
+  return '';
+};
 
 const panelSx = {
   borderRadius: 3,
@@ -46,6 +87,15 @@ const cardSx = {
   color: '#e2e8f0',
 };
 
+// Color constants
+const COLORS = {
+  approved: '#22c55e',
+  rejected: '#f87171',
+  pending: '#f59e0b',
+  inReview: '#3b82f6',
+  total: '#94a3b8',
+};
+
 const Datasets = () => {
   const navigate = useNavigate();
   const [datasets, setDatasets] = useState([]);
@@ -59,13 +109,70 @@ const Datasets = () => {
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusByDataset, setStatusByDataset] = useState({});
-  const [annotatorDetailDialogOpen, setAnnotatorDetailDialogOpen] = useState(false);
-  const [annotatorDetailLoading, setAnnotatorDetailLoading] = useState(false);
-  const [annotatorDetailError, setAnnotatorDetailError] = useState('');
-  const [annotatorDetail, setAnnotatorDetail] = useState(null);
-  const [annotatorTaskFilter, setAnnotatorTaskFilter] = useState('all');
+  
+  // Export dialog state
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportFormat, setExportFormat] = useState('json');
+
+  // Dataset items dialog state
+  const [itemsDialogOpen, setItemsDialogOpen] = useState(false);
+  const [itemsLoading, setItemsLoading] = useState(false);
+  const [itemsData, setItemsData] = useState({ items: [], totalItems: 0 });
+  const [itemFilter, setItemFilter] = useState('all');
+  const [selectedItem, setSelectedItem] = useState(null);
+  const [itemDetailDialogOpen, setItemDetailDialogOpen] = useState(false);
+  const [selectedAnnotationIndex, setSelectedAnnotationIndex] = useState(0);
+  const [showConsensus, setShowConsensus] = useState(true); // Show consensus/result first by default
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
 
   const getAuthToken = () => sessionStorage.getItem('token') || localStorage.getItem('token');
+
+  // Calculate consensus/final labels from all annotations
+  const getConsensusLabels = () => {
+    if (!selectedItem?.annotations || selectedItem.annotations.length === 0) {
+      return { objects: [], votes: {} };
+    }
+    
+    const approvedAnnotations = selectedItem.annotations.filter(a => a.status === 'approved');
+    const annotationsToUse = approvedAnnotations.length > 0 ? approvedAnnotations : selectedItem.annotations;
+    
+    // Count label votes
+    const labelVotes = {};
+    const allObjects = [];
+    
+    annotationsToUse.forEach(ann => {
+      if (ann.labels?.objects && Array.isArray(ann.labels.objects)) {
+        ann.labels.objects.forEach(obj => {
+          const label = obj.label;
+          labelVotes[label] = (labelVotes[label] || 0) + 1;
+          allObjects.push(obj);
+        });
+      }
+    });
+    
+    // Get consensus objects (majority vote)
+    const consensusObjects = [];
+    const totalVotes = annotationsToUse.length;
+    
+    // Group objects by similar label and bbox location
+    Object.entries(labelVotes).forEach(([label, voteCount]) => {
+      const objectsWithLabel = allObjects.filter(o => o.label === label);
+      // Take the first object with highest confidence as representative
+      objectsWithLabel.sort((a, b) => (b.confidence || 1) - (a.confidence || 1));
+      if (objectsWithLabel.length > 0) {
+        consensusObjects.push({
+          ...objectsWithLabel[0],
+          voteCount,
+          totalVotes,
+          consensusScore: totalVotes > 0 ? (voteCount / totalVotes) * 100 : 0
+        });
+      }
+    });
+    
+    return { objects: consensusObjects, votes: labelVotes, totalVotes };
+  };
 
   useEffect(() => {
     fetchDatasets();
@@ -222,6 +329,33 @@ const Datasets = () => {
     }
   };
 
+  const handleExportDataset = async (datasetId, format) => {
+    setExporting(true);
+    try {
+      const response = await axios.get(`${API_URL}/api/datasets/${datasetId}/export`, {
+        params: { format },
+        responseType: 'blob',
+        headers: { Authorization: `Bearer ${getAuthToken()}` },
+      });
+
+      const contentType = format === 'json' ? 'application/json' : 
+                         format === 'csv' ? 'text/csv' : 'application/zip';
+      const blob = new Blob([response.data], { type: contentType });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `dataset_${datasetId}.${format}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setExportDialogOpen(false);
+    } catch (err) {
+      alert(err.response?.data?.message || 'Không thể export dataset');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const handleExportFinal = async (datasetId) => {
     try {
       const response = await axios.get(`${API_URL}/api/datasets/${datasetId}/final-export`, {
@@ -249,23 +383,62 @@ const Datasets = () => {
     return dt.toLocaleString('vi-VN');
   };
 
-  const handleOpenAnnotatorDetail = async (datasetId, annotatorId, annotatorName) => {
-    setAnnotatorDetailDialogOpen(true);
-    setAnnotatorTaskFilter('all');
-    setAnnotatorDetailLoading(true);
-    setAnnotatorDetailError('');
-    setAnnotatorDetail(null);
+  const handleOpenItemsDialog = async (datasetId) => {
+    setItemsDialogOpen(true);
+    setItemFilter('all');
+    setItemsLoading(true);
+    setItemsData({ items: [], totalItems: 0 });
 
     try {
-      const response = await axios.get(`${API_URL}/api/datasets/${datasetId}/annotators/${annotatorId}/tasks`, {
+      const response = await axios.get(`${API_URL}/api/datasets/${datasetId}/items`, {
         headers: { Authorization: `Bearer ${getAuthToken()}` },
       });
-      setAnnotatorDetail({ ...response.data, annotatorName });
+      setItemsData(response.data);
     } catch (err) {
-      setAnnotatorDetailError(err.response?.data?.message || err.message || 'Không thể tải chi tiết annotator');
+      console.error('Error fetching items:', err);
     } finally {
-      setAnnotatorDetailLoading(false);
+      setItemsLoading(false);
     }
+  };
+
+  const handleOpenItemDetail = (item) => {
+    setSelectedItem(item);
+    setSelectedAnnotationIndex(0);
+    setImageLoaded(false);
+    setImageSize({ width: 0, height: 0 });
+    setItemDetailDialogOpen(true);
+  };
+
+  const handleImageLoad = (e) => {
+    setImageLoaded(true);
+    setImageSize({
+      width: e.target.naturalWidth,
+      height: e.target.naturalHeight
+    });
+  };
+
+  const getStatusChip = (status) => {
+    const statusConfig = {
+      approved: { label: 'Approved', color: COLORS.approved, icon: <CheckCircleIcon sx={{ fontSize: 14 }} /> },
+      rejected: { label: 'Rejected', color: COLORS.rejected, icon: <CancelIcon sx={{ fontSize: 14 }} /> },
+      pending: { label: 'Pending', color: COLORS.pending, icon: <PendingIcon sx={{ fontSize: 14 }} /> },
+      submitted: { label: 'In Review', color: COLORS.inReview, icon: <PendingIcon sx={{ fontSize: 14 }} /> },
+    };
+    const config = statusConfig[status] || statusConfig.pending;
+    return (
+      <Chip 
+        size="small" 
+        icon={config.icon}
+        label={config.label} 
+        sx={{ 
+          bgcolor: `${config.color}20`, 
+          color: config.color, 
+          border: `1px solid ${config.color}40`,
+          fontWeight: 600,
+          fontSize: 11,
+        }} 
+      />
+    );
   };
 
   if (loading) {
@@ -278,13 +451,16 @@ const Datasets = () => {
 
   return (
     <Box sx={{ p: { xs: 2, sm: 3, md: 4 }, minHeight: '100vh', background: '#0f172a' }}>
+      {/* Header */}
       <Box sx={panelSx}>
         <Box sx={{ p: { xs: 2, sm: 3 }, borderBottom: '1px solid #334155' }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', md: 'center' }, flexDirection: { xs: 'column', md: 'row' }, gap: 2 }}>
             <Box>
-              <Typography variant="h4" fontWeight={800} sx={{ color: '#e2e8f0', mb: 0.5 }}>Datasets</Typography>
+              <Typography variant="h4" fontWeight={800} sx={{ color: '#e2e8f0', mb: 0.5 }}>
+                Datasets
+              </Typography>
               <Typography variant="body2" sx={{ color: '#94a3b8' }}>
-                Raw Dataset gồm nhiều item. Item được majority reviewer duyệt sẽ vào Final Dataset và có thể export.
+                Quản lý và export dataset sẵn sàng cho AI Training
               </Typography>
             </Box>
             <Stack direction="row" spacing={1.5} alignItems="center">
@@ -305,7 +481,19 @@ const Datasets = () => {
                 }}
                 InputProps={{ startAdornment: <SearchIcon sx={{ color: '#94a3b8', mr: 1 }} fontSize="small" /> }}
               />
-              <Button variant="contained" startIcon={<AddIcon />} onClick={() => setCreateDialogOpen(true)} sx={{ borderRadius: 2, textTransform: 'none', px: 2.5, fontWeight: 700, bgcolor: '#2563eb', '&:hover': { bgcolor: '#3b82f6' } }}>
+              <Button 
+                variant="contained" 
+                startIcon={<AddIcon />} 
+                onClick={() => setCreateDialogOpen(true)} 
+                sx={{ 
+                  borderRadius: 2, 
+                  textTransform: 'none', 
+                  px: 2.5, 
+                  fontWeight: 700,
+                  bgcolor: '#2563eb', 
+                  '&:hover': { bgcolor: '#3b82f6' } 
+                }}
+              >
                 Create Dataset
               </Button>
             </Stack>
@@ -325,297 +513,265 @@ const Datasets = () => {
                 const counts = stat?.counts || {};
                 const pendingAnnotation = counts.pendingAnnotation ?? 0;
                 const submitted = counts.submitted ?? 0;
-                const returnedToAnnotator = counts.returnedToAnnotator ?? 0;
                 const completed = counts.completed ?? 0;
                 const approved = counts.approved ?? stat?.totalFinalItems ?? 0;
                 const rejected = counts.rejected ?? 0;
                 const finalCount = counts.final ?? stat?.totalFinalItems ?? 0;
+                
+                // Use rawProgress from backend for correct calculation
+                const rawProgress = stat?.rawProgress || {};
+                const rawCompleted = rawProgress.completed ?? 0;
+                const rawApproved = rawProgress.final ?? 0;
+                
+                const canExport = rawApproved > 0;
+                const exportProgress = rawCount > 0 ? Math.round((rawApproved / rawCount) * 100) : 0;
 
-                const taskLifecycleProgress = stat?.lifecycleRate ?? 0;
-                const taskFinalProgress = stat?.finalRate ?? stat?.completionRate ?? 0;
-                const rawLifecycleProgress = stat?.rawProgress?.lifecycleRate ?? 0;
-                const rawFinalProgress = stat?.rawProgress?.finalRate ?? 0;
-                const rawCompletedCount = stat?.rawProgress?.completed ?? 0;
-                const rawFinalCount = stat?.rawProgress?.final ?? 0;
+                // Get items from status API if available
+                const previewItems = stat?.finalItems?.slice(0, 4).map((item, idx) => ({
+                  id: idx + 1,
+                  filename: item.dataItem?.filename || item.dataItem?.name || `Item ${idx + 1}`,
+                  type: dataset.type,
+                  displayLabel: item.labels?.label || item.labels?.objects?.[0]?.label || item.labels?.spans?.[0]?.label || 'N/A',
+                  status: 'approved',
+                  approvedCount: 1,
+                  rejectedCount: 0,
+                })) || [];
 
-                const canExport = finalCount > 0;
-                const isReviewCompleted = pendingAnnotation === 0 && submitted === 0 && returnedToAnnotator === 0;
-                const majorityThreshold = stat?.majorityThreshold;
-                const majorityRuleLabel = stat?.majorityRuleLabel || (majorityThreshold?.required && majorityThreshold?.total
-                  ? `${majorityThreshold.required}/${majorityThreshold.total}`
-                  : '2/3');
-                const votes = stat?.votes || {};
-                const approveVotes = votes.approveVotes ?? 0;
-                const rejectVotes = votes.rejectVotes ?? 0;
-                const pendingVotes = votes.pendingVotes ?? 0;
-                const decidedVotes = votes.decidedVotes ?? (approveVotes + rejectVotes);
-                const totalVotes = votes.totalVotes ?? (approveVotes + rejectVotes + pendingVotes);
-                const voteProgressLabel = votes.progressLabel || `${decidedVotes}/${totalVotes}`;
-                const consensusReadyCount = stat?.consensus?.consensusReadyCount ?? 0;
-                const consensusNeedsReviewCount = stat?.consensus?.needsReviewCount ?? 0;
-                const avgConsensusScore = typeof stat?.consensus?.avgConsensusScore === 'number'
-                  ? stat.consensus.avgConsensusScore
-                  : null;
-                const consensusCoverageLabel = totalTasks > 0
-                  ? `${consensusReadyCount}/${totalTasks}`
-                  : `${consensusReadyCount}`;
-                const consensusScoreLabel = avgConsensusScore == null
-                  ? '-'
-                  : `${Math.round(avgConsensusScore * 100)}%`;
-                const annotatorStats = Array.isArray(stat?.annotators) ? stat.annotators : [];
+                // Dataset type breakdown - use actual data
+                const typeBreakdown = [
+                  { type: 'Image', count: dataset.type === 'image' ? rawCount : 0, icon: '🖼️' },
+                  { type: 'Text', count: dataset.type === 'text' ? rawCount : 0, icon: '📝' },
+                  { type: 'Audio', count: dataset.type === 'audio' ? rawCount : 0, icon: '🎵' },
+                ].filter(t => t.count > 0);
 
-                const reviewState = (() => {
-                  if ((pendingAnnotation + submitted) > 0) {
-                    return { label: 'Trạng thái review: Đang xử lý', color: '#93c5fd', bg: 'rgba(59,130,246,0.15)' };
-                  }
-                  if (returnedToAnnotator > 0 || rejected > 0) {
-                    return { label: 'Trạng thái review: Cần làm lại', color: '#f59e0b', bg: 'rgba(245,158,11,0.15)' };
-                  }
-                  if (approved > 0) {
-                    return { label: 'Trạng thái review: Đạt', color: '#4ade80', bg: 'rgba(34,197,94,0.15)' };
-                  }
-                  return { label: 'Trạng thái review: Chưa có dữ liệu', color: '#94a3b8', bg: 'rgba(100,116,139,0.2)' };
-                })();
+                // If no type matched but we have rawCount, show based on dataset type
+                if (typeBreakdown.length === 0 && rawCount > 0) {
+                  typeBreakdown.push({ 
+                    type: dataset.type?.charAt(0).toUpperCase() + dataset.type?.slice(1) || 'Data', 
+                    count: rawCount,
+                    icon: dataset.type === 'image' ? '🖼️' : dataset.type === 'text' ? '📝' : dataset.type === 'audio' ? '🎵' : '📁'
+                  });
+                }
 
                 return (
-                  <Grid item xs={12} md={6} lg={4} key={dataset._id}>
+                  <Grid item xs={12} lg={6} key={dataset._id}>
                     <Card sx={cardSx}>
                       <CardContent>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
-                          <Box>
+                        {/* Dataset Header */}
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 3 }}>
+                          <Box sx={{ flex: 1 }}>
                             <Typography variant="h6" fontWeight={700}>{dataset.name}</Typography>
-                            <Typography variant="body2" sx={{ color: '#94a3b8' }}>{dataset.description || 'No description'}</Typography>
-                            <Box sx={{ mt: 1, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                              <Chip size="small" label={(dataset.type || 'image').toUpperCase()} sx={{ bgcolor: 'rgba(59,130,246,0.15)', color: '#60a5fa', border: '1px solid #334155' }} />
-                              <Chip size="small" label={dataset.projectName} sx={{ bgcolor: 'rgba(16,185,129,0.15)', color: '#34d399', border: '1px solid #334155' }} />
-                            </Box>
-                            <Box sx={{ mt: 1, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                              <Chip
-                                size="small"
-                                label={`Đã review xong: ${isReviewCompleted ? 'Có' : 'Chưa'}`}
-                                sx={{
-                                  bgcolor: isReviewCompleted ? 'rgba(34,197,94,0.15)' : 'rgba(248,113,113,0.15)',
-                                  color: isReviewCompleted ? '#4ade80' : '#fca5a5',
-                                  border: '1px solid #334155',
-                                  fontWeight: 700,
-                                }}
+                            <Typography variant="body2" sx={{ color: '#94a3b8', mb: 1.5 }}>
+                              {dataset.description || 'No description'}
+                            </Typography>
+                            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                              <Chip 
+                                size="small" 
+                                label={(dataset.type || 'image').toUpperCase()} 
+                                sx={{ bgcolor: 'rgba(59,130,246,0.15)', color: '#60a5fa', border: '1px solid #334155' }} 
                               />
-                              <Chip
-                                size="small"
-                                label={`Có thể export: ${canExport ? 'Có' : 'Chưa'}`}
-                                sx={{
-                                  bgcolor: canExport ? 'rgba(34,197,94,0.15)' : 'rgba(248,113,113,0.15)',
-                                  color: canExport ? '#4ade80' : '#fca5a5',
-                                  border: '1px solid #334155',
-                                  fontWeight: 700,
-                                }}
+                              <Chip 
+                                size="small" 
+                                label={dataset.projectName} 
+                                sx={{ bgcolor: 'rgba(16,185,129,0.15)', color: '#34d399', border: '1px solid #334155' }} 
                               />
-                              <Chip
-                                size="small"
-                                label={reviewState.label}
-                                sx={{
-                                  bgcolor: reviewState.bg,
-                                  color: reviewState.color,
-                                  border: '1px solid #334155',
-                                  fontWeight: 700,
-                                }}
-                              />
-                              <Chip
-                                size="small"
-                                label={`Luật đa số: ${majorityRuleLabel}`}
-                                sx={{
-                                  bgcolor: 'rgba(59,130,246,0.15)',
-                                  color: '#93c5fd',
-                                  border: '1px solid #334155',
-                                  fontWeight: 700,
-                                }}
-                              />
-                              <Chip
-                                size="small"
-                                label={`Tiến độ reviewer vote: ${voteProgressLabel}`}
-                                sx={{
-                                  bgcolor: totalVotes > 0 ? 'rgba(59,130,246,0.15)' : 'rgba(100,116,139,0.2)',
-                                  color: totalVotes > 0 ? '#93c5fd' : '#94a3b8',
-                                  border: '1px solid #334155',
-                                  fontWeight: 700,
-                                }}
-                              />
-                              <Chip
-                                size="small"
-                                label={`Task đạt (approved): ${finalCount}/${totalTasks}`}
-                                sx={{
-                                  bgcolor: finalCount > 0 ? 'rgba(34,197,94,0.15)' : 'rgba(100,116,139,0.2)',
-                                  color: finalCount > 0 ? '#86efac' : '#94a3b8',
-                                  border: '1px solid #334155',
-                                  fontWeight: 700,
-                                }}
-                              />
-                              <Chip
-                                size="small"
-                                label={`Coverage consensus: ${consensusCoverageLabel}`}
-                                sx={{
-                                  bgcolor: consensusReadyCount > 0 ? 'rgba(14,165,233,0.18)' : 'rgba(100,116,139,0.2)',
-                                  color: consensusReadyCount > 0 ? '#7dd3fc' : '#94a3b8',
-                                  border: '1px solid #334155',
-                                  fontWeight: 700,
-                                }}
-                              />
-                              <Chip
-                                size="small"
-                                label={`Điểm consensus TB: ${consensusScoreLabel}`}
-                                sx={{
-                                  bgcolor: avgConsensusScore != null ? 'rgba(16,185,129,0.16)' : 'rgba(100,116,139,0.2)',
-                                  color: avgConsensusScore != null ? '#6ee7b7' : '#94a3b8',
-                                  border: '1px solid #334155',
-                                  fontWeight: 700,
-                                }}
-                              />
-                            </Box>
+                            </Stack>
                           </Box>
-                          <IconButton size="small" sx={{ color: '#f87171' }} onClick={() => { setSelectedDataset(dataset); setDeleteDialogOpen(true); }}>
+                          <IconButton 
+                            size="small" 
+                            sx={{ color: '#f87171' }} 
+                            onClick={() => { setSelectedDataset(dataset); setDeleteDialogOpen(true); }}
+                          >
                             <DeleteIcon fontSize="small" />
                           </IconButton>
                         </Box>
 
-                        <Typography variant="caption" sx={{ color: '#94a3b8' }}>1) Tiến độ task (đã chấm / tổng task)</Typography>
-                        <LinearProgress variant="determinate" value={taskLifecycleProgress} sx={{ mt: 1, mb: 1, height: 8, borderRadius: 4, bgcolor: '#0f172a', '& .MuiLinearProgress-bar': { bgcolor: '#38bdf8' } }} />
-                        <Typography variant="body2" sx={{ color: '#cbd5e1', mb: 1 }}>
-                          Đã chấm {completed} / Tổng {totalTasks} task ({taskLifecycleProgress}%)
-                        </Typography>
-
-                        <Typography variant="caption" sx={{ color: '#94a3b8' }}>2) Tỷ lệ task đạt (approved / tổng task)</Typography>
-                        <LinearProgress variant="determinate" value={taskFinalProgress} sx={{ mt: 1, mb: 1, height: 8, borderRadius: 4, bgcolor: '#0f172a', '& .MuiLinearProgress-bar': { bgcolor: '#22c55e' } }} />
-                        <Typography variant="body2" sx={{ color: '#cbd5e1', mb: 1 }}>
-                          Approved {finalCount} / Tổng {totalTasks} task ({taskFinalProgress}%)
-                        </Typography>
-
-                        <Typography variant="caption" sx={{ color: '#94a3b8' }}>3) Bao phủ raw đã chấm xong (raw item đã có kết quả / tổng raw)</Typography>
-                        <LinearProgress variant="determinate" value={rawLifecycleProgress} sx={{ mt: 1, mb: 1, height: 8, borderRadius: 4, bgcolor: '#0f172a', '& .MuiLinearProgress-bar': { bgcolor: '#f59e0b' } }} />
-                        <Typography variant="body2" sx={{ color: '#cbd5e1', mb: 1 }}>
-                          Raw đã chấm xong {rawCompletedCount} / Tổng raw {rawCount} ({rawLifecycleProgress}%)
-                        </Typography>
-
-                        <Typography variant="caption" sx={{ color: '#94a3b8' }}>4) Bao phủ raw đạt (raw có ít nhất 1 task approved / tổng raw)</Typography>
-                        <LinearProgress variant="determinate" value={rawFinalProgress} sx={{ mt: 1, mb: 1, height: 8, borderRadius: 4, bgcolor: '#0f172a', '& .MuiLinearProgress-bar': { bgcolor: '#10b981' } }} />
-                        <Typography variant="body2" sx={{ color: '#cbd5e1', mb: 1 }}>
-                          Raw đạt {rawFinalCount} / Tổng raw {rawCount} ({rawFinalProgress}%)
-                        </Typography>
-
-                        <Box sx={{ mt: 1.5, p: 1.5, borderRadius: 2, border: '1px solid #334155', bgcolor: '#0f172a' }}>
-                          <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mb: 1 }}>TỔNG QUAN DATASET (theo task)</Typography>
-                          <Grid container spacing={1}>
-                            <Grid item xs={6}>
-                              <Typography variant="caption" sx={{ color: '#94a3b8' }}>Raw Items</Typography>
-                              <Typography variant="body2" fontWeight={700}>{rawCount}</Typography>
+                        {/* DATASET EXPORT STATUS - Main Focus */}
+                        <Box sx={{ 
+                          mb: 3, 
+                          p: 2.5, 
+                          borderRadius: 2, 
+                          border: '2px solid',
+                          borderColor: canExport ? '#22c55e40' : '#334155',
+                          bgcolor: canExport ? 'rgba(34,197,94,0.08)' : '#0f172a',
+                        }}>
+                          <Typography variant="subtitle1" fontWeight={700} sx={{ color: '#e2e8f0', mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <DatasetIcon sx={{ color: canExport ? '#22c55e' : '#94a3b8' }} />
+                            DATASET EXPORT STATUS
+                          </Typography>
+                          
+                          <Grid container spacing={2}>
+                            <Grid item xs={6} sm={3}>
+                              <Typography variant="caption" sx={{ color: '#94a3b8' }}>Total Raw Data</Typography>
+                              <Typography variant="h5" fontWeight={800} sx={{ color: '#e2e8f0' }}>{rawCount}</Typography>
                             </Grid>
-                            <Grid item xs={6}>
-                              <Typography variant="caption" sx={{ color: '#94a3b8' }}>Pending Annotation</Typography>
-                              <Typography variant="body2" fontWeight={700}>{pendingAnnotation}</Typography>
+                            <Grid item xs={6} sm={3}>
+                              <Typography variant="caption" sx={{ color: '#94a3b8' }}>Annotated</Typography>
+                              <Typography variant="h5" fontWeight={800} sx={{ color: '#3b82f6' }}>{completed}</Typography>
                             </Grid>
-                            <Grid item xs={6}>
-                              <Typography variant="caption" sx={{ color: '#94a3b8' }}>Submitted</Typography>
-                              <Typography variant="body2" fontWeight={700}>{submitted}</Typography>
+                            <Grid item xs={6} sm={3}>
+                              <Typography variant="caption" sx={{ color: '#94a3b8' }}>Under Review</Typography>
+                              <Typography variant="h5" fontWeight={800} sx={{ color: '#f59e0b' }}>{submitted}</Typography>
                             </Grid>
-                            <Grid item xs={6}>
-                              <Typography variant="caption" sx={{ color: '#94a3b8' }}>Returned to Annotator</Typography>
-                              <Typography variant="body2" fontWeight={700} sx={{ color: '#f59e0b' }}>{returnedToAnnotator}</Typography>
-                            </Grid>
-                            <Grid item xs={12}>
-                              <Typography variant="caption" sx={{ color: '#94a3b8' }}>Completed</Typography>
-                              <Typography variant="body2" fontWeight={700}>{completed}</Typography>
-                            </Grid>
-                            <Grid item xs={6}>
+                            <Grid item xs={6} sm={3}>
                               <Typography variant="caption" sx={{ color: '#94a3b8' }}>Approved</Typography>
-                              <Typography variant="body2" fontWeight={700} sx={{ color: '#22c55e' }}>{approved}</Typography>
+                              <Typography variant="h5" fontWeight={800} sx={{ color: '#22c55e' }}>{approved}</Typography>
                             </Grid>
-                            <Grid item xs={6}>
-                              <Typography variant="caption" sx={{ color: '#94a3b8' }}>Rejected</Typography>
-                              <Typography variant="body2" fontWeight={700} sx={{ color: '#f87171' }}>{rejected}</Typography>
-                            </Grid>
+                          </Grid>
+
+                          {/* Ready for Training Section */}
+                          <Box sx={{ mt: 2.5, p: 2, borderRadius: 2, bgcolor: canExport ? 'rgba(34,197,94,0.12)' : '#1e293b' }}>
+                            <Typography variant="h6" fontWeight={700} sx={{ color: canExport ? '#22c55e' : '#94a3b8', mb: 1 }}>
+                              Ready for AI Training Dataset
+                            </Typography>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                              <Box sx={{ flex: 1 }}>
+                                <LinearProgress 
+                                  variant="determinate" 
+                                  value={rawCount > 0 ? Math.min((rawApproved / rawCount) * 100, 100) : 0} 
+                                  sx={{ 
+                                    height: 12, 
+                                    borderRadius: 6, 
+                                    bgcolor: '#0f172a', 
+                                    '& .MuiLinearProgress-bar': { 
+                                      bgcolor: canExport ? '#22c55e' : '#475569',
+                                      borderRadius: 6,
+                                    } 
+                                  }} 
+                                />
+                              </Box>
+                              <Typography variant="h6" fontWeight={800} sx={{ color: canExport ? '#22c55e' : '#64748b', minWidth: 80, textAlign: 'right' }}>
+                                {rawApproved} / {rawCount}
+                              </Typography>
+                            </Box>
+                            <Typography variant="caption" sx={{ color: '#94a3b8', mt: 0.5, display: 'block' }}>
+                              {rawCount > 0 ? Math.round((rawApproved / rawCount) * 100) : 0}% of raw data approved and ready for export
+                            </Typography>
+                          </Box>
+                        </Box>
+
+                        {/* Dataset Items by Type */}
+                        <Box sx={{ mb: 3, p: 2, borderRadius: 2, border: '1px solid #334155', bgcolor: '#0f172a' }}>
+                          <Typography variant="subtitle2" fontWeight={700} sx={{ color: '#e2e8f0', mb: 1.5 }}>
+                            Dataset Items (by Type)
+                          </Typography>
+                          <Grid container spacing={2}>
+                            {typeBreakdown.map((item) => (
+                              <Grid item xs={4} key={item.type}>
+                                <Box sx={{ 
+                                  p: 1.5, 
+                                  borderRadius: 1.5, 
+                                  bgcolor: '#1e293b', 
+                                  border: '1px solid #334155',
+                                  textAlign: 'center'
+                                }}>
+                                  <Typography variant="h5" sx={{ mb: 0.5 }}>{item.icon}</Typography>
+                                  <Typography variant="body2" fontWeight={600} sx={{ color: '#e2e8f0' }}>{item.type}</Typography>
+                                  <Typography variant="h6" fontWeight={800} sx={{ color: '#60a5fa' }}>{item.count}</Typography>
+                                </Box>
+                              </Grid>
+                            ))}
                           </Grid>
                         </Box>
 
-                        <Box sx={{ mt: 1.5, p: 1.5, borderRadius: 2, border: '1px solid #334155', bgcolor: '#0b1220' }}>
-                          <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mb: 1 }}>ĐỒNG THUẬN ANNOTATOR (consensus)</Typography>
-                          <Grid container spacing={1}>
-                            <Grid item xs={6}>
-                              <Typography variant="caption" sx={{ color: '#94a3b8' }}>Consensus Ready</Typography>
-                              <Typography variant="body2" fontWeight={700} sx={{ color: '#38bdf8' }}>{consensusReadyCount}</Typography>
-                            </Grid>
-                            <Grid item xs={6}>
-                              <Typography variant="caption" sx={{ color: '#94a3b8' }}>Needs Review</Typography>
-                              <Typography variant="body2" fontWeight={700} sx={{ color: '#f59e0b' }}>{consensusNeedsReviewCount}</Typography>
-                            </Grid>
-                            <Grid item xs={12}>
-                              <Typography variant="caption" sx={{ color: '#94a3b8' }}>Average Consensus Score</Typography>
-                              <Typography variant="body2" fontWeight={700} sx={{ color: '#6ee7b7' }}>{consensusScoreLabel}</Typography>
-                            </Grid>
-                          </Grid>
+                        {/* Dataset Items Table - Clickable */}
+                        <Box sx={{ mb: 3 }}>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
+                            <Typography variant="subtitle2" fontWeight={700} sx={{ color: '#e2e8f0' }}>
+                              DATASET ITEMS
+                            </Typography>
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              onClick={() => handleOpenItemsDialog(dataset._id)}
+                              sx={{
+                                textTransform: 'none',
+                                borderColor: '#3b82f6',
+                                color: '#3b82f6',
+                                fontSize: 12,
+                              }}
+                            >
+                              View All Items
+                            </Button>
+                          </Box>
+                          <TableContainer sx={{ bgcolor: '#0f172a', borderRadius: 2, border: '1px solid #334155' }}>
+                            <Table size="small">
+                              <TableHead>
+                                <TableRow sx={{ bgcolor: '#1e293b' }}>
+                                  <TableCell sx={{ color: '#94a3b8', fontWeight: 700, borderBottom: '1px solid #334155' }}>ID</TableCell>
+                                  <TableCell sx={{ color: '#94a3b8', fontWeight: 700, borderBottom: '1px solid #334155' }}>Filename</TableCell>
+                                  <TableCell sx={{ color: '#94a3b8', fontWeight: 700, borderBottom: '1px solid #334155' }}>Label</TableCell>
+                                  <TableCell sx={{ color: '#94a3b8', fontWeight: 700, borderBottom: '1px solid #334155' }}>Status</TableCell>
+                                  <TableCell sx={{ color: '#94a3b8', fontWeight: 700, borderBottom: '1px solid #334155', textAlign: 'center' }}>Export</TableCell>
+                                </TableRow>
+                              </TableHead>
+                              <TableBody>
+                                {/* Show preview items from API */}
+                                {previewItems.length > 0 ? previewItems.map((item, idx) => {
+                                  // Get corresponding task from stat to get path
+                                  const taskItem = stat?.finalItems?.[idx];
+                                  return (
+                                  <TableRow 
+                                    key={item.id || idx} 
+                                    sx={{ 
+                                      '&:hover': { bgcolor: '#1e293b' },
+                                      cursor: 'pointer',
+                                    }}
+                                    onClick={() => handleOpenItemDetail({ 
+                                      ...item, 
+                                      path: taskItem?.dataItem?.path || '',
+                                      annotations: item.annotations || []
+                                    })}
+                                  >
+                                    <TableCell sx={{ color: '#e2e8f0', borderBottom: '1px solid #334155' }}>{item.id || idx + 1}</TableCell>
+                                    <TableCell sx={{ color: '#94a3b8', borderBottom: '1px solid #334155' }}>{item.type}</TableCell>
+                                    <TableCell sx={{ color: '#e2e8f0', borderBottom: '1px solid #334155' }}>{item.displayLabel}</TableCell>
+                                    <TableCell sx={{ borderBottom: '1px solid #334155' }}>{getStatusChip(item.status)}</TableCell>
+                                    <TableCell sx={{ borderBottom: '1px solid #334155', textAlign: 'center' }}>
+                                      <CheckCircleIcon sx={{ color: '#22c55e', fontSize: 18 }} />
+                                    </TableCell>
+                                  </TableRow>
+                                  );
+                                }) : (
+                                  <TableRow>
+                                    <TableCell colSpan={5} sx={{ color: '#94a3b8', borderBottom: '1px solid #334155', textAlign: 'center', py: 2 }}>
+                                      No annotated items yet. Click "View All Items" to see all.
+                                    </TableCell>
+                                  </TableRow>
+                                )}
+                              </TableBody>
+                            </Table>
+                          </TableContainer>
                         </Box>
 
-                        <Box sx={{ mt: 1.5, p: 1.5, borderRadius: 2, border: '1px solid #334155', bgcolor: '#0b1220' }}>
-                          <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mb: 1 }}>REVIEWER VOTE (toàn bộ task)</Typography>
-                          <Grid container spacing={1}>
-                            <Grid item xs={6}>
-                              <Typography variant="caption" sx={{ color: '#94a3b8' }}>Approve Votes</Typography>
-                              <Typography variant="body2" fontWeight={700} sx={{ color: '#22c55e' }}>{approveVotes}</Typography>
-                            </Grid>
-                            <Grid item xs={6}>
-                              <Typography variant="caption" sx={{ color: '#94a3b8' }}>Reject Votes</Typography>
-                              <Typography variant="body2" fontWeight={700} sx={{ color: '#f87171' }}>{rejectVotes}</Typography>
-                            </Grid>
-                            <Grid item xs={6}>
-                              <Typography variant="caption" sx={{ color: '#94a3b8' }}>Decided Votes</Typography>
-                              <Typography variant="body2" fontWeight={700}>{decidedVotes}</Typography>
-                            </Grid>
-                            <Grid item xs={6}>
-                              <Typography variant="caption" sx={{ color: '#94a3b8' }}>Pending Votes</Typography>
-                              <Typography variant="body2" fontWeight={700} sx={{ color: '#f59e0b' }}>{pendingVotes}</Typography>
-                            </Grid>
-                            <Grid item xs={12}>
-                              <Typography variant="caption" sx={{ color: '#94a3b8' }}>Total Votes</Typography>
-                              <Typography variant="body2" fontWeight={700}>{totalVotes}</Typography>
-                            </Grid>
+                        {/* Progress Bars - Simplified */}
+                        <Grid container spacing={2} sx={{ mb: 2 }}>
+                          <Grid item xs={6}>
+                            <Typography variant="caption" sx={{ color: '#94a3b8' }}>Annotation Progress</Typography>
+                            <LinearProgress 
+                              variant="determinate" 
+                              value={rawCount > 0 ? Math.min((rawCompleted / rawCount) * 100, 100) : 0} 
+                              sx={{ mt: 0.5, height: 6, borderRadius: 3, bgcolor: '#0f172a', '& .MuiLinearProgress-bar': { bgcolor: '#3b82f6' } }} 
+                            />
+                            <Typography variant="caption" sx={{ color: '#3b82f6', fontWeight: 600 }}>
+                              {rawCompleted} / {rawCount} items
+                            </Typography>
                           </Grid>
-                        </Box>
-
-                        <Box sx={{ mt: 1.5, p: 1.5, borderRadius: 2, border: '1px solid #334155', bgcolor: '#0b1220' }}>
-                          <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mb: 1 }}>ANNOTATOR PERFORMANCE (THIS DATASET)</Typography>
-                          {annotatorStats.length === 0 ? (
-                            <Typography variant="body2" sx={{ color: '#94a3b8' }}>No annotator stats yet.</Typography>
-                          ) : (
-                            <Grid container spacing={1}>
-                              {annotatorStats.slice(0, 6).map((a) => (
-                                <Grid item xs={12} key={a.annotatorId}>
-                                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', p: 1, borderRadius: 1.5, bgcolor: '#0f172a', border: '1px solid #334155' }}>
-                                    <Box>
-                                      <Typography variant="body2" sx={{ color: '#e2e8f0', fontWeight: 700 }}>{a.annotatorName}</Typography>
-                                      <Typography variant="caption" sx={{ color: '#94a3b8' }}>
-                                        Approved <span style={{ color: '#22c55e', fontWeight: 700 }}>{a.approved}</span>
-                                        {' · '}
-                                        Rejected <span style={{ color: '#f87171', fontWeight: 700 }}>{a.rejected}</span>
-                                        {' · '}
-                                        Pending <span style={{ color: '#f59e0b', fontWeight: 700 }}>{a.pending}</span>
-                                        {' · '}
-                                        Pass {a.passRate}%
-                                      </Typography>
-                                    </Box>
-                                    <Button
-                                      size="small"
-                                      onClick={() => handleOpenAnnotatorDetail(dataset._id, a.annotatorId, a.annotatorName)}
-                                      sx={{ textTransform: 'none', color: '#93c5fd', fontWeight: 700 }}
-                                    >
-                                      View tasks
-                                    </Button>
-                                  </Box>
-                                </Grid>
-                              ))}
-                            </Grid>
-                          )}
-                        </Box>
+                          <Grid item xs={6}>
+                            <Typography variant="caption" sx={{ color: '#94a3b8' }}>Approved for Export</Typography>
+                            <LinearProgress 
+                              variant="determinate" 
+                              value={rawCount > 0 ? Math.min((rawApproved / rawCount) * 100, 100) : 0} 
+                              sx={{ mt: 0.5, height: 6, borderRadius: 3, bgcolor: '#0f172a', '& .MuiLinearProgress-bar': { bgcolor: '#22c55e' } }} 
+                            />
+                            <Typography variant="caption" sx={{ color: '#22c55e', fontWeight: 600 }}>
+                              {rawApproved} / {rawCount} items
+                            </Typography>
+                          </Grid>
+                        </Grid>
                       </CardContent>
 
-                      <CardActions sx={{ px: 2, pb: 2, pt: 0, justifyContent: 'space-between' }}>
+                      <CardActions sx={{ px: 2, pb: 2, pt: 0, justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
                         <Button
                           size="small"
                           disabled={!dataset.projectId}
@@ -627,19 +783,40 @@ const Datasets = () => {
                         >
                           {dataset.projectId ? 'View Project' : 'No Project'}
                         </Button>
-                        <Button
-                          size="small"
-                          startIcon={<DownloadIcon />}
-                          onClick={() => handleExportFinal(dataset._id)}
-                          disabled={!canExport}
-                          sx={{
-                            textTransform: 'none',
-                            fontWeight: 700,
-                            color: canExport ? '#34d399' : '#64748b',
-                          }}
-                        >
-                          {canExport ? 'Export Final' : 'No Approved Items'}
-                        </Button>
+                        
+                        <Stack direction="row" spacing={1}>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            startIcon={<DownloadIcon />}
+                            onClick={() => { setSelectedDataset(dataset); setExportDialogOpen(true); }}
+                            disabled={!canExport}
+                            sx={{
+                              textTransform: 'none',
+                              fontWeight: 700,
+                              borderColor: canExport ? '#3b82f6' : '#475569',
+                              color: canExport ? '#3b82f6' : '#64748b',
+                            }}
+                          >
+                            Export
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="contained"
+                            startIcon={<CheckCircleIcon />}
+                            onClick={() => handleExportFinal(dataset._id)}
+                            disabled={!canExport}
+                            sx={{
+                              textTransform: 'none',
+                              fontWeight: 700,
+                              bgcolor: canExport ? '#22c55e' : '#475569',
+                              color: canExport ? '#fff' : '#94a3b8',
+                              '&:hover': canExport ? { bgcolor: '#16a34a' } : {},
+                            }}
+                          >
+                            Export Approved Dataset
+                          </Button>
+                        </Stack>
                       </CardActions>
                     </Card>
                   </Grid>
@@ -649,99 +826,490 @@ const Datasets = () => {
         </Box>
       </Box>
 
-      <Dialog
-        open={annotatorDetailDialogOpen}
-        onClose={() => setAnnotatorDetailDialogOpen(false)}
-        maxWidth="md"
+      {/* Export Format Dialog */}
+      <Dialog 
+        open={exportDialogOpen} 
+        onClose={() => setExportDialogOpen(false)} 
+        maxWidth="sm" 
+        fullWidth
+        PaperProps={{ sx: { bgcolor: '#1e293b', color: '#e2e8f0', border: '1px solid #334155' } }}
+      >
+        <DialogTitle sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
+          <DownloadIcon sx={{ color: '#3b82f6' }} />
+          Export Dataset
+        </DialogTitle>
+        <DialogContent dividers sx={{ borderColor: '#334155' }}>
+          <Typography variant="body2" sx={{ color: '#94a3b8', mb: 3 }}>
+            Chọn định dạng export. Chỉ các task đã được Approved mới được export.
+          </Typography>
+          
+          <Typography variant="subtitle2" fontWeight={700} sx={{ color: '#e2e8f0', mb: 1.5 }}>
+            Select Format:
+          </Typography>
+          
+          <RadioGroup
+            value={exportFormat}
+            onChange={(e) => setExportFormat(e.target.value)}
+          >
+            {[
+              { value: 'json', label: 'JSON', desc: 'Standard JSON format with all metadata' },
+              { value: 'csv', label: 'CSV', desc: 'Comma-separated values for Excel/spreadsheets' },
+              { value: 'coco', label: 'COCO (Image Detection)', desc: 'COCO format for object detection' },
+              { value: 'yolo', label: 'YOLO', desc: 'YOLO format for object detection' },
+            ].map((format) => (
+              <Box 
+                key={format.value}
+                sx={{ 
+                  p: 2, 
+                  mb: 1, 
+                  borderRadius: 2, 
+                  border: '1px solid',
+                  borderColor: exportFormat === format.value ? '#3b82f6' : '#334155',
+                  bgcolor: exportFormat === format.value ? 'rgba(59,130,246,0.1)' : '#0f172a',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  '&:hover': { borderColor: '#3b82f6' }
+                }}
+                onClick={() => setExportFormat(format.value)}
+              >
+                <FormControlLabel
+                  value={format.value}
+                  control={<Radio sx={{ color: '#64748b', '&.Mui-checked': { color: '#3b82f6' } }} />}
+                  label={
+                    <Box>
+                      <Typography variant="body1" fontWeight={600} sx={{ color: '#e2e8f0' }}>
+                        {format.label}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: '#94a3b8' }}>
+                        {format.desc}
+                      </Typography>
+                    </Box>
+                  }
+                  sx={{ m: 0 }}
+                />
+              </Box>
+            ))}
+          </RadioGroup>
+
+          <Alert severity="info" sx={{ mt: 2, bgcolor: 'rgba(59,130,246,0.1)', color: '#93c5fd', border: '1px solid #3b82f640' }}>
+            Export sẽ chỉ bao gồm các task có status = "Approved"
+          </Alert>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button 
+            onClick={() => setExportDialogOpen(false)} 
+            sx={{ textTransform: 'none', fontWeight: 700, color: '#cbd5e1' }}
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={() => selectedDataset && handleExportDataset(selectedDataset._id, exportFormat)}
+            variant="contained"
+            disabled={exporting}
+            startIcon={exporting ? <CircularProgress size={16} /> : <DownloadIcon />}
+            sx={{ 
+              borderRadius: 2, 
+              px: 3, 
+              textTransform: 'none', 
+              fontWeight: 700, 
+              bgcolor: '#3b82f6', 
+              '&:hover': { bgcolor: '#2563eb' } 
+            }}
+          >
+            {exporting ? 'Exporting...' : 'Export Dataset'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dataset Items Dialog */}
+      <Dialog 
+        open={itemsDialogOpen} 
+        onClose={() => setItemsDialogOpen(false)} 
+        maxWidth="md" 
+        fullWidth
+        PaperProps={{ sx: { bgcolor: '#1e293b', color: '#e2e8f0', border: '1px solid #334155' } }}
+      >
+        <DialogTitle sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
+          <DatasetIcon sx={{ color: '#3b82f6' }} />
+          Dataset Items
+        </DialogTitle>
+        <DialogContent dividers sx={{ borderColor: '#334155' }}>
+          {/* Filter buttons */}
+          <Stack direction="row" spacing={1} sx={{ mb: 2, flexWrap: 'wrap' }}>
+            {[
+              { id: 'all', label: 'All', count: itemsData.totalItems },
+              { id: 'approved', label: 'Approved', count: itemsData.items?.filter(i => i.status === 'approved').length || 0 },
+              { id: 'in_review', label: 'In Review', count: itemsData.items?.filter(i => i.status === 'in_review').length || 0 },
+              { id: 'pending', label: 'Pending', count: itemsData.items?.filter(i => i.status === 'pending').length || 0 },
+              { id: 'rejected', label: 'Rejected', count: itemsData.items?.filter(i => i.status === 'rejected').length || 0 },
+            ].map((f) => (
+              <Button
+                key={f.id}
+                size="small"
+                variant={itemFilter === f.id ? 'contained' : 'outlined'}
+                onClick={() => setItemFilter(f.id)}
+                sx={{ 
+                  textTransform: 'none', 
+                  borderRadius: 2,
+                  bgcolor: itemFilter === f.id ? '#3b82f6' : 'transparent',
+                  borderColor: '#475569',
+                  color: itemFilter === f.id ? '#fff' : '#94a3b8',
+                  '&:hover': {
+                    borderColor: '#3b82f6',
+                    bgcolor: itemFilter === f.id ? '#2563eb' : 'rgba(59,130,246,0.1)',
+                  }
+                }}
+              >
+                {f.label} ({f.count})
+              </Button>
+            ))}
+          </Stack>
+
+          {itemsLoading && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+              <CircularProgress />
+            </Box>
+          )}
+
+          {!itemsLoading && itemsData.items && (
+            <TableContainer sx={{ bgcolor: '#0f172a', borderRadius: 2, border: '1px solid #334155', maxHeight: 500 }}>
+              <Table size="small" stickyHeader>
+                <TableHead>
+                  <TableRow sx={{ bgcolor: '#1e293b' }}>
+                    <TableCell sx={{ color: '#94a3b8', fontWeight: 700, borderBottom: '1px solid #334155', position: 'sticky', top: 0, bgcolor: '#1e293b' }}>ID</TableCell>
+                    <TableCell sx={{ color: '#94a3b8', fontWeight: 700, borderBottom: '1px solid #334155', position: 'sticky', top: 0, bgcolor: '#1e293b' }}>Filename</TableCell>
+                    <TableCell sx={{ color: '#94a3b8', fontWeight: 700, borderBottom: '1px solid #334155', position: 'sticky', top: 0, bgcolor: '#1e293b' }}>Label</TableCell>
+                    <TableCell sx={{ color: '#94a3b8', fontWeight: 700, borderBottom: '1px solid #334155', position: 'sticky', top: 0, bgcolor: '#1e293b' }}>Votes</TableCell>
+                    <TableCell sx={{ color: '#94a3b8', fontWeight: 700, borderBottom: '1px solid #334155', position: 'sticky', top: 0, bgcolor: '#1e293b' }}>Status</TableCell>
+                    <TableCell sx={{ color: '#94a3b8', fontWeight: 700, borderBottom: '1px solid #334155', position: 'sticky', top: 0, bgcolor: '#1e293b', textAlign: 'center' }}>Export</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {itemsData.items
+                    .filter(item => itemFilter === 'all' || item.status === itemFilter)
+                    .slice(0, 50)
+                    .map((item) => (
+                      <TableRow 
+                        key={item.id} 
+                        sx={{ 
+                          '&:hover': { bgcolor: '#1e293b' },
+                          cursor: 'pointer',
+                        }}
+                        onClick={() => handleOpenItemDetail(item)}
+                      >
+                        <TableCell sx={{ color: '#e2e8f0', borderBottom: '1px solid #334155' }}>{item.id}</TableCell>
+                        <TableCell sx={{ color: '#94a3b8', borderBottom: '1px solid #334155', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {item.filename || item.originalName || 'Unknown'}
+                        </TableCell>
+                        <TableCell sx={{ color: '#e2e8f0', borderBottom: '1px solid #334155' }}>{item.displayLabel || 'Chưa có nhãn'}</TableCell>
+                        <TableCell sx={{ borderBottom: '1px solid #334155' }}>
+                          <Typography variant="caption" sx={{ color: '#22c55e' }}>{item.approvedCount || 0}</Typography>
+                          {' / '}
+                          <Typography variant="caption" sx={{ color: '#f87171' }}>{item.rejectedCount || 0}</Typography>
+                        </TableCell>
+                        <TableCell sx={{ borderBottom: '1px solid #334155' }}>{getStatusChip(item.status)}</TableCell>
+                        <TableCell sx={{ borderBottom: '1px solid #334155', textAlign: 'center' }}>
+                          {item.status === 'approved' ? (
+                            <CheckCircleIcon sx={{ color: '#22c55e', fontSize: 18 }} />
+                          ) : (
+                            <CancelIcon sx={{ color: '#475569', fontSize: 18 }} />
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+
+          {!itemsLoading && itemsData.items && itemsData.items.length === 0 && (
+            <Box sx={{ py: 4, textAlign: 'center' }}>
+              <Typography variant="body2" sx={{ color: '#94a3b8' }}>
+                No items found for this filter.
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button 
+            onClick={() => setItemsDialogOpen(false)} 
+            sx={{ textTransform: 'none', fontWeight: 700, color: '#cbd5e1' }}
+          >
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Item Detail Dialog */}
+      <Dialog 
+        open={itemDetailDialogOpen} 
+        onClose={() => setItemDetailDialogOpen(false)} 
+        maxWidth="md" 
         fullWidth
         PaperProps={{ sx: { bgcolor: '#1e293b', color: '#e2e8f0', border: '1px solid #334155' } }}
       >
         <DialogTitle sx={{ fontWeight: 700 }}>
-          Annotator Task Detail {annotatorDetail?.annotatorName ? `- ${annotatorDetail.annotatorName}` : ''}
+          Item Detail - {selectedItem?.filename || `Item #${selectedItem?.id}`}
         </DialogTitle>
         <DialogContent dividers sx={{ borderColor: '#334155' }}>
-          {annotatorDetailLoading && (
-            <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
-              <CircularProgress />
-            </Box>
-          )}
-          {!annotatorDetailLoading && annotatorDetailError && (
-            <Alert severity="error" sx={{ mb: 2 }}>{annotatorDetailError}</Alert>
-          )}
-          {!annotatorDetailLoading && !annotatorDetailError && annotatorDetail && (
-            <>
-              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 2 }}>
-                <Chip size="small" label={`Total: ${annotatorDetail.totals?.total ?? 0}`} />
-                <Chip size="small" label={`Approved: ${annotatorDetail.totals?.approved ?? 0}`} sx={{ color: '#22c55e', border: '1px solid #334155' }} />
-                <Chip size="small" label={`Rejected: ${annotatorDetail.totals?.rejected ?? 0}`} sx={{ color: '#f87171', border: '1px solid #334155' }} />
-                <Chip size="small" label={`Submitted: ${annotatorDetail.totals?.submitted ?? 0}`} sx={{ color: '#93c5fd', border: '1px solid #334155' }} />
-                <Chip size="small" label={`Pending: ${annotatorDetail.totals?.pending ?? 0}`} sx={{ color: '#f59e0b', border: '1px solid #334155' }} />
-              </Box>
-
-              <Stack direction="row" spacing={1} sx={{ mb: 2, flexWrap: 'wrap' }}>
-                {[
-                  { id: 'all', label: 'All' },
-                  { id: 'approved', label: 'Approved' },
-                  { id: 'rejected', label: 'Rejected' },
-                  { id: 'submitted', label: 'Submitted' },
-                  { id: 'pending', label: 'Pending' },
-                ].map((f) => (
-                  <Button
-                    key={f.id}
-                    size="small"
-                    variant={annotatorTaskFilter === f.id ? 'contained' : 'outlined'}
-                    onClick={() => setAnnotatorTaskFilter(f.id)}
-                    sx={{ textTransform: 'none', borderRadius: 2 }}
-                  >
-                    {f.label}
-                  </Button>
-                ))}
-              </Stack>
-
-              <Box sx={{ maxHeight: 420, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 1 }}>
-                {(annotatorDetail.tasks || [])
-                  .filter((t) => {
-                    if (annotatorTaskFilter === 'all') return true;
-                    if (annotatorTaskFilter === 'pending') return ['assigned', 'in_progress', 'completed', 'revised'].includes(t.status);
-                    return t.status === annotatorTaskFilter;
-                  })
-                  .map((t) => (
-                    <Box key={t.taskId} sx={{ p: 1.25, border: '1px solid #334155', borderRadius: 1.5, bgcolor: '#0f172a' }}>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1 }}>
-                        <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                          {t.annotationSummary || 'Chưa có kết quả gán nhãn'}
-                        </Typography>
-                        <Button size="small" onClick={() => navigate(`/annotator/tasks/${t.taskId}`)} sx={{ textTransform: 'none', color: '#93c5fd' }}>
-                          Open task
-                        </Button>
+          {selectedItem && (
+            <Box>
+              {/* Image Preview Section */}
+              {selectedItem.type === 'image' && (
+                <Box sx={{ mb: 3 }}>
+                  <Typography variant="subtitle2" fontWeight={700} sx={{ color: '#e2e8f0', mb: 1.5 }}>
+                    Image Preview
+                  </Typography>
+                  <Box sx={{ 
+                    position: 'relative', 
+                    bgcolor: '#0f172a', 
+                    borderRadius: 2, 
+                    border: '1px solid #334155',
+                    overflow: 'hidden',
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    minHeight: 300,
+                    maxHeight: 400,
+                  }}>
+                    {!imageLoaded && (
+                      <CircularProgress sx={{ position: 'absolute' }} />
+                    )}
+                    {(selectedItem.path || selectedItem.imageUrl || selectedItem.filename) && (
+                      <Box sx={{ position: 'relative', display: 'inline-block' }}>
+                        <img
+                          src={getFullImageUrl(selectedItem.path, selectedItem.imageUrl, selectedItem.filename)}
+                          alt={selectedItem.filename}
+                          onLoad={handleImageLoad}
+                          onError={(e) => {
+                            e.target.style.display = 'none';
+                            e.target.nextSibling && (e.target.nextSibling.style.display = 'flex');
+                          }}
+                          style={{ 
+                            maxWidth: '100%', 
+                            maxHeight: 400, 
+                            display: imageLoaded ? 'block' : 'none',
+                            objectFit: 'contain'
+                          }}
+                        />
+                        {/* Draw bounding boxes - show consensus or individual annotation */}
+                        {imageLoaded && selectedItem.annotations && selectedItem.annotations.length > 0 && ((showConsensus && getConsensusLabels().objects.length > 0) || (!showConsensus && selectedItem.annotations[selectedAnnotationIndex]?.labels?.objects?.length > 0)) && (
+                          <Box sx={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            width: '100%',
+                            height: '100%',
+                            pointerEvents: 'none',
+                          }}>
+                            {(() => {
+                              // Get the objects to display based on current tab
+                              let objectsToDisplay = [];
+                              if (showConsensus) {
+                                const consensus = getConsensusLabels();
+                                objectsToDisplay = consensus.objects;
+                              } else {
+                                const ann = selectedItem.annotations[selectedAnnotationIndex];
+                                objectsToDisplay = ann?.labels?.objects || [];
+                              }
+                              
+                              return objectsToDisplay.map((obj, idx) => {
+                                // bbox format in ImageAnnotator: [x1, y1, x2, y2] - coordinates as percentage
+                                const [x1, y1, x2, y2] = obj.bbox || [0, 0, 0, 0];
+                                const left = Math.min(x1, x2);
+                                const top = Math.min(y1, y2);
+                                const width = Math.max(Math.abs(x2 - x1), 1);
+                                const height = Math.max(Math.abs(y2 - y1), 1);
+                                
+                                return (
+                                  <Box
+                                    key={idx}
+                                    sx={{
+                                      position: 'absolute',
+                                      left: `${left}%`,
+                                      top: `${top}%`,
+                                      width: `${width}%`,
+                                      height: `${height}%`,
+                                      border: '2px solid',
+                                      borderColor: showConsensus ? '#8b5cf6' : '#22c55e',
+                                      bgcolor: showConsensus ? 'rgba(139, 92, 246, 0.15)' : 'rgba(34, 197, 94, 0.15)',
+                                      borderRadius: '4px',
+                                      display: 'flex',
+                                      alignItems: 'flex-start',
+                                      justifyContent: 'flex-start',
+                                    }}
+                                  >
+                                    <Typography
+                                      variant="caption"
+                                      sx={{
+                                        bgcolor: showConsensus ? '#8b5cf6' : '#22c55e',
+                                        color: '#fff',
+                                        px: 0.75,
+                                        py: 0.25,
+                                        borderRadius: '0 0 4px 0',
+                                        fontSize: 11,
+                                        fontWeight: 700,
+                                        whiteSpace: 'nowrap',
+                                      }}
+                                    >
+                                      {obj.label}
+                                      {showConsensus && obj.consensusScore !== undefined && (
+                                        <span style={{ opacity: 0.8, fontSize: 10, marginLeft: 4 }}>
+                                          {Math.round(obj.consensusScore)}%
+                                        </span>
+                                      )}
+                                      {!showConsensus && obj.confidence !== undefined && (
+                                        <span style={{ opacity: 0.8, fontSize: 10, marginLeft: 4 }}>
+                                          {(obj.confidence * 100).toFixed(0)}%
+                                        </span>
+                                      )}
+                                    </Typography>
+                                  </Box>
+                                );
+                              });
+                            })()}
+                          </Box>
+                        )}
                       </Box>
-                      <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block' }}>
-                        Status: {t.status} · Consensus: {t.consensusScore == null ? '-' : `${Math.round(t.consensusScore * 100)}%`}
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block' }}>
-                        Submitted: {formatDateTime(t.submittedAt)} · Reviewed: {formatDateTime(t.reviewedAt)}
-                      </Typography>
-                      {t.errorCategory ? (
-                        <Typography variant="caption" sx={{ color: '#f59e0b', display: 'block' }}>
-                          Error: {t.errorCategory}
+                    )}
+                    {!(selectedItem.path || selectedItem.imageUrl || selectedItem.filename) && (
+                      <Typography sx={{ color: '#94a3b8' }}>No image path available</Typography>
+                    )}
+                  </Box>
+                  
+                  {/* Annotation selector with Consensus tab */}
+                  {selectedItem.annotations && selectedItem.annotations.length > 0 && (
+                    <Box sx={{ mt: 2 }}>
+                      <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1, mb: 1.5 }}>
+                        {/* Consensus/Final Result Tab - Always first */}
+                        <Chip
+                          label="Final Result"
+                          size="small"
+                          onClick={() => setShowConsensus(true)}
+                          variant={showConsensus ? 'filled' : 'outlined'}
+                          icon={selectedItem.status === 'approved' ? <CheckCircleIcon sx={{ fontSize: 16 }} /> : null}
+                          sx={{
+                            bgcolor: showConsensus ? 'rgba(139, 92, 246, 0.25)' : 'transparent',
+                            color: showConsensus ? '#a78bfa' : '#94a3b8',
+                            border: '1px solid',
+                            borderColor: showConsensus ? '#8b5cf6' : '#475569',
+                            cursor: 'pointer',
+                            fontWeight: 700,
+                            '&:hover': {
+                              bgcolor: 'rgba(139, 92, 246, 0.15)',
+                            }
+                          }}
+                        />
+                        
+                        <Typography variant="caption" sx={{ color: '#64748b', alignSelf: 'center', mx: 0.5 }}>
+                          |
                         </Typography>
-                      ) : null}
-                      {t.reviewComments ? (
-                        <Typography variant="caption" sx={{ color: '#cbd5e1', display: 'block' }}>
-                          Review note: {t.reviewComments}
-                        </Typography>
-                      ) : null}
+                        
+                        {/* Individual Annotator Tabs */}
+                        {selectedItem.annotations.map((ann, idx) => (
+                          <Chip
+                            key={idx}
+                            label={ann.annotator}
+                            size="small"
+                            onClick={() => {
+                              setSelectedAnnotationIndex(idx);
+                              setShowConsensus(false);
+                            }}
+                            variant={!showConsensus && selectedAnnotationIndex === idx ? 'filled' : 'outlined'}
+                            icon={ann.status === 'approved' ? <CheckCircleIcon sx={{ fontSize: 16 }} /> : ann.status === 'rejected' ? <CancelIcon sx={{ fontSize: 16 }} /> : null}
+                            sx={{
+                              bgcolor: !showConsensus && selectedAnnotationIndex === idx 
+                                ? (ann.status === 'approved' ? 'rgba(34, 197, 94, 0.2)' : ann.status === 'rejected' ? 'rgba(239, 68, 68, 0.2)' : 'rgba(59, 130, 246, 0.2)')
+                                : 'transparent',
+                              color: !showConsensus && selectedAnnotationIndex === idx 
+                                ? (ann.status === 'approved' ? '#22c55e' : ann.status === 'rejected' ? '#ef4444' : '#60a5fa')
+                                : '#94a3b8',
+                              border: '1px solid',
+                              borderColor: !showConsensus && selectedAnnotationIndex === idx 
+                                ? (ann.status === 'approved' ? '#22c55e' : ann.status === 'rejected' ? '#ef4444' : '#3b82f6')
+                                : '#475569',
+                              cursor: 'pointer',
+                              '&:hover': {
+                                bgcolor: ann.status === 'approved' ? 'rgba(34, 197, 94, 0.1)' : ann.status === 'rejected' ? 'rgba(239, 68, 68, 0.1)' : 'rgba(59, 130, 246, 0.1)',
+                              }
+                            }}
+                          />
+                        ))}
+                      </Stack>
+                      
+                      {/* Consensus/Votes Info */}
+                      {showConsensus && (
+                        <Box sx={{ bgcolor: 'rgba(139, 92, 246, 0.1)', borderRadius: 1, p: 1.5, border: '1px solid rgba(139, 92, 246, 0.3)' }}>
+                          <Typography variant="caption" sx={{ color: '#a78bfa', fontWeight: 700, display: 'block', mb: 1 }}>
+                            Consensus / Final Labels
+                          </Typography>
+                          {(() => {
+                            const consensus = getConsensusLabels();
+                            if (consensus.objects.length === 0) {
+                              return <Typography variant="caption" sx={{ color: '#94a3b8' }}>No annotations yet</Typography>;
+                            }
+                            return (
+                              <>
+                                <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mb: 1 }}>
+                                  {consensus.objects.length} object(s) detected • {consensus.totalVotes} vote(s)
+                                </Typography>
+                                {consensus.objects.map((obj, idx) => (
+                                  <Box key={idx} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                                    <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#22c55e' }} />
+                                    <Typography variant="caption" sx={{ color: '#e2e8f0', fontWeight: 600 }}>
+                                      {obj.label}
+                                    </Typography>
+                                    <Typography variant="caption" sx={{ color: '#94a3b8' }}>
+                                      {obj.voteCount}/{consensus.totalVotes} votes
+                                    </Typography>
+                                    <Typography variant="caption" sx={{ color: '#22c55e', fontWeight: 600 }}>
+                                      ({Math.round(obj.consensusScore)}%)
+                                    </Typography>
+                                  </Box>
+                                ))}
+                              </>
+                            );
+                          })()}
+                        </Box>
+                      )}
                     </Box>
-                  ))}
-              </Box>
-            </>
+                  )}
+                </Box>
+              )}
+
+              {/* Info Grid */}
+              <Grid container spacing={2}>
+                <Grid item xs={6}>
+                  <Typography variant="caption" sx={{ color: '#94a3b8' }}>ID</Typography>
+                  <Typography variant="body2" fontWeight={600} sx={{ wordBreak: 'break-all', fontSize: 11 }}>{selectedItem.id}</Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="caption" sx={{ color: '#94a3b8' }}>Status</Typography>
+                  <Box sx={{ mt: 0.5 }}>{getStatusChip(selectedItem.status)}</Box>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="caption" sx={{ color: '#94a3b8' }}>Approved Votes</Typography>
+                  <Typography variant="body2" fontWeight={600} sx={{ color: '#22c55e' }}>{selectedItem.approvedCount || 0}</Typography>
+                </Grid>
+                <Grid item xs={6}>
+                  <Typography variant="caption" sx={{ color: '#94a3b8' }}>Rejected Votes</Typography>
+                  <Typography variant="body2" fontWeight={600} sx={{ color: '#f87171' }}>{selectedItem.rejectedCount || 0}</Typography>
+                </Grid>
+              </Grid>
+            </Box>
           )}
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setAnnotatorDetailDialogOpen(false)} sx={{ textTransform: 'none', fontWeight: 700, color: '#cbd5e1' }}>Close</Button>
+          <Button 
+            onClick={() => setItemDetailDialogOpen(false)} 
+            sx={{ textTransform: 'none', fontWeight: 700, color: '#cbd5e1' }}
+          >
+            Close
+          </Button>
         </DialogActions>
       </Dialog>
 
+      {/* Create Dataset Dialog */}
       <Dialog open={createDialogOpen} onClose={() => setCreateDialogOpen(false)} maxWidth="md" fullWidth PaperProps={{ sx: { bgcolor: '#1e293b', color: '#e2e8f0', border: '1px solid #334155' } }}>
         <DialogTitle sx={{ fontWeight: 700 }}>Create New Dataset</DialogTitle>
         <DialogContent>
@@ -799,6 +1367,7 @@ const Datasets = () => {
         </DialogActions>
       </Dialog>
 
+      {/* Delete Dialog */}
       <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)} PaperProps={{ sx: { bgcolor: '#1e293b', color: '#e2e8f0', border: '1px solid #334155' } }}>
         <DialogTitle sx={{ fontWeight: 700 }}>Delete Dataset</DialogTitle>
         <DialogContent>

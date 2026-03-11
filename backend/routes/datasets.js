@@ -614,6 +614,143 @@ router.get('/:id/status', auth, authorize('manager', 'admin'), async (req, res) 
   }
 });
 
+// Get all items in dataset with their annotation status (manager/admin)
+router.get('/:id/items', auth, authorize('manager', 'admin'), async (req, res) => {
+  try {
+    const dataset = await Dataset.findById(req.params.id);
+    if (!dataset) {
+      return res.status(404).json({ message: 'Dataset not found' });
+    }
+
+    if (dataset.managerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    // Get all tasks for this dataset
+    const tasks = await Task.find({ datasetId: dataset._id })
+      .select('status dataItem labels annotatorId reviewedAt')
+      .populate('annotatorId', 'username fullName')
+      .lean();
+
+    // Group tasks by dataItem to get status for each raw item
+    const itemsMap = new Map();
+    
+    // Get unique dataItems from tasks
+    tasks.forEach((task) => {
+      // Use dataItem.path or construct a unique key
+      const itemPath = task.dataItem?.path || '';
+      const itemKey = itemPath || task._id.toString();
+      
+      if (!itemsMap.has(itemKey)) {
+        // Extract just the filename from the path
+        const filename = itemPath ? itemPath.split('/').pop() : (task.dataItem?.filename || '');
+        itemsMap.set(itemKey, {
+          id: itemKey,
+          filename: task.dataItem?.filename || task.dataItem?.name || filename || 'Unknown',
+          originalName: task.dataItem?.originalName || task.dataItem?.name || 'Unknown',
+          type: dataset.type,
+          path: itemPath,
+          imageUrl: filename ? `/uploads/datasets/${filename}` : '',
+          annotations: [],
+          status: 'pending',
+          approvedCount: 0,
+          rejectedCount: 0,
+          totalVotes: 0,
+        });
+      }
+      const item = itemsMap.get(itemKey);
+      
+      // Add annotation info
+      if (task.labels) {
+        item.annotations.push({
+          annotator: task.annotatorId?.fullName || task.annotatorId?.username || 'Unknown',
+          labels: task.labels,
+          status: task.status,
+          reviewedAt: task.reviewedAt,
+        });
+      }
+      
+      // Update vote counts
+      if (task.status === 'approved') {
+        item.approvedCount += 1;
+        item.status = 'approved';
+      } else if (task.status === 'rejected') {
+        item.rejectedCount += 1;
+        if (item.status !== 'approved') item.status = 'rejected';
+      } else if (task.status === 'submitted') {
+        if (item.status === 'pending') item.status = 'in_review';
+      }
+      item.totalVotes += 1;
+    });
+
+    // Convert to array
+    const items = Array.from(itemsMap.values()).map((item, index) => {
+      // Try to get label from approved annotation first
+      let displayLabel = 'Chưa có nhãn';
+      
+      if (item.annotations.length > 0) {
+        // Find approved annotation for better label
+        const approvedAnn = item.annotations.find(a => a.status === 'approved');
+        const labels = (approvedAnn || item.annotations[0])?.labels;
+        
+        if (labels) {
+          // For classification (single label)
+          if (typeof labels.label === 'string' && labels.label.trim()) {
+            displayLabel = labels.label;
+          }
+          // For object detection - show all labels
+          else if (Array.isArray(labels.objects) && labels.objects.length > 0) {
+            const labelCounts = {};
+            labels.objects.forEach(obj => {
+              const l = obj?.label || 'unknown';
+              labelCounts[l] = (labelCounts[l] || 0) + 1;
+            });
+            displayLabel = Object.entries(labelCounts).map(([k, v]) => v > 1 ? `${k} (${v})` : k).join(', ');
+          }
+          // For text spans
+          else if (Array.isArray(labels.spans) && labels.spans.length > 0) {
+            const labelCounts = {};
+            labels.spans.forEach(span => {
+              const l = span?.label || 'unknown';
+              labelCounts[l] = (labelCounts[l] || 0) + 1;
+            });
+            displayLabel = Object.entries(labelCounts).map(([k, v]) => v > 1 ? `${k} (${v})` : k).join(', ');
+          }
+          // If label is a number (e.g., bounding box count), show as string
+          else if (typeof labels.label === 'number') {
+            displayLabel = String(labels.label);
+          }
+        }
+      }
+      
+      return {
+        id: index + 1,
+        ...item,
+        displayLabel,
+      };
+    });
+
+    // Filter by status if provided
+    const { status } = req.query;
+    let filteredItems = items;
+    if (status && status !== 'all') {
+      filteredItems = items.filter(item => item.status === status);
+    }
+
+    res.json({
+      datasetId: dataset._id,
+      datasetName: dataset.name,
+      type: dataset.type,
+      totalItems: items.length,
+      filteredCount: filteredItems.length,
+      items: filteredItems,
+    });
+  } catch (error) {
+    console.error('Error fetching dataset items:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
 // Get annotator-level task breakdown for a dataset (manager/admin)
 router.get('/:id/annotators/:annotatorId/tasks', auth, authorize('manager', 'admin'), async (req, res) => {
   try {
