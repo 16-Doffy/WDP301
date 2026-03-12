@@ -197,7 +197,7 @@ const AnnotatorTask = () => {
 
       if (kind === 'text') {
         try {
-          const textRes = await axios.get(`${API_URL}/${response.data.dataItem.path}`, {
+          const textRes = await axios.get(`${API_URL}/${response.data.dataItem.path}/${response.data.dataItem.filename}`, {
             responseType: 'text',
           });
           setTextContent(textRes.data || '');
@@ -682,7 +682,7 @@ const AnnotatorTask = () => {
                 </div>
 
                 <ImageAnnotator
-                  imageUrl={`${API_URL}/${task.dataItem.path}`}
+                  imageUrl={`${API_URL}/${task.dataItem.path}/${task.dataItem.filename}`}
                   labelSet={task?.projectId?.labelSet || []}
                   questions={task?.projectId?.questions || []}
                   onAnnotationsChange={handleAnnotationsChange}
@@ -998,7 +998,7 @@ const AnnotatorTask = () => {
                   <span className="text-xs text-gray-400">{task?.dataItem?.mimeType}</span>
                 </div>
                 <AudioAnnotator
-                  audioUrl={`${API_URL}/${task?.dataItem?.path}`}
+                  audioUrl={`${API_URL}/${task?.dataItem?.path}/${task?.dataItem?.filename}`}
                   labelSet={task?.projectId?.labelSet || []}
                   initialSegments={labels?.segments || []}
                   readOnly={task?.status === 'submitted' || task?.status === 'approved'}

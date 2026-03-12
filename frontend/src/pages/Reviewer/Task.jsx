@@ -222,7 +222,7 @@ const ReviewerTask = () => {
       // If mimeType is text/plain but no text content, fetch from file
       if (taskData.dataItem?.mimeType === 'text/plain' && !taskData.dataItem?.text) {
         try {
-          const fileResp = await axios.get(`${API_URL}/${taskData.dataItem.path}`, {
+          const fileResp = await axios.get(`${API_URL}/${taskData.dataItem.path}/${taskData.dataItem.filename}`, {
             responseType: 'text'
           });
           taskData.dataItem.text = fileResp.data;
@@ -788,7 +788,7 @@ const ReviewerTask = () => {
                             {pendingTask.dataItem?.mimeType?.startsWith('image/') && (
                               <div className="w-20 h-14 rounded-lg overflow-hidden bg-gray-200 flex-shrink-0">
                                 <img
-                                  src={`${API_URL}/${pendingTask.dataItem?.path}`}
+                                  src={`${API_URL}/${pendingTask.dataItem?.path}/${pendingTask.dataItem?.filename}`}
                                   alt="Task thumbnail"
                                   className="w-full h-full object-cover"
                                   onError={(e) => { e.target.style.display = 'none'; }}
@@ -842,7 +842,7 @@ const ReviewerTask = () => {
                       : ''
                       }`}>
                       <ImageViewer
-                        imageUrl={`${API_URL}/${task.dataItem.path}`}
+                        imageUrl={`${API_URL}/${task.dataItem.path}/${task.dataItem.filename}`}
                         annotations={task?.labels?.objects?.map((obj, idx) => ({
                           id: idx,
                           bbox: obj.bbox,
@@ -909,7 +909,7 @@ const ReviewerTask = () => {
                     const status = sentenceStatus[key];
                     const isProcessing = !!processingSentences[key];
                     const feedback = sentenceFeedbacks[key] || '';
-                    const audioUrl = `${API_URL}/${task.dataItem.path}`;
+                    const audioUrl = `${API_URL}/${task.dataItem.path}/${task.dataItem.filename}`;
 
                     return (
                       <div className="flex flex-col h-full min-h-[450px]">
