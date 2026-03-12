@@ -67,6 +67,20 @@ const AnnotatorTask = () => {
     return 'other';
   }, []);
 
+  const buildFileUrl = (dataItem) => {
+    if (!dataItem) return '';
+    const baseUrl = API_URL.replace(/\/+$/, '');
+    const rawPath = dataItem.path || '';
+    const cleanPath = rawPath.replace(/^\/+/, '');
+    if (cleanPath) {
+      if (dataItem.filename && cleanPath.endsWith(dataItem.filename)) {
+        return `${baseUrl}/${cleanPath}`;
+      }
+      return dataItem.filename ? `${baseUrl}/${cleanPath}/${dataItem.filename}` : `${baseUrl}/${cleanPath}`;
+    }
+    return dataItem.filename ? `${baseUrl}/uploads/datasets/${dataItem.filename}` : '';
+  };
+
   const renderTextWithSpans = () => {
     if (!textContent) return 'Không có nội dung hiển thị.';
     if (textSpans.length === 0) return textContent;
@@ -197,7 +211,7 @@ const AnnotatorTask = () => {
 
       if (kind === 'text') {
         try {
-          const textRes = await axios.get(`${API_URL}/${response.data.dataItem.path}/${response.data.dataItem.filename}`, {
+          const textRes = await axios.get(buildFileUrl(response.data.dataItem), {
             responseType: 'text',
           });
           setTextContent(textRes.data || '');
@@ -682,7 +696,7 @@ const AnnotatorTask = () => {
                 </div>
 
                 <ImageAnnotator
-                  imageUrl={`${API_URL}/${task.dataItem.path}/${task.dataItem.filename}`}
+                  imageUrl={buildFileUrl(task.dataItem)}
                   labelSet={task?.projectId?.labelSet || []}
                   questions={task?.projectId?.questions || []}
                   onAnnotationsChange={handleAnnotationsChange}
