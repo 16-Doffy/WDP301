@@ -225,18 +225,18 @@ router.get('/', auth, authorize('manager', 'admin'), async (req, res) => {
     const datasets = await Dataset.find({ managerId: req.user._id })
       .populate({
         path: 'projectId',
-        select: 'name',
+        select: 'name labelSet',
         options: { lean: true }
       })
       .sort({ createdAt: -1 })
       .lean();
-    
+
     // Convert to plain objects and handle null projectId
     const datasetsWithProject = datasets.map(ds => ({
       ...ds,
       projectId: ds.projectId || null
     }));
-    
+
     res.json(datasetsWithProject);
   } catch (error) {
     console.error('Error fetching datasets:', error);
@@ -669,7 +669,7 @@ router.get('/:id/items', auth, authorize('manager', 'admin'), async (req, res) =
           originalName: task.dataItem?.originalName || task.dataItem?.name || 'Unknown',
           type: dataset.type,
           path: itemPath,
-          imageUrl: filename ? `/uploads/datasets/${filename}` : '',
+          imageUrl: itemPath || (filename ? `/uploads/datasets/${filename}` : ''),
           labelSet,
           annotations: [],
           status: 'pending',
