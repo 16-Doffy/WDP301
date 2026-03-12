@@ -107,6 +107,7 @@ const Datasets = () => {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewSrc, setPreviewSrc] = useState('');
   const [previewTitle, setPreviewTitle] = useState('');
+  const [previewItem, setPreviewItem] = useState(null);
 
   const getAuthToken = () => sessionStorage.getItem('token') || localStorage.getItem('token');
 
@@ -295,8 +296,15 @@ const Datasets = () => {
     if (!src) return;
     setPreviewSrc(src);
     setPreviewTitle(title);
-    setDetailDataset(item || detailDataset);
+    setPreviewItem(item);
     setPreviewOpen(true);
+  };
+
+  const handleClosePreview = () => {
+    setPreviewOpen(false);
+    setPreviewSrc('');
+    setPreviewTitle('');
+    setPreviewItem(null);
   };
 
   const filteredDatasets = datasets.filter(ds => {
@@ -508,7 +516,10 @@ const Datasets = () => {
 
       <Dialog
         open={detailDialogOpen}
-        onClose={() => setDetailDialogOpen(false)}
+        onClose={() => {
+          setDetailDialogOpen(false);
+          handleClosePreview();
+        }}
         maxWidth="md"
         fullWidth
         PaperProps={{ sx: { bgcolor: '#1e293b', color: '#e2e8f0', border: '1px solid #334155' } }}
@@ -630,13 +641,24 @@ const Datasets = () => {
                                   }}
                                 >
                                   {imageSrc ? (
-                                    <ImageViewer
-                                      imageUrl={imageSrc}
-                                      annotations={[{ bbox: obj.bbox, label: obj.label }]}
-                                      labelSet={labelSet}
-                                      readOnly
-                                      maxHeight="100%"
-                                    />
+                                    <Box
+                                      sx={{
+                                        position: 'absolute',
+                                        inset: 0,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        p: 1,
+                                      }}
+                                    >
+                                      <ImageViewer
+                                        imageUrl={imageSrc}
+                                        annotations={[{ bbox: obj.bbox, label: obj.label }]}
+                                        labelSet={labelSet}
+                                        readOnly
+                                        maxHeight="100%"
+                                      />
+                                    </Box>
                                   ) : (
                                     <Box
                                       sx={{
@@ -670,8 +692,8 @@ const Datasets = () => {
                       if (labels.label) {
                         const imageSrc = getFullImageUrl(item.dataItem?.path, '', item.dataItem?.filename);
                         return (
-                          <Grid item xs={6} sm={4} md={3} key={idx}>
-                            <Box sx={{ textAlign: 'center' }}>
+                          <Grid item xs={6} sm={4} md={3} key={idx} sx={{ display: 'flex' }}>
+                            <Box sx={{ textAlign: 'center', display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
                               <Box
                                 onClick={() => handleOpenPreview(imageSrc, labels.label, item)}
                                 sx={{
@@ -683,16 +705,30 @@ const Datasets = () => {
                                   border: '2px solid #3b82f6',
                                   bgcolor: '#0f172a',
                                   cursor: imageSrc ? 'pointer' : 'default',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
                                 }}
                               >
                                 {imageSrc ? (
-                                  <ImageViewer
-                                    imageUrl={imageSrc}
-                                    annotations={[]}
-                                    labelSet={normalizeLabelSet(detailDataset?.projectId?.labelSet || [])}
-                                    readOnly
-                                    maxHeight="100%"
-                                  />
+                                  <Box
+                                    sx={{
+                                      position: 'absolute',
+                                      inset: 0,
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      p: 1,
+                                    }}
+                                  >
+                                    <ImageViewer
+                                      imageUrl={imageSrc}
+                                      annotations={[]}
+                                      labelSet={normalizeLabelSet(detailDataset?.projectId?.labelSet || [])}
+                                      readOnly
+                                      maxHeight="100%"
+                                    />
+                                  </Box>
                                 ) : (
                                   <Box
                                     sx={{
@@ -732,7 +768,10 @@ const Datasets = () => {
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button
-            onClick={() => setDetailDialogOpen(false)}
+            onClick={() => {
+              setDetailDialogOpen(false);
+              handleClosePreview();
+            }}
             sx={{ textTransform: 'none', fontWeight: 700, color: '#cbd5e1' }}
           >
             Close
@@ -742,7 +781,7 @@ const Datasets = () => {
 
       <Dialog
         open={previewOpen}
-        onClose={() => setPreviewOpen(false)}
+        onClose={handleClosePreview}
         maxWidth="lg"
         fullWidth
         PaperProps={{ sx: { bgcolor: '#0f172a', color: '#e2e8f0', border: '1px solid #334155' } }}
@@ -767,8 +806,8 @@ const Datasets = () => {
             {previewSrc ? (
               <ImageViewer
                 imageUrl={previewSrc}
-                annotations={getPreviewAnnotations(detailDataset)}
-                labelSet={normalizeLabelSet(detailDataset?.projectId?.labelSet || [])}
+                annotations={getPreviewAnnotations(previewItem || detailDataset)}
+                labelSet={normalizeLabelSet((previewItem || detailDataset)?.projectId?.labelSet || [])}
                 readOnly
                 maxHeight="70vh"
               />
@@ -781,7 +820,7 @@ const Datasets = () => {
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button
-            onClick={() => setPreviewOpen(false)}
+            onClick={handleClosePreview}
             sx={{ textTransform: 'none', fontWeight: 700, color: '#cbd5e1' }}
           >
             Close
