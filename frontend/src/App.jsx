@@ -24,6 +24,7 @@ import AdminDashboard from './pages/Admin/Dashboard';
 import AdminUsers from './pages/Admin/Users';
 import AdminActivityLogs from './pages/Admin/ActivityLogs';
 import AdminSystemSettings from './pages/Admin/SystemSettings';
+import AdminSystemHealth from './pages/Admin/SystemHealth';
 import Layout from './components/LayoutTailwind';
 import { useAuth } from './context/AuthContext';
 
@@ -210,6 +211,7 @@ function App() {
               <Route path="admin/users" element={<AdminUsers />} />
               <Route path="admin/activity-logs" element={<AdminActivityLogs />} />
               <Route path="admin/settings" element={<AdminSystemSettings />} />
+              <Route path="admin/system-health" element={<AdminSystemHealth />} />
               <Route path="admin" element={<AdminDashboard />} />
             </Route>
           </Routes>

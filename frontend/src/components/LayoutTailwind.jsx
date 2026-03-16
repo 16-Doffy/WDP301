@@ -47,6 +47,7 @@ const LayoutTailwind = () => {
       baseItems.push({ text: 'Users', icon: '👤', path: '/admin/users' });
       baseItems.push({ text: 'Activity Logs', icon: '📜', path: '/admin/activity-logs' });
       baseItems.push({ text: 'Settings', icon: '⚙️', path: '/admin/settings' });
+      baseItems.push({ text: 'System Health', icon: '💻', path: '/admin/system-health' });
     }
 
     return baseItems;
