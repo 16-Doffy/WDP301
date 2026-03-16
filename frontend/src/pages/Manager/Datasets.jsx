@@ -628,7 +628,6 @@ const Datasets = () => {
                             <Grid item xs={6} sm={4} md={3} key={idx + '-' + objIdx}>
                               <Box sx={{ textAlign: 'center' }}>
                                 <Box
-                                  onClick={() => handleOpenPreview(imageSrc, obj.label, item)}
                                   sx={{
                                     position: 'relative',
                                     width: '100%',
@@ -637,7 +636,6 @@ const Datasets = () => {
                                     borderRadius: 2,
                                     border: '2px solid #22c55e',
                                     bgcolor: '#0f172a',
-                                    cursor: imageSrc ? 'pointer' : 'default',
                                   }}
                                 >
                                   {imageSrc ? (
@@ -695,7 +693,6 @@ const Datasets = () => {
                           <Grid item xs={6} sm={4} md={3} key={idx} sx={{ display: 'flex' }}>
                             <Box sx={{ textAlign: 'center', display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
                               <Box
-                                onClick={() => handleOpenPreview(imageSrc, labels.label, item)}
                                 sx={{
                                   position: 'relative',
                                   width: '100%',
@@ -704,7 +701,6 @@ const Datasets = () => {
                                   borderRadius: 2,
                                   border: '2px solid #3b82f6',
                                   bgcolor: '#0f172a',
-                                  cursor: imageSrc ? 'pointer' : 'default',
                                   display: 'flex',
                                   alignItems: 'center',
                                   justifyContent: 'center',

@@ -758,9 +758,9 @@ const ReviewerTask = () => {
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-6">
-              {/* Review Queue (moved down here to replace comparison section) */}
-              <div className={`${darkMode ? 'bg-[#1e293b] border-slate-700' : 'bg-[#1e293b] border-slate-700'} rounded-2xl border p-6 shadow-2xl`}>
+            <div className="grid grid-cols-12 gap-4">
+              {/* Review Queue - Made smaller */}
+              <div className={`col-span-3 ${darkMode ? 'bg-[#1e293b] border-slate-700' : 'bg-[#1e293b] border-slate-700'} rounded-2xl border p-4 shadow-2xl`}>
                 <div className="flex items-center justify-between mb-4">
                   <h3 className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                     REVIEW QUEUE
@@ -830,8 +830,8 @@ const ReviewerTask = () => {
                 </div>
               </div>
 
-              {/* Annotator Output - Glassmorphism with Neon Glow on Hover */}
-              <div className={`${darkMode ? 'bg-gray-800/80 border-gray-700' : 'bg-white/60 backdrop-blur-lg border-gray-200/50'} rounded-2xl border p-6 shadow-xl`}>
+              {/* Annotator Output - Made bigger */}
+              <div className={`col-span-6 ${darkMode ? 'bg-gray-800/80 border-gray-700' : 'bg-white/60 backdrop-blur-lg border-gray-200/50'} rounded-2xl border p-6 shadow-xl`}>
                 <h3 className={`font-bold mb-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                   ANNOTATOR OUTPUT
                 </h3>
@@ -1326,8 +1326,8 @@ const ReviewerTask = () => {
           </div>
         </div>
 
-        {/* Right Sidebar - Structured Review Inspector */}
-        <div className={`w-96 ${darkMode ? 'bg-[#1e293b] border-slate-700' : 'bg-[#1e293b] border-slate-700'} border-l overflow-y-auto`}>
+        {/* Right Sidebar - Made smaller */}
+        <div className={`w-72 ${darkMode ? 'bg-[#1e293b] border-slate-700' : 'bg-[#1e293b] border-slate-700'} border-l overflow-y-auto`}>
           <div className="p-6 space-y-6">
             <div>
               <h3 className="text-xl font-semibold text-white mb-3">Review Overview</h3>

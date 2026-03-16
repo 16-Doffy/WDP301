@@ -45,6 +45,7 @@ import {
 } from '@mui/icons-material';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
+import ImageViewer from '../../components/ImageViewer';
 
 const pageSx = { minHeight: '100vh', background: '#0f172a', color: '#e2e8f0' };
 
@@ -367,9 +368,17 @@ const ManagerProjectDetail = () => {
   const approvedDatasets = useMemo(() => {
     const datasetIds = new Set();
     tasks.forEach((t) => {
-      if (t.status === 'approved' && t.datasetItemId?.datasetId) {
-        const dsId = t.datasetItemId.datasetId._id || t.datasetItemId.datasetId;
-        datasetIds.add(dsId);
+      if (t.status === 'approved') {
+        // Check multiple possible paths for datasetId
+        let dsId = null;
+        if (t.datasetItemId?.datasetId) {
+          dsId = t.datasetItemId.datasetId._id || t.datasetItemId.datasetId;
+        } else if (t.datasetId?._id) {
+          dsId = t.datasetId._id;
+        } else if (t.datasetId) {
+          dsId = t.datasetId;
+        }
+        if (dsId) datasetIds.add(dsId);
       }
     });
     return datasets.filter((ds) => datasetIds.has(ds._id));
@@ -379,11 +388,20 @@ const ManagerProjectDetail = () => {
   const approvedDatasetsWithLabels = useMemo(() => {
     return approvedDatasets.map(ds => {
       const dsId = ds._id;
-      const approvedTasksInDs = tasks.filter(t => 
-        t.status === 'approved' && 
-        t.datasetItemId?.datasetId && 
-        (t.datasetItemId.datasetId._id || t.datasetItemId.datasetId) === dsId
-      );
+      const approvedTasksInDs = tasks.filter(t => {
+        if (t.status !== 'approved') return false;
+        
+        // Check multiple possible paths for datasetId
+        let taskDsId = null;
+        if (t.datasetItemId?.datasetId) {
+          taskDsId = t.datasetItemId.datasetId._id || t.datasetItemId.datasetId;
+        } else if (t.datasetId?._id) {
+          taskDsId = t.datasetId._id;
+        } else if (t.datasetId) {
+          taskDsId = t.datasetId;
+        }
+        return taskDsId === dsId;
+      });
       
       const labelSet = new Set();
       approvedTasksInDs.forEach(t => {
@@ -392,6 +410,10 @@ const ManagerProjectDetail = () => {
           labels = t.labels.objects;
         } else if (Array.isArray(t.labels)) {
           labels = t.labels;
+        } else if (t.dataItem?.labels?.objects) {
+          labels = t.dataItem.labels.objects;
+        } else if (Array.isArray(t.dataItem?.labels)) {
+          labels = t.dataItem.labels;
         }
         labels.forEach(obj => {
           if (obj.label) labelSet.add(obj.label);
@@ -556,7 +578,7 @@ const ManagerProjectDetail = () => {
 
   const renderOverview = () => (
     <>
-      <Grid container spacing={3} sx={{ mb: 4 }}>
+          <Grid container spacing={3} sx={{ mb: 4 }}>
         <Grid item xs={12} sm={6} md={3}>
           <Card sx={cardSx}>
             <CardContent>
@@ -594,54 +616,54 @@ const ManagerProjectDetail = () => {
             </CardContent>
           </Card>
         </Grid>
-      </Grid>
+          </Grid>
 
-      <Box>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Typography variant="h6" fontWeight={700} color="#e2e8f0">Team Performance</Typography>
-          <Button variant="contained" startIcon={<AssignmentIcon />} onClick={() => setAssignDialogOpen(true)} sx={primaryBtnSx}>Phân công task từ dataset</Button>
-        </Box>
+          <Box>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography variant="h6" fontWeight={700} color="#e2e8f0">Team Performance</Typography>
+              <Button variant="contained" startIcon={<AssignmentIcon />} onClick={() => setAssignDialogOpen(true)} sx={primaryBtnSx}>Phân công task từ dataset</Button>
+            </Box>
 
-        <Box sx={{ mb: 2, display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
-          <Chip label={`Annotators assigned: ${groupedByAnnotator.length}`} sx={{ bgcolor: 'rgba(59,130,246,0.2)', color: '#93c5fd', fontWeight: 700 }} />
-          <Chip label={`Reviewers assigned: ${groupedByReviewer.length}`} sx={{ bgcolor: 'rgba(16,185,129,0.2)', color: '#6ee7b7', fontWeight: 700 }} />
-        </Box>
+            <Box sx={{ mb: 2, display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
+              <Chip label={`Annotators assigned: ${groupedByAnnotator.length}`} sx={{ bgcolor: 'rgba(59,130,246,0.2)', color: '#93c5fd', fontWeight: 700 }} />
+              <Chip label={`Reviewers assigned: ${groupedByReviewer.length}`} sx={{ bgcolor: 'rgba(16,185,129,0.2)', color: '#6ee7b7', fontWeight: 700 }} />
+            </Box>
 
-        <TableContainer component={Paper} sx={{ ...cardSx, '& .MuiTableCell-root': { borderColor: '#334155' } }}>
-          <Table>
-            <TableHead>
-              <TableRow sx={{ background: '#0f172a' }}>
-                <TableCell sx={{ color: '#94a3b8', fontWeight: 700 }}>Annotator</TableCell>
-                <TableCell sx={{ color: '#94a3b8', fontWeight: 700 }}>Workload</TableCell>
-                <TableCell sx={{ color: '#94a3b8', fontWeight: 700 }}>Progress</TableCell>
-                <TableCell sx={{ color: '#94a3b8', fontWeight: 700 }}>Quality</TableCell>
-                <TableCell align="right" sx={{ color: '#94a3b8', fontWeight: 700 }}>Action</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {groupedByAnnotator.map((g, idx) => {
-                const progress = Math.round((g.done / g.tasks.length) * 100);
-                const reviewed = g.approved + g.rejected;
-                const quality = reviewed > 0 ? Math.round((g.approved / reviewed) * 100) : 0;
-
-                return (
-                  <TableRow key={idx} hover sx={{ '&:hover': { bgcolor: '#0f172a' } }}>
-                    <TableCell><Typography variant="body2" fontWeight={700} color="#e2e8f0">{g.name}</Typography></TableCell>
-                    <TableCell sx={{ color: '#94a3b8' }}>{g.tasks.length} tasks</TableCell>
-                    <TableCell>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <LinearProgress variant="determinate" value={progress} sx={{ width: 80, height: 5, borderRadius: 2, bgcolor: '#334155', '& .MuiLinearProgress-bar': { bgcolor: '#3b82f6' } }} />
-                        <Typography variant="caption" sx={{ color: '#e2e8f0' }}>{progress}%</Typography>
-                      </Box>
-                    </TableCell>
-                    <TableCell><Chip label={`${quality}%`} size="small" sx={{ bgcolor: quality >= 80 ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)', color: quality >= 80 ? '#34d399' : '#f87171', fontWeight: 800 }} /></TableCell>
-                    <TableCell align="right"><Button size="small" sx={{ color: '#60a5fa', fontWeight: 700 }} onClick={() => navigate(`/manager/projects/${id}/annotator/${g.tasks[0]?.annotatorId?._id}`)}>DETAILS</Button></TableCell>
+            <TableContainer component={Paper} sx={{ ...cardSx, '& .MuiTableCell-root': { borderColor: '#334155' } }}>
+              <Table>
+                <TableHead>
+                  <TableRow sx={{ background: '#0f172a' }}>
+                    <TableCell sx={{ color: '#94a3b8', fontWeight: 700 }}>Annotator</TableCell>
+                    <TableCell sx={{ color: '#94a3b8', fontWeight: 700 }}>Workload</TableCell>
+                    <TableCell sx={{ color: '#94a3b8', fontWeight: 700 }}>Progress</TableCell>
+                    <TableCell sx={{ color: '#94a3b8', fontWeight: 700 }}>Quality</TableCell>
+                    <TableCell align="right" sx={{ color: '#94a3b8', fontWeight: 700 }}>Action</TableCell>
                   </TableRow>
+                </TableHead>
+                <TableBody>
+                  {groupedByAnnotator.map((g, idx) => {
+                const progress = Math.min(Math.round((g.done / g.tasks.length) * 100), 100);
+                    const reviewed = g.approved + g.rejected;
+                    const quality = reviewed > 0 ? Math.round((g.approved / reviewed) * 100) : 0;
+
+                    return (
+                      <TableRow key={idx} hover sx={{ '&:hover': { bgcolor: '#0f172a' } }}>
+                        <TableCell><Typography variant="body2" fontWeight={700} color="#e2e8f0">{g.name}</Typography></TableCell>
+                        <TableCell sx={{ color: '#94a3b8' }}>{g.tasks.length} tasks</TableCell>
+                        <TableCell>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <LinearProgress variant="determinate" value={progress} sx={{ width: 80, height: 5, borderRadius: 2, bgcolor: '#334155', '& .MuiLinearProgress-bar': { bgcolor: '#3b82f6' } }} />
+                            <Typography variant="caption" sx={{ color: '#e2e8f0' }}>{progress}%</Typography>
+                          </Box>
+                        </TableCell>
+                        <TableCell><Chip label={`${quality}%`} size="small" sx={{ bgcolor: quality >= 80 ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)', color: quality >= 80 ? '#34d399' : '#f87171', fontWeight: 800 }} /></TableCell>
+                        <TableCell align="right"><Button size="small" sx={{ color: '#60a5fa', fontWeight: 700 }} onClick={() => navigate(`/manager/projects/${id}/annotator/${g.tasks[0]?.annotatorId?._id}`)}>DETAILS</Button></TableCell>
+                      </TableRow>
                 );
               })}
-            </TableBody>
-          </Table>
-        </TableContainer>
+                </TableBody>
+              </Table>
+            </TableContainer>
       </Box>
     </>
   );
@@ -656,7 +678,7 @@ const ManagerProjectDetail = () => {
           </Typography>
           <Grid container spacing={2}>
             {approvedDatasetsWithLabels.map((ds) => (
-              <Grid item xs={12} sm={6} md={4} key={ds._id}>
+              <Grid item xs={12} sm={6} md={3} key={ds._id}>
                 <Card sx={{
                   ...cardSx,
                   border: '2px solid #22c55e',
@@ -839,7 +861,7 @@ const ManagerProjectDetail = () => {
         </Box>
       ) : (
         <Grid container spacing={2}>
-          {approvedTasks.map((task, idx) => {
+          {approvedTasks.flatMap((task, taskIdx) => {
             // Get labels from different possible structures
             let labels = [];
             if (task.labels?.objects && Array.isArray(task.labels.objects)) {
@@ -853,127 +875,82 @@ const ManagerProjectDetail = () => {
               } else if (Array.isArray(approvedAnn?.labels)) {
                 labels = approvedAnn.labels;
               }
+            } else if (task.dataItem?.labels?.objects) {
+              labels = task.dataItem.labels.objects;
+            } else if (Array.isArray(task.dataItem?.labels)) {
+              labels = task.dataItem.labels;
             }
             
-            const imageUrl = task.datasetItemId?.imageUrl || task.datasetItemId?.url || task.datasetItemId?.path || task.itemId?.imageUrl || task.itemId?.url;
+            // Get image URL from multiple possible paths
+            const imageUrl = 
+              task.datasetItemId?.imageUrl || 
+              task.datasetItemId?.url || 
+              task.datasetItemId?.path ||
+              task.dataItem?.imageUrl ||
+              task.dataItem?.url ||
+              task.dataItem?.path ||
+              task.itemId?.imageUrl ||
+              task.itemId?.url;
             
-            // Debug: log image URL
-            console.log('Task:', task._id || idx, 'datasetItemId:', task.datasetItemId, 'itemId:', task.itemId, 'imageUrl:', imageUrl);
-            
-            // Kiểm tra xem task này có nhãn được chọn không
-            const isHighlighted = selectedLabelFilter === 'all' || labels.some((obj) => {
-              const labelName = obj.label || obj;
-              return labelName === selectedLabelFilter;
-            });
-            
-            // Kiểm tra xem task có nhãn nào khớp với filter không
+            // Check filter match
             const hasMatchingLabel = labels.some((obj) => {
               const labelName = obj.label || obj;
-              return labelName === selectedLabelFilter;
+              return selectedLabelFilter === 'all' || labelName === selectedLabelFilter;
             });
+            
+            if (!hasMatchingLabel && selectedLabelFilter !== 'all') {
+              return [];
+            }
 
-            return (
-              <Grid item xs={12} sm={6} md={4} key={idx}>
-                <Card sx={{
-                  ...cardSx,
-                  transition: 'all 0.3s ease',
-                  opacity: selectedLabelFilter === 'all' ? 1 : (isHighlighted ? 1 : 0.25),
-                  transform: selectedLabelFilter === 'all' ? 'none' : (isHighlighted ? 'scale(1.02)' : 'scale(0.98)'),
-                  border: hasMatchingLabel ? `2px solid ${getLabelColor(selectedLabelFilter)}` : (selectedLabelFilter === 'all' ? '1px solid #334155' : '1px solid #334155'),
-                  boxShadow: hasMatchingLabel ? `0 0 20px ${getLabelColor(selectedLabelFilter)}66` : '0 12px 24px rgba(0,0,0,0.25)',
-                  '&:hover': {
-                    borderColor: '#3b82f6',
-                    transform: 'translateY(-2px)',
-                    opacity: 1,
-                  }
-                }}>
-                  <Box sx={{
-                    position: 'relative',
-                    paddingTop: '75%',
-                    bgcolor: '#0f172a',
-                    overflow: 'hidden',
-                    filter: selectedLabelFilter === 'all' ? 'none' : (isHighlighted ? 'none' : 'grayscale(80%)'),
-                    transition: 'filter 0.3s ease',
+            // Return each label as a separate card
+            return labels.map((obj, labelIdx) => {
+              const labelName = obj.label || obj;
+              const matchesFilter = selectedLabelFilter === 'all' || labelName === selectedLabelFilter;
+              
+              if (!matchesFilter) return null;
+              
+              return (
+                <Grid item xs={6} sm={4} md={3} key={`${taskIdx}-${labelIdx}`}>
+                  <Card sx={{
+                    ...cardSx,
+                    border: `2px solid ${getLabelColor(labelName)}`,
+                    '&:hover': { borderColor: '#3b82f6' }
                   }}>
-                    {imageUrl ? (
-                      <img
-                        src={getFullImageUrl(imageUrl)}
-                        alt="item"
-                        style={{
-                          position: 'absolute',
-                          top: 0,
-                          left: 0,
-                          width: '100%',
-                          height: '100%',
-                          objectFit: 'cover',
+                    <Box sx={{
+                      position: 'relative',
+                      paddingTop: '100%',
+                      bgcolor: '#0f172a',
+                      overflow: 'hidden',
+                    }}>
+                      {imageUrl ? (
+                        <ImageViewer
+                          imageUrl={getFullImageUrl(imageUrl)}
+                          annotations={[{ bbox: obj.bbox || obj.box, label: labelName }]}
+                          readOnly
+                          maxHeight="100%"
+                        />
+                      ) : (
+                        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <Typography sx={{ color: '#64748b' }}>No Image</Typography>
+                        </Box>
+                      )}
+                    </Box>
+                    <CardContent sx={{ py: 1, px: 2 }}>
+                      <Chip
+                        label={labelName}
+                        size="small"
+                        sx={{
+                          bgcolor: getLabelColor(labelName),
+                          color: 'white',
+                          fontWeight: 700,
+                          fontSize: '0.75rem',
                         }}
                       />
-                    ) : (
-                      <Box sx={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Typography sx={{ color: '#64748b' }}>No Image</Typography>
-                      </Box>
-                    )}
-                    {labels.map((obj, labelIdx) => {
-                      const labelName = obj.label || obj;
-                      const isMatching = labelName === selectedLabelFilter;
-                      return (
-                        <Chip
-                          key={labelIdx}
-                          label={labelName}
-                          sx={{
-                            position: 'absolute',
-                            top: 12,
-                            left: 12,
-                            bgcolor: isMatching || selectedLabelFilter === 'all' ? getLabelColor(labelName) : '#64748b',
-                            color: 'white',
-                            fontWeight: 900,
-                            fontSize: '1rem',
-                            height: 36,
-                            padding: '6px 16px',
-                            border: isMatching && selectedLabelFilter !== 'all' ? '4px solid white' : 'none',
-                            boxShadow: isMatching && selectedLabelFilter !== 'all' ? `0 0 20px ${getLabelColor(labelName)}, 0 4px 12px rgba(0,0,0,0.5)` : '0 2px 8px rgba(0,0,0,0.3)',
-                            zIndex: 10,
-                            '& .MuiChip-label': { 
-                              padding: '0 10px',
-                              fontWeight: 900,
-                              letterSpacing: '0.5px'
-                            }
-                          }}
-                        />
-                      );
-                    })}
-                  </Box>
-                  <CardContent sx={{ py: 2, px: 2 }}>
-                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                      {labels.map((obj, labelIdx) => {
-                        const labelName = obj.label || obj;
-                        const isMatching = labelName === selectedLabelFilter;
-                        return (
-                          <Chip
-                            key={labelIdx}
-                            label={labelName}
-                            sx={{
-                              bgcolor: isMatching || selectedLabelFilter === 'all' ? getLabelColor(labelName) : '#334155',
-                              color: 'white',
-                              fontWeight: 800,
-                              fontSize: '0.9rem',
-                              height: 32,
-                              padding: '4px 14px',
-                              border: isMatching ? '3px solid white' : 'none',
-                              boxShadow: isMatching ? `0 0 15px ${getLabelColor(labelName)}` : 'none',
-                              '& .MuiChip-label': { 
-                                padding: '0 8px',
-                                fontWeight: 800
-                              }
-                            }}
-                          />
-                        );
-                      })}
-                    </Box>
-                  </CardContent>
-                </Card>
-              </Grid>
-            );
+                    </CardContent>
+                  </Card>
+                </Grid>
+              );
+            });
           })}
         </Grid>
       )}
@@ -1009,7 +986,7 @@ const ManagerProjectDetail = () => {
               <Button variant="contained" startIcon={<SettingsIcon />} onClick={() => setEditDialogOpen(true)} sx={primaryBtnSx}>Settings</Button>
             </Stack>
           </Box>
-        </Box>
+          </Box>
 
         <Box sx={{ borderBottom: 1, borderColor: '#334155' }}>
           <Tabs
@@ -1190,7 +1167,7 @@ const ManagerProjectDetail = () => {
                   />
                 );
               })}
-            </Box>
+    </Box>
           )}
         </DialogContent>
         <DialogActions><Button onClick={() => setShowLabelsDialogOpen(false)} sx={secondaryBtnSx}>Đóng</Button></DialogActions>
