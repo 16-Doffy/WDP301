@@ -132,6 +132,17 @@ const taskSchema = new mongoose.Schema({
   errorCategory: {
     type: String
   },
+  primaryForItem: {
+    type: Boolean,
+    default: false
+  },
+  primarySelectedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  primarySelectedAt: {
+    type: Date
+  },
   createdAt: {
     type: Date,
     default: Date.now

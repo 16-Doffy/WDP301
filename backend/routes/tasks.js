@@ -237,6 +237,65 @@ router.get('/:id', auth, async (req, res) => {
   }
 });
 
+// Get related tasks for same dataItem (reviewer)
+router.get('/:id/related', auth, async (req, res) => {
+  try {
+    const task = await Task.findById(req.params.id)
+      .populate('projectId', 'name labelSet guidelines questions managerId')
+      .populate('datasetId', 'name')
+      .populate('annotatorId', 'username fullName')
+      .populate('reviewerId', 'username fullName')
+      .populate('reviewers.reviewerId', 'username fullName');
+
+    if (!task) {
+      return res.status(404).json({ message: 'Task not found' });
+    }
+
+    if (req.user.role === 'reviewer') {
+      const primaryReviewerId = task.reviewerId?._id?.toString() || task.reviewerId?.toString();
+      const inReviewerList = Array.isArray(task.reviewers)
+        && task.reviewers.some(r => (r.reviewerId?._id?.toString() || r.reviewerId?.toString?.() || r.reviewerId?.toString()) === req.user._id.toString());
+      if (task.status !== 'submitted' && !inReviewerList && primaryReviewerId !== req.user._id.toString()) {
+        return res.status(403).json({ message: 'Not authorized to view related tasks' });
+      }
+    }
+
+    const filename = task.dataItem?.filename;
+    const path = task.dataItem?.path;
+
+    const query = {
+      datasetId: task.datasetId?._id || task.datasetId,
+      'dataItem.filename': filename,
+    };
+
+    if (path) {
+      query['dataItem.path'] = path;
+    }
+
+    const annotatorIds = (req.query.annotatorIds || '')
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean);
+
+    if (annotatorIds.length > 0) {
+      query.annotatorId = { $in: annotatorIds };
+    }
+
+    const relatedTasks = await Task.find(query)
+      .populate('projectId', 'name labelSet guidelines questions managerId')
+      .populate('datasetId', 'name')
+      .populate('annotatorId', 'username fullName')
+      .populate('reviewerId', 'username fullName')
+      .populate('reviewers.reviewerId', 'username fullName')
+      .sort({ submittedAt: 1 });
+
+    res.json(relatedTasks);
+  } catch (error) {
+    console.error('Error fetching related tasks:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
 // Get task consensus + reviewer vote summary
 router.get('/:id/consensus-summary', auth, async (req, res) => {
   try {

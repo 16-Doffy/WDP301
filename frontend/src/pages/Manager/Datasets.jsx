@@ -38,7 +38,6 @@ import {
 } from '@mui/icons-material';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
-import ImageViewer from '../../components/ImageViewer';
 
 const getFullImageUrl = (path, imageUrl, filename) => {
   const baseUrl = API_URL.replace(/\/+$/, '');
@@ -104,10 +103,8 @@ const Datasets = () => {
   const [detailDataset, setDetailDataset] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailTab, setDetailTab] = useState(0);
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewSrc, setPreviewSrc] = useState('');
-  const [previewTitle, setPreviewTitle] = useState('');
-  const [previewItem, setPreviewItem] = useState(null);
+  const [detailItems, setDetailItems] = useState([]);
+  const [detailItemsLoading, setDetailItemsLoading] = useState(false);
 
   const getAuthToken = () => sessionStorage.getItem('token') || localStorage.getItem('token');
 
@@ -142,18 +139,6 @@ const Datasets = () => {
       if (label && typeof label === 'object') return { name: label.name || label.label || 'Unknown', color: label.color };
       return { name: 'Unknown' };
     });
-  };
-
-  const getPreviewAnnotations = (item) => {
-    if (!item) return [];
-    if (Array.isArray(item?.labels?.objects)) return item.labels.objects;
-    if (Array.isArray(item?.annotations)) {
-      const approved = item.annotations.find((ann) => ann.status === 'approved');
-      if (approved?.labels?.objects) return approved.labels.objects;
-      const any = item.annotations.find((ann) => ann?.labels?.objects?.length);
-      if (any?.labels?.objects) return any.labels.objects;
-    }
-    return [];
   };
 
   const fetchDatasets = async () => {
@@ -278,33 +263,27 @@ const Datasets = () => {
     setDetailDataset(dataset);
     setDetailDialogOpen(true);
     setDetailLoading(true);
+    setDetailItemsLoading(true);
     setDetailTab(0);
 
     try {
-      const statusRes = await axios.get(API_URL + '/api/datasets/' + dataset._id + '/status', {
-        headers: { Authorization: 'Bearer ' + getAuthToken() },
-      });
+      const [statusRes, itemsRes] = await Promise.all([
+        axios.get(API_URL + '/api/datasets/' + dataset._id + '/status', {
+          headers: { Authorization: 'Bearer ' + getAuthToken() },
+        }),
+        axios.get(API_URL + '/api/datasets/' + dataset._id + '/items', {
+          headers: { Authorization: 'Bearer ' + getAuthToken() },
+        }),
+      ]);
       setDetailDataset(prev => ({ ...prev, statusData: statusRes.data }));
+      setDetailItems(itemsRes.data?.items || []);
     } catch (err) {
-      console.error('Error fetching dataset status:', err);
+      console.error('Error fetching dataset status/items:', err);
+      setDetailItems([]);
     } finally {
       setDetailLoading(false);
+      setDetailItemsLoading(false);
     }
-  };
-
-  const handleOpenPreview = (src, title = '', item = null) => {
-    if (!src) return;
-    setPreviewSrc(src);
-    setPreviewTitle(title);
-    setPreviewItem(item);
-    setPreviewOpen(true);
-  };
-
-  const handleClosePreview = () => {
-    setPreviewOpen(false);
-    setPreviewSrc('');
-    setPreviewTitle('');
-    setPreviewItem(null);
   };
 
   const filteredDatasets = datasets.filter(ds => {
@@ -516,10 +495,7 @@ const Datasets = () => {
 
       <Dialog
         open={detailDialogOpen}
-        onClose={() => {
-          setDetailDialogOpen(false);
-          handleClosePreview();
-        }}
+        onClose={() => setDetailDialogOpen(false)}
         maxWidth="md"
         fullWidth
         PaperProps={{ sx: { bgcolor: '#1e293b', color: '#e2e8f0', border: '1px solid #334155' } }}
@@ -612,119 +588,58 @@ const Datasets = () => {
               {detailTab === 1 && (
                 <Box>
                   <Typography variant="body2" sx={{ color: '#94a3b8', mb: 2 }}>
-                    Showing approved items with cropped images by label
+                    Showing items (one image per item)
                   </Typography>
-                  <Grid container spacing={2}>
-                    {detailDataset?.statusData?.finalItems?.map((item, idx) => {
-                      const labels = item.labels;
-                      if (!labels) return null;
+                  {detailItemsLoading ? (
+                    <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                      <CircularProgress />
+                    </Box>
+                  ) : (
+                    <Grid container spacing={2}>
+                      {detailItems.map((item, idx) => {
+                        const imageSrc = getFullImageUrl(item.path, item.imageUrl, item.filename);
+                        const labelSet = normalizeLabelSet(item.labelSet || detailDataset?.projectId?.labelSet || []);
+                        const annotationsRaw = (item.annotations || []).filter(a => a.status === 'approved');
+                        const primaryAnnotations = annotationsRaw.filter(a => a.primaryForItem);
+                        const annotations = primaryAnnotations.length > 0 ? primaryAnnotations : annotationsRaw;
+                        const annotatorNames = annotations.map(a => a.annotator).filter(Boolean);
+                        const uniqueAnnotatorNames = Array.from(new Set(annotatorNames));
 
-                      if (labels.objects && labels.objects.length > 0) {
-                        return labels.objects.map((obj, objIdx) => {
-                          const imageSrc = getFullImageUrl(item.dataItem?.path, '', item.dataItem?.filename);
-                          const labelSet = normalizeLabelSet(detailDataset?.projectId?.labelSet || []);
-
-                          return (
-                            <Grid item xs={6} sm={4} md={3} key={idx + '-' + objIdx}>
-                              <Box sx={{ textAlign: 'center' }}>
-                                <Box
-                                  sx={{
-                                    position: 'relative',
-                                    width: '100%',
-                                    paddingTop: '100%',
-                                    overflow: 'hidden',
-                                    borderRadius: 2,
-                                    border: '2px solid #22c55e',
-                                    bgcolor: '#0f172a',
-                                  }}
-                                >
-                                  {imageSrc ? (
-                                    <Box
-                                      sx={{
-                                        position: 'absolute',
-                                        inset: 0,
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        p: 1,
-                                      }}
-                                    >
-                                      <ImageViewer
-                                        imageUrl={imageSrc}
-                                        annotations={[{ bbox: obj.bbox, label: obj.label }]}
-                                        labelSet={labelSet}
-                                        readOnly
-                                        maxHeight="100%"
-                                      />
-                                    </Box>
-                                  ) : (
-                                    <Box
-                                      sx={{
-                                        position: 'absolute',
-                                        top: 0,
-                                        left: 0,
-                                        width: '100%',
-                                        height: '100%',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        color: '#64748b',
-                                        fontSize: 12,
-                                      }}
-                                    >
-                                      No image
-                                    </Box>
-                                  )}
-                                </Box>
-                                <Chip
-                                  label={obj.label}
-                                  size="small"
-                                  sx={{ mt: 1, bgcolor: 'rgba(34,197,94,0.2)', color: '#22c55e', fontWeight: 600 }}
-                                />
-                              </Box>
-                            </Grid>
-                          );
-                        });
-                      }
-
-                      if (labels.label) {
-                        const imageSrc = getFullImageUrl(item.dataItem?.path, '', item.dataItem?.filename);
                         return (
-                          <Grid item xs={6} sm={4} md={3} key={idx} sx={{ display: 'flex' }}>
+                          <Grid item xs={6} sm={4} md={3} key={item.id || idx} sx={{ display: 'flex' }}>
                             <Box sx={{ textAlign: 'center', display: 'flex', flexDirection: 'column', height: '100%', width: '100%' }}>
                               <Box
+                                onClick={() => navigate(`/manager/datasets/${detailDataset?._id}/items/${item.id || idx}`, {
+                                  state: {
+                                    item,
+                                    datasetName: detailDataset?.name,
+                                    labelSet: labelSet,
+                                  },
+                                })}
                                 sx={{
                                   position: 'relative',
                                   width: '100%',
                                   paddingTop: '100%',
                                   overflow: 'hidden',
                                   borderRadius: 2,
-                                  border: '2px solid #3b82f6',
+                                  border: '2px solid #22c55e',
                                   bgcolor: '#0f172a',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
+                                  cursor: 'pointer',
                                 }}
                               >
                                 {imageSrc ? (
                                   <Box
+                                    component="img"
+                                    src={imageSrc}
+                                    alt={item.filename || 'Item image'}
                                     sx={{
                                       position: 'absolute',
                                       inset: 0,
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
-                                      p: 1,
+                                      width: '100%',
+                                      height: '100%',
+                                      objectFit: 'cover',
                                     }}
-                                  >
-                                    <ImageViewer
-                                      imageUrl={imageSrc}
-                                      annotations={[]}
-                                      labelSet={normalizeLabelSet(detailDataset?.projectId?.labelSet || [])}
-                                      readOnly
-                                      maxHeight="100%"
-                                    />
-                                  </Box>
+                                  />
                                 ) : (
                                   <Box
                                     sx={{
@@ -744,19 +659,30 @@ const Datasets = () => {
                                   </Box>
                                 )}
                               </Box>
-                              <Chip
-                                label={labels.label}
-                                size="small"
-                                sx={{ mt: 1, bgcolor: 'rgba(59,130,246,0.2)', color: '#60a5fa', fontWeight: 600 }}
-                              />
+                              <Stack direction="row" spacing={1} sx={{ mt: 1, justifyContent: 'center', flexWrap: 'wrap' }}>
+                                {uniqueAnnotatorNames.length === 0 ? (
+                                  <Chip
+                                    label={item.displayLabel || 'No label'}
+                                    size="small"
+                                    sx={{ bgcolor: 'rgba(34,197,94,0.2)', color: '#22c55e', fontWeight: 600 }}
+                                  />
+                                ) : (
+                                  uniqueAnnotatorNames.slice(0, 2).map((name, nameIdx) => (
+                                    <Chip
+                                      key={`${name}-${nameIdx}`}
+                                      label={name}
+                                      size="small"
+                                      sx={{ bgcolor: 'rgba(34,197,94,0.2)', color: '#22c55e', fontWeight: 600 }}
+                                    />
+                                  ))
+                                )}
+                              </Stack>
                             </Box>
                           </Grid>
                         );
-                      }
-
-                      return null;
-                    })}
-                  </Grid>
+                      })}
+                    </Grid>
+                  )}
                 </Box>
               )}
             </Box>
@@ -764,59 +690,7 @@ const Datasets = () => {
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button
-            onClick={() => {
-              setDetailDialogOpen(false);
-              handleClosePreview();
-            }}
-            sx={{ textTransform: 'none', fontWeight: 700, color: '#cbd5e1' }}
-          >
-            Close
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      <Dialog
-        open={previewOpen}
-        onClose={handleClosePreview}
-        maxWidth="lg"
-        fullWidth
-        PaperProps={{ sx: { bgcolor: '#0f172a', color: '#e2e8f0', border: '1px solid #334155' } }}
-      >
-        <DialogTitle sx={{ fontWeight: 700 }}>
-          {previewTitle || 'Preview'}
-        </DialogTitle>
-        <DialogContent dividers sx={{ borderColor: '#334155' }}>
-          <Box
-            sx={{
-              width: '100%',
-              minHeight: { xs: 240, sm: 360 },
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              bgcolor: '#0b1220',
-              borderRadius: 2,
-              border: '1px solid #1f2937',
-              p: 2,
-            }}
-          >
-            {previewSrc ? (
-              <ImageViewer
-                imageUrl={previewSrc}
-                annotations={getPreviewAnnotations(previewItem || detailDataset)}
-                labelSet={normalizeLabelSet((previewItem || detailDataset)?.projectId?.labelSet || [])}
-                readOnly
-                maxHeight="70vh"
-              />
-            ) : (
-              <Typography variant="body2" sx={{ color: '#94a3b8' }}>
-                Khong co anh de xem
-              </Typography>
-            )}
-          </Box>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button
-            onClick={handleClosePreview}
+            onClick={() => setDetailDialogOpen(false)}
             sx={{ textTransform: 'none', fontWeight: 700, color: '#cbd5e1' }}
           >
             Close

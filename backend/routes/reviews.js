@@ -218,6 +218,42 @@ router.get('/overview', auth, authorize('reviewer', 'admin'), async (req, res) =
   }
 });
 
+// Set primary item for dataset (reviewer)
+router.post('/:id/primary', auth, authorize('reviewer', 'admin'), async (req, res) => {
+  try {
+    const task = await Task.findById(req.params.id);
+    if (!task) return res.status(404).json({ message: 'Task not found' });
+
+    if (task.status !== 'approved') {
+      return res.status(400).json({ message: 'Chỉ được chọn ảnh chính cho task đã approved.' });
+    }
+
+    // Clear other primary selections for same raw item in this dataset
+    const primaryMatch = {
+      _id: { $ne: task._id },
+      datasetId: task.datasetId,
+      primaryForItem: true,
+    };
+
+    if (task.dataItem?.path) {
+      primaryMatch['dataItem.path'] = task.dataItem.path;
+    } else if (task.dataItem?.filename) {
+      primaryMatch['dataItem.filename'] = task.dataItem.filename;
+    }
+
+    await Task.updateMany(primaryMatch, { $set: { primaryForItem: false } });
+
+    task.primaryForItem = true;
+    task.primarySelectedBy = req.user._id;
+    task.primarySelectedAt = new Date();
+    await task.save();
+
+    res.json({ message: 'Đã đặt ảnh chính cho item.', taskId: task._id });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
 // Approve task
 router.post('/:id/approve', auth, authorize('reviewer', 'admin'), async (req, res) => {
   try {

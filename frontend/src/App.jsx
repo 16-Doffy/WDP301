@@ -13,6 +13,7 @@ import AnnotatorAuditDetail from './pages/Manager/AnnotatorAuditDetail';
 import CreateProject from './pages/Manager/CreateProject';
 import TeamManagement from './pages/Manager/TeamManagement';
 import Datasets from './pages/Manager/Datasets';
+import DatasetItemDetail from './pages/Manager/DatasetItemDetail';
 
 import AnnotatorDashboard from './pages/Annotator/Dashboard';
 import AnnotatorOverview from './pages/Annotator/Overview';
@@ -200,6 +201,7 @@ function App() {
               <Route path="manager/projects/:projectId/annotator/:annotatorId" element={<AnnotatorAuditDetail />} />
               <Route path="manager/team" element={<TeamManagement />} />
               <Route path="manager/datasets" element={<Datasets />} />
+              <Route path="manager/datasets/:datasetId/items/*" element={<DatasetItemDetail />} />
 
               <Route path="annotator" element={<AnnotatorOverview />} />
               <Route path="annotator/rules" element={<Rules />} />

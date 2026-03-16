@@ -32,11 +32,18 @@ const ReviewerTask = () => {
   const [processingSentences, setProcessingSentences] = useState({});
   const [activeSentenceIdx, setActiveSentenceIdx] = useState(0);
   const [localReviewed, setLocalReviewed] = useState(false);
+  const [primaryQueued, setPrimaryQueued] = useState(false);
+  const [relatedTasks, setRelatedTasks] = useState([]);
+  const [annotatorVisibility, setAnnotatorVisibility] = useState({});
+  const [relatedLoading, setRelatedLoading] = useState(false);
+  const [showAnnotatorLabels, setShowAnnotatorLabels] = useState(false);
+  const [activeAnnotatorId, setActiveAnnotatorId] = useState('');
 
   const searchParams = useMemo(() => new URLSearchParams(location.search), [location.search]);
   const scopedProjectId = searchParams.get('projectId') || '';
   const scopedDatasetId = searchParams.get('datasetId') || '';
   const scopedAnnotatorId = searchParams.get('annotatorId') || '';
+  const scopedAnnotatorIds = searchParams.get('annotatorIds') || '';
 
   useEffect(() => {
     setLocalReviewed(false);
@@ -51,7 +58,8 @@ const ReviewerTask = () => {
     setActiveSentenceIdx(0);
     fetchTask();
     fetchAllTasks();
-  }, [id, scopedProjectId, scopedDatasetId, scopedAnnotatorId]);
+    fetchRelatedTasks();
+  }, [id, scopedProjectId, scopedDatasetId, scopedAnnotatorId, scopedAnnotatorIds]);
 
   // ADD THIS LOG
   useEffect(() => {
@@ -228,6 +236,31 @@ const ReviewerTask = () => {
     return dataItem.filename ? `${baseUrl}/uploads/datasets/${dataItem.filename}` : '';
   };
 
+  const fetchRelatedTasks = async () => {
+    if (!id) return;
+    setRelatedLoading(true);
+    try {
+      const query = new URLSearchParams();
+      if (scopedAnnotatorIds) query.set('annotatorIds', scopedAnnotatorIds);
+      const qs = query.toString();
+      const res = await axios.get(`${API_URL}/api/tasks/${id}/related${qs ? `?${qs}` : ''}`);
+      const tasks = res.data || [];
+      setRelatedTasks(tasks);
+      const visibility = {};
+      tasks.forEach((t) => {
+        const aid = t?.annotatorId?._id || t?.annotatorId;
+        if (aid) visibility[aid] = true;
+      });
+      setAnnotatorVisibility(visibility);
+    } catch (err) {
+      console.error('Error fetching related tasks:', err);
+      setRelatedTasks([]);
+      setAnnotatorVisibility({});
+    } finally {
+      setRelatedLoading(false);
+    }
+  };
+
   const fetchTask = async () => {
     try {
       const response = await axios.get(`${API_URL}/api/tasks/${id}`);
@@ -319,6 +352,7 @@ const ReviewerTask = () => {
   const hasMyDecision = myReviewerEntry && myReviewerEntry.status !== 'pending';
   const isFinalized = task?.status === 'approved' || task?.status === 'rejected';
   const isReviewed = localReviewed || isFinalized || hasMyDecision;
+  const isMyApproved = myReviewerEntry?.status === 'approved' || task?.status === 'approved';
 
   // pendingTasks from /api/reviews/all is already scoped to current reviewer queue.
   const actionablePendingTasks = pendingTasks || [];
@@ -355,6 +389,15 @@ const ReviewerTask = () => {
       return;
     }
 
+    if (activeAnnotatorCount > 1) {
+      alert('Bạn chỉ có thể Approve/Reject khi đang chọn đúng 1 annotator.');
+      return;
+    }
+
+    const targetTaskId = activeAnnotatorId
+      ? (relatedTasks.find((t) => (t?.annotatorId?._id || t?.annotatorId)?.toString?.() === activeAnnotatorId.toString?.())?._id || id)
+      : id;
+
     if (!window.confirm('Bạn có chắc muốn phê duyệt task này?')) return;
 
     setProcessing(true);
@@ -367,15 +410,25 @@ const ReviewerTask = () => {
         }))
         : [];
 
-      const response = await axios.post(`${API_URL}/api/reviews/${id}/approve`, {
+      const response = await axios.post(`${API_URL}/api/reviews/${targetTaskId}/approve`, {
         reviewComments: reviewComments.trim() || undefined,
         reviewNotes: payloadNotes,
       }, { timeout: 15000 });
 
       if (response.status === 200 || response.status === 201) {
+        if (primaryQueued && targetTaskId === id) {
+          try {
+            await axios.post(`${API_URL}/api/reviews/${id}/primary`);
+          } catch (err) {
+            console.error('Error setting primary after approve:', err);
+            alert('Approve thành công nhưng không thể đặt ảnh chính. Vui lòng thử lại.');
+          }
+        }
         setLocalReviewed(true);
+        setPrimaryQueued(false);
         alert('Đã phê duyệt task thành công!');
         await fetchAllTasks();
+        await fetchRelatedTasks();
         if (autoNext) {
           goToNextPendingTask();
         } else {
@@ -388,6 +441,7 @@ const ReviewerTask = () => {
       if (alreadyReviewed) {
         setLocalReviewed(true);
         await fetchAllTasks();
+        await fetchRelatedTasks();
         if (autoNext) {
           goToNextPendingTask();
         } else {
@@ -401,11 +455,16 @@ const ReviewerTask = () => {
     } finally {
       setProcessing(false);
     }
-  }, [id, reviewComments, reviewNotes, isReviewed, autoNext, fetchAllTasks, fetchTask, goToNextPendingTask, processing]);
+  }, [id, reviewComments, reviewNotes, isReviewed, autoNext, fetchAllTasks, fetchTask, fetchRelatedTasks, goToNextPendingTask, processing, primaryQueued, activeAnnotatorId, relatedTasks]);
 
   const handleReject = useCallback(async () => {
     if (processing || isReviewed || task?.status === 'approved' || task?.status === 'rejected') {
       alert('Task này đã được đánh giá rồi. Mỗi task chỉ có thể được đánh giá 1 lần.');
+      return;
+    }
+
+    if (activeAnnotatorCount > 1) {
+      alert('Bạn chỉ có thể Approve/Reject khi đang chọn đúng 1 annotator.');
       return;
     }
 
@@ -418,6 +477,10 @@ const ReviewerTask = () => {
       alert('Reject bắt buộc có comment tổng quan.');
       return;
     }
+
+    const targetTaskId = activeAnnotatorId
+      ? (relatedTasks.find((t) => (t?.annotatorId?._id || t?.annotatorId)?.toString?.() === activeAnnotatorId.toString?.())?._id || id)
+      : id;
 
     if (window.confirm('Bạn có chắc muốn từ chối task này? Annotator sẽ nhận được phản hồi và cần chỉnh sửa lại. Lưu ý: Mỗi task chỉ có thể được đánh giá 1 lần.')) {
       setProcessing(true);
@@ -448,12 +511,12 @@ const ReviewerTask = () => {
               ? 'poor_quality'
               : 'does_not_follow_guidelines';
 
-        await axios.post(`${API_URL}/api/reviews/${id}/reject`, {
+        await axios.post(`${API_URL}/api/reviews/${targetTaskId}/reject`, {
           reviewComments: reviewComments.trim(),
           errorCategory: backendErrorCategory,
           reviewNotes: payloadNotes,
           review: {
-            taskId: id,
+            taskId: targetTaskId,
             datasetType,
             status: 'rejected',
             issues,
@@ -463,6 +526,7 @@ const ReviewerTask = () => {
         setLocalReviewed(true);
         alert('Đã từ chối task thành công!');
         await fetchAllTasks();
+        await fetchRelatedTasks();
         if (autoNext) {
           goToNextPendingTask();
         } else {
@@ -474,6 +538,7 @@ const ReviewerTask = () => {
         if (alreadyReviewed) {
           setLocalReviewed(true);
           await fetchAllTasks();
+          await fetchRelatedTasks();
           if (autoNext) {
             goToNextPendingTask();
           } else {
@@ -488,10 +553,34 @@ const ReviewerTask = () => {
         setProcessing(false);
       }
     }
-  }, [id, task, reviewComments, reviewNotes, selectedIssues, issueOptions, issueTargets, issueComments, datasetType, autoNext, fetchAllTasks, fetchTask, goToNextPendingTask, processing, isReviewed]);
+  }, [id, task, reviewComments, reviewNotes, selectedIssues, issueOptions, issueTargets, issueComments, datasetType, autoNext, fetchAllTasks, fetchTask, fetchRelatedTasks, goToNextPendingTask, processing, isReviewed, activeAnnotatorId, relatedTasks]);
 
   const handleSkip = () => {
     goToNextPendingTask();
+  };
+
+  const handleSetPrimary = async () => {
+    if (processing) return;
+
+    if (!isMyApproved) {
+      const confirmQueue = window.confirm('Bạn muốn đánh dấu ảnh này làm ảnh chính và sẽ áp dụng khi Approve Task?');
+      if (!confirmQueue) return;
+      setPrimaryQueued(prev => !prev);
+      return;
+    }
+
+    if (!window.confirm('Đặt ảnh/nhãn của annotator này làm ảnh chính cho item?')) return;
+
+    setProcessing(true);
+    try {
+      await axios.post(`${API_URL}/api/reviews/${id}/primary`);
+      alert('Đã đặt ảnh chính. Manager sẽ thấy ngay trong dataset.');
+    } catch (error) {
+      const msg = error.response?.data?.message || error.message || 'Lỗi khi đặt ảnh chính';
+      alert(msg);
+    } finally {
+      setProcessing(false);
+    }
   };
 
 
@@ -530,6 +619,39 @@ const ReviewerTask = () => {
     const sumConfidence = objectsWithConfidence.reduce((sum, obj) => sum + (obj.confidence || 0), 0);
     return (sumConfidence / objectsWithConfidence.length) * 100;
   };
+
+  const visibleRelatedTasks = useMemo(() => {
+    if (!relatedTasks || relatedTasks.length === 0) return [];
+    return relatedTasks.filter((t) => {
+      const aid = t?.annotatorId?._id || t?.annotatorId;
+      return aid ? annotatorVisibility[aid] !== false : true;
+    });
+  }, [relatedTasks, annotatorVisibility]);
+
+  const combinedAnnotations = useMemo(() => {
+    if (visibleRelatedTasks.length === 0) return [];
+    return visibleRelatedTasks.flatMap((t, tIdx) => {
+      const aid = t?.annotatorId?._id || t?.annotatorId || `ann_${tIdx}`;
+      const labelSet = t?.projectId?.labelSet || [];
+      const color = labelSet.find((l) => l?.name)?.color;
+      return (t?.labels?.objects || []).map((obj, idx) => ({
+        id: `${aid}_${idx}`,
+        bbox: obj.bbox,
+        label: `${obj.label || 'Unknown'} • ${t?.annotatorId?.fullName || t?.annotatorId?.username || 'Annotator'}`,
+        annotatorId: aid,
+        color,
+      }));
+    });
+  }, [visibleRelatedTasks]);
+
+  const activeAnnotatorCount = useMemo(() => {
+    if (!relatedTasks || relatedTasks.length === 0) return 1;
+    return relatedTasks.reduce((count, t) => {
+      const aid = t?.annotatorId?._id || t?.annotatorId;
+      if (!aid) return count;
+      return annotatorVisibility[aid] !== false ? count + 1 : count;
+    }, 0);
+  }, [relatedTasks, annotatorVisibility]);
 
   // Calculate accuracy and rejection rates from all reviewed tasks
   const calculateReviewStats = () => {
@@ -759,93 +881,12 @@ const ReviewerTask = () => {
             </div>
 
             <div className="grid grid-cols-12 gap-4">
-              {/* Review Queue - Made smaller */}
-              <div className={`col-span-3 ${darkMode ? 'bg-[#1e293b] border-slate-700' : 'bg-[#1e293b] border-slate-700'} rounded-2xl border p-4 shadow-2xl`}>
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                    REVIEW QUEUE
-                  </h3>
-                  <span className={`px-3 py-1 rounded-full text-xs font-semibold ${darkMode ? 'bg-emerald-900/50 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}>
-                    {actionablePendingTasks.length} ACTIONABLE
-                  </span>
-                </div>
-                <div className="space-y-3">
-                  {actionablePendingTasks.length === 0 ? (
-                    <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                      Không có task nào bạn có thể chấm lúc này.
-                    </div>
-                  ) : (
-                    actionablePendingTasks.map((pendingTask) => {
-                      const isActive = pendingTask._id === id;
-                      const timeAgo = pendingTask.submittedAt ? getTimeAgo(new Date(pendingTask.submittedAt)) : '';
-                      return (
-                        <button
-                          key={pendingTask._id}
-                          onClick={() => {
-                            const scopeQuery = new URLSearchParams();
-                            if (scopedProjectId) scopeQuery.set('projectId', scopedProjectId);
-                            if (scopedDatasetId) scopeQuery.set('datasetId', scopedDatasetId);
-                            if (scopedAnnotatorId) scopeQuery.set('annotatorId', scopedAnnotatorId);
-                            const query = scopeQuery.toString();
-                            navigate(`/reviewer/tasks/${pendingTask._id}${query ? `?${query}` : ''}`);
-                          }}
-                          className={`w-full text-left rounded-xl p-3 transition-all duration-200 ${isActive
-                            ? darkMode
-                              ? 'bg-emerald-600/30 border-2 border-emerald-400'
-                              : 'bg-emerald-100 border-2 border-emerald-400'
-                            : darkMode
-                              ? 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
-                              : 'bg-white/40 border border-gray-300/50 hover:bg-white/60'
-                            }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            {pendingTask.dataItem?.mimeType?.startsWith('image/') && (
-                              <div className="w-20 h-14 rounded-lg overflow-hidden bg-gray-200 flex-shrink-0">
-                                <img
-                                  src={buildFileUrl(pendingTask.dataItem)}
-                                  alt="Task thumbnail"
-                                  className="w-full h-full object-cover"
-                                  onError={(e) => { e.target.style.display = 'none'; }}
-                                />
-                              </div>
-                            )}
-                            <div className="min-w-0">
-                              <div className={`text-xs font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                                TSK-{pendingTask._id?.substring(0, 8).toUpperCase()}
-                              </div>
-                              <div className={`text-xs truncate ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                                {pendingTask.projectId?.name || 'Project'}
-                              </div>
-                              {timeAgo && (
-                                <div className={`text-xs mt-1 ${darkMode ? 'text-gray-500' : 'text-gray-500'}`}>
-                                  {timeAgo}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </button>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-
               {/* Annotator Output - Made bigger */}
-              <div className={`col-span-6 ${darkMode ? 'bg-gray-800/80 border-gray-700' : 'bg-white/60 backdrop-blur-lg border-gray-200/50'} rounded-2xl border p-6 shadow-xl`}>
+              <div className={`col-span-9 ${darkMode ? 'bg-gray-800/80 border-gray-700' : 'bg-white/60 backdrop-blur-lg border-gray-200/50'} rounded-2xl border p-6 shadow-xl`}>
                 <h3 className={`font-bold mb-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                   ANNOTATOR OUTPUT
                 </h3>
 
-                {datasetType !== 'text' && (
-                  <div className={`mb-4 rounded-xl border p-3 ${darkMode ? 'border-gray-700 bg-gray-900/50' : 'border-gray-200 bg-gray-50'}`}>
-                    <div className={`mb-2 text-xs font-semibold uppercase tracking-wider ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                      Chi tiết kết quả gán nhãn của annotator
-                    </div>
-                    <div className={`max-h-56 overflow-auto rounded-lg p-2 text-xs ${darkMode ? 'bg-gray-950 text-gray-200' : 'bg-white text-gray-700'}`}>
-                      <pre className="whitespace-pre-wrap break-words">{JSON.stringify(task?.labels || {}, null, 2)}</pre>
-                    </div>
-                  </div>
-                )}
 
                 {task?.dataItem?.mimeType?.startsWith('image/') ? (
                   <>
@@ -857,14 +898,16 @@ const ReviewerTask = () => {
                       }`}>
                       <ImageViewer
                         imageUrl={buildFileUrl(task.dataItem)}
-                        annotations={task?.labels?.objects?.map((obj, idx) => ({
-                          id: idx,
-                          bbox: obj.bbox,
-                          label: obj.label,
-                          index: idx,
-                        })) || []}
+                        annotations={(showAnnotatorLabels
+                          ? (combinedAnnotations.length > 0 ? combinedAnnotations : (task?.labels?.objects?.map((obj, idx) => ({
+                            id: idx,
+                            bbox: obj.bbox,
+                            label: obj.label,
+                            index: idx,
+                          })) || []))
+                          : [])}
                         labelSet={task?.projectId?.labelSet || []}
-                        reviewNotes={reviewNotes}
+                        reviewNotes={showAnnotatorLabels ? reviewNotes : []}
                         readOnly={false}
                         highlightedIndex={hoveredObjectIndex}
                         maxHeight="400px"
@@ -876,6 +919,48 @@ const ReviewerTask = () => {
                           }
                         }}
                       />
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3 text-sm mb-2">
+                      <button
+                        onClick={() => setShowAnnotatorLabels((prev) => !prev)}
+                        className={`px-3 py-1 rounded-full text-xs font-semibold border ${showAnnotatorLabels
+                          ? 'bg-blue-600/20 border-blue-500/40 text-blue-200'
+                          : 'bg-slate-800 border-slate-700 text-slate-300'
+                          }`}
+                      >
+                        {showAnnotatorLabels ? 'Ẩn nhãn annotator' : 'Hiện nhãn annotator'}
+                      </button>
+                      {showAnnotatorLabels && relatedTasks.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-2">
+                          {relatedTasks.map((t) => {
+                            const aid = t?.annotatorId?._id || t?.annotatorId;
+                            const name = t?.annotatorId?.fullName || t?.annotatorId?.username || 'Annotator';
+                            const isOn = annotatorVisibility[aid] !== false;
+                            const isActive = activeAnnotatorId === aid;
+                            const isPrimary = Boolean(t?.primaryForItem);
+                            return (
+                              <button
+                                key={aid}
+                                onClick={() => {
+                                  setAnnotatorVisibility((prev) => ({ ...prev, [aid]: !isOn }));
+                                  setActiveAnnotatorId(aid);
+                                }}
+                                className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${isOn
+                                  ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-200'
+                                  : 'bg-slate-800 border-slate-700 text-slate-300'
+                                  } ${isActive ? 'ring-1 ring-amber-400' : ''} ${isPrimary ? 'ring-2 ring-amber-400 shadow-[0_0_0_1px_rgba(245,158,11,0.6)]' : ''}`}
+                              >
+                                {isOn ? 'Ẩn' : 'Hiện'} {name}
+                                {isPrimary && (
+                                  <span className="ml-2 inline-flex items-center rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-200">
+                                    PRIMARY
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-4 text-sm">
                       <span
@@ -1324,6 +1409,77 @@ const ReviewerTask = () => {
               </div>
             </div>
           </div>
+
+          <div className={`mt-4 ${darkMode ? 'bg-[#1e293b] border-slate-700' : 'bg-[#1e293b] border-slate-700'} rounded-2xl border p-4 shadow-2xl`}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                REVIEW QUEUE
+              </h3>
+              <span className={`px-3 py-1 rounded-full text-xs font-semibold ${darkMode ? 'bg-emerald-900/50 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}>
+                {actionablePendingTasks.length} ACTIONABLE
+              </span>
+            </div>
+            <div className="space-y-3">
+              {actionablePendingTasks.length === 0 ? (
+                <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                  Không có task nào bạn có thể chấm lúc này.
+                </div>
+              ) : (
+                actionablePendingTasks.slice(0, 3).map((pendingTask) => {
+                  const isActive = pendingTask._id === id;
+                  const timeAgo = pendingTask.submittedAt ? getTimeAgo(new Date(pendingTask.submittedAt)) : '';
+                  return (
+                    <button
+                      key={pendingTask._id}
+                      onClick={() => {
+                        const scopeQuery = new URLSearchParams();
+                        if (scopedProjectId) scopeQuery.set('projectId', scopedProjectId);
+                        if (scopedDatasetId) scopeQuery.set('datasetId', scopedDatasetId);
+                        if (scopedAnnotatorId) scopeQuery.set('annotatorId', scopedAnnotatorId);
+                        if (scopedAnnotatorIds) scopeQuery.set('annotatorIds', scopedAnnotatorIds);
+                        const query = scopeQuery.toString();
+                        navigate(`/reviewer/tasks/${pendingTask._id}${query ? `?${query}` : ''}`);
+                      }}
+                      className={`w-full text-left rounded-xl p-3 transition-all duration-200 ${isActive
+                        ? darkMode
+                          ? 'bg-emerald-600/30 border-2 border-emerald-400'
+                          : 'bg-emerald-100 border-2 border-emerald-400'
+                        : darkMode
+                          ? 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
+                          : 'bg-white/40 border border-gray-300/50 hover:bg-white/60'
+                        }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        {pendingTask.dataItem?.mimeType?.startsWith('image/') && (
+                          <div className="w-20 h-14 rounded-lg overflow-hidden bg-gray-200 flex-shrink-0">
+                            <img
+                              src={buildFileUrl(pendingTask.dataItem)}
+                              alt="Task thumbnail"
+                              className="w-full h-full object-cover"
+                              onError={(e) => { e.target.style.display = 'none'; }}
+                            />
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <div className={`text-xs font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                            TSK-{pendingTask._id?.substring(0, 8).toUpperCase()}
+                          </div>
+                          <div className={`text-xs truncate ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                            {pendingTask.projectId?.name || 'Project'}
+                          </div>
+                          {timeAgo && (
+                            <div className={`text-xs mt-1 ${darkMode ? 'text-gray-500' : 'text-gray-500'}`}>
+                              {timeAgo}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Right Sidebar - Made smaller */}
@@ -1474,17 +1630,28 @@ const ReviewerTask = () => {
           </button>
           <button
             onClick={handleReject}
-            disabled={processing || !reviewComments.trim() || selectedIssues.length === 0 || isReviewed}
+            disabled={processing || !reviewComments.trim() || selectedIssues.length === 0 || isReviewed || activeAnnotatorCount > 1}
             className="px-8 py-3 bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-xl font-bold shadow-lg shadow-red-500/50 transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-            title={isReviewed ? 'Task này đã được đánh giá rồi' : (selectedIssues.length === 0 ? 'Chọn ít nhất 1 lỗi trước khi reject' : (!reviewComments.trim() ? 'Vui lòng nhập nhận xét trước khi từ chối' : ''))}
+            title={isReviewed ? 'Task này đã được đánh giá rồi' : (activeAnnotatorCount > 1 ? 'Chỉ được phép khi chọn đúng 1 annotator' : (selectedIssues.length === 0 ? 'Chọn ít nhất 1 lỗi trước khi reject' : (!reviewComments.trim() ? 'Vui lòng nhập nhận xét trước khi từ chối' : '')))}
           >
             <span className="mr-2">✕</span> Reject
           </button>
           <button
+            onClick={handleSetPrimary}
+            disabled={processing}
+            className={`px-6 py-3 rounded-xl font-bold shadow-lg transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 ${primaryQueued && !isMyApproved
+              ? 'bg-gradient-to-r from-amber-500 to-orange-500 shadow-orange-500/40'
+              : 'bg-gradient-to-r from-indigo-500 to-blue-600 shadow-indigo-500/40'
+              } text-white`}
+            title={!isMyApproved ? 'Chọn trước, sẽ áp dụng khi Approve Task' : ''}
+          >
+            {primaryQueued && !isMyApproved ? 'Đã chọn ảnh chính' : 'Đặt ảnh chính'}
+          </button>
+          <button
             onClick={handleApprove}
-            disabled={processing || isReviewed}
+            disabled={processing || isReviewed || activeAnnotatorCount > 1}
             className="px-8 py-3 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl font-bold shadow-lg shadow-emerald-500/50 transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-            title={isReviewed ? 'Task này đã được đánh giá rồi' : ''}
+            title={isReviewed ? 'Task này đã được đánh giá rồi' : (activeAnnotatorCount > 1 ? 'Chỉ được phép khi chọn đúng 1 annotator' : '')}
           >
             <span className="mr-2">✓</span> Approve Task
           </button>

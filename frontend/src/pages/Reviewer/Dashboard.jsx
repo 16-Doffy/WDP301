@@ -21,6 +21,9 @@ const ReviewerDashboard = () => {
   const [projectReviewInfo, setProjectReviewInfo] = useState(null);
   const [decisionComment, setDecisionComment] = useState('');
   const [decisionLoading, setDecisionLoading] = useState(false);
+  const [reviewedTasks, setReviewedTasks] = useState([]);
+  const [selectedReviewedAnnotatorId, setSelectedReviewedAnnotatorId] = useState('');
+  const [selectedAnnotatorIds, setSelectedAnnotatorIds] = useState([]);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -32,9 +35,12 @@ const ReviewerDashboard = () => {
       setLoading(true);
       const response = await axios.get(`${API_URL}/api/reviews/overview`);
       setAllTasks(response.data.tasks || []);
+      const reviewedRes = await axios.get(`${API_URL}/api/reviews/reviewed`);
+      setReviewedTasks(reviewedRes.data || []);
     } catch (error) {
       console.error('Error fetching reviewer overview:', error);
       setAllTasks([]);
+      setReviewedTasks([]);
     } finally {
       setLoading(false);
     }
@@ -132,6 +138,31 @@ const ReviewerDashboard = () => {
   const selectedBatch = useMemo(() => {
     return groupedBatches.find((g) => g.key === selectedBatchKey) || groupedBatches[0] || null;
   }, [groupedBatches, selectedBatchKey]);
+
+  useEffect(() => {
+    if (!selectedBatch?.annotatorRows) return;
+    setSelectedAnnotatorIds([]);
+  }, [selectedBatch?.key]);
+
+  const filteredReviewedTasks = useMemo(() => {
+    if (!selectedBatch?.projectId || !selectedBatch?.datasetId) return [];
+    return reviewedTasks.filter((task) => {
+      const projId = task.projectId?._id || task.projectId;
+      const dsId = task.datasetId?._id || task.datasetId;
+      const annId = task.annotatorId?._id || task.annotatorId;
+      const matchesBatch = projId?.toString?.() === selectedBatch.projectId?.toString?.() &&
+        dsId?.toString?.() === selectedBatch.datasetId?.toString?.();
+      const matchesAnnotator = selectedReviewedAnnotatorId
+        ? annId?.toString?.() === selectedReviewedAnnotatorId.toString()
+        : true;
+      return matchesBatch && matchesAnnotator;
+    });
+  }, [reviewedTasks, selectedBatch?.projectId, selectedBatch?.datasetId, selectedReviewedAnnotatorId]);
+
+  const selectedPendingAnnotators = useMemo(() => {
+    if (!selectedBatch?.annotatorRows) return [];
+    return selectedBatch.annotatorRows.filter((ann) => selectedAnnotatorIds.includes(ann.annotatorId));
+  }, [selectedBatch?.annotatorRows, selectedAnnotatorIds]);
 
   useEffect(() => {
     const fetchProjectReview = async () => {
@@ -325,50 +356,147 @@ const ReviewerDashboard = () => {
               {!selectedBatch ? (
                 <p className="text-slate-400">Không có dữ liệu annotator.</p>
               ) : (
-                <div className="space-y-3">
-                  {selectedBatch.annotatorRows.map((ann) => {
-                    const hasSubmission = ann.submittedTasks > 0;
-                    const hasReviewed = ann.reviewedTasks > 0;
-                    const statusText = hasSubmission ? 'ĐANG CHỜ REVIEW' : (hasReviewed ? 'ĐÃ REVIEW XONG' : 'CHƯA NỘP');
-                    const statusClass = hasSubmission
-                      ? 'bg-emerald-500/20 text-emerald-300'
-                      : hasReviewed
-                        ? 'bg-blue-500/20 text-blue-300'
-                        : 'bg-amber-500/20 text-amber-300';
-
-                    return (
-                      <div key={ann.annotatorId} className="rounded-xl border border-slate-700 bg-[#1e293b] p-4">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="font-semibold text-slate-100">{ann.annotatorName}</p>
-                            <p className="text-xs text-slate-400 mt-1">Tổng item: {ann.totalTasks}</p>
-                          </div>
-                          <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${statusClass}`}>
-                            {statusText}
-                          </span>
-                        </div>
-
-                        <div className="mt-3 grid grid-cols-3 gap-3 text-xs">
-                          <div className="rounded-lg border border-slate-700 bg-[#0f172a] p-2 text-slate-300">Chờ review: <b>{ann.submittedTasks}</b></div>
-                          <div className="rounded-lg border border-slate-700 bg-[#0f172a] p-2 text-slate-300">Đã review: <b>{ann.reviewedTasks}</b></div>
-                          <div className="rounded-lg border border-slate-700 bg-[#0f172a] p-2 text-slate-300">Chưa nộp: <b>{ann.notSubmittedTasks}</b></div>
-                        </div>
-
-                        <div className="mt-3 flex gap-2">
-                          <button
-                            disabled={!hasSubmission || !ann.actionableTaskIds[0]}
-                            onClick={() => {
-                              if (!ann.actionableTaskIds[0]) return;
-                              navigate(`/reviewer/tasks/${ann.actionableTaskIds[0]}?projectId=${selectedBatch.projectId}&datasetId=${selectedBatch.datasetId}&annotatorId=${ann.annotatorId}`);
-                            }}
-                            className="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm disabled:opacity-40"
-                          >
-                            Mở task chờ review
-                          </button>
-                        </div>
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-slate-700 bg-[#1e293b] p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-sm font-semibold text-slate-100">Task chờ review</h3>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            const selectable = selectedBatch.annotatorRows.map((a) => a.annotatorId);
+                            setSelectedAnnotatorIds(selectable);
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-xs"
+                        >
+                          Chọn tất cả
+                        </button>
+                        <button
+                          onClick={() => setSelectedAnnotatorIds([])}
+                          className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-xs"
+                        >
+                          Bỏ chọn
+                        </button>
+                        <button
+                          disabled={selectedAnnotatorIds.length === 0}
+                          onClick={() => {
+                            const chosen = selectedPendingAnnotators
+                              .find((ann) => ann.actionableTaskIds[0])
+                              ?.actionableTaskIds?.[0];
+                            if (!chosen) {
+                              alert('Không có task chờ review trong nhóm đã chọn.');
+                              return;
+                            }
+                            const annotatorQuery = selectedAnnotatorIds.join(',');
+                            navigate(`/reviewer/tasks/${chosen}?projectId=${selectedBatch.projectId}&datasetId=${selectedBatch.datasetId}&annotatorIds=${annotatorQuery}`);
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs disabled:opacity-40"
+                        >
+                          Mở task chờ review tổng
+                        </button>
                       </div>
-                    );
-                  })}
+                    </div>
+                    <div className="space-y-3">
+                      {selectedBatch.annotatorRows.map((ann) => {
+                        const hasSubmission = ann.submittedTasks > 0;
+                        const hasReviewed = ann.reviewedTasks > 0;
+                        const statusText = hasSubmission ? 'ĐANG CHỜ REVIEW' : (hasReviewed ? 'ĐÃ REVIEW XONG' : 'CHƯA NỘP');
+                        const statusClass = hasSubmission
+                          ? 'bg-emerald-500/20 text-emerald-300'
+                          : hasReviewed
+                            ? 'bg-blue-500/20 text-blue-300'
+                            : 'bg-amber-500/20 text-amber-300';
+
+                        const isSelected = selectedAnnotatorIds.includes(ann.annotatorId);
+                        return (
+                          <div key={ann.annotatorId} className="rounded-xl border border-slate-700 bg-[#0f172a] p-4">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-start gap-3">
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={(e) => {
+                                    const checked = e.target.checked;
+                                    setSelectedAnnotatorIds((prev) => (
+                                      checked
+                                        ? [...prev, ann.annotatorId]
+                                        : prev.filter((id) => id !== ann.annotatorId)
+                                    ));
+                                  }}
+                                  className="mt-1 h-4 w-4 rounded border-slate-600 bg-[#0f172a] text-blue-600 focus:ring-blue-500"
+                                />
+                                <div>
+                                  <p className="font-semibold text-slate-100">{ann.annotatorName}</p>
+                                  <p className="text-xs text-slate-400 mt-1">Tổng item: {ann.totalTasks}</p>
+                                </div>
+                              </div>
+                              <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${statusClass}`}>
+                                {statusText}
+                              </span>
+                            </div>
+
+                            <div className="mt-3 grid grid-cols-3 gap-3 text-xs">
+                              <div className="rounded-lg border border-slate-700 bg-[#1e293b] p-2 text-slate-300">Chờ review: <b>{ann.submittedTasks}</b></div>
+                              <div className="rounded-lg border border-slate-700 bg-[#1e293b] p-2 text-slate-300">Đã review: <b>{ann.reviewedTasks}</b></div>
+                              <div className="rounded-lg border border-slate-700 bg-[#1e293b] p-2 text-slate-300">Chưa nộp: <b>{ann.notSubmittedTasks}</b></div>
+                            </div>
+
+                            <div className="mt-3 flex gap-2">
+                              <button
+                                disabled={!hasSubmission || !ann.actionableTaskIds[0]}
+                                onClick={() => {
+                                  if (!ann.actionableTaskIds[0]) return;
+                                  navigate(`/reviewer/tasks/${ann.actionableTaskIds[0]}?projectId=${selectedBatch.projectId}&datasetId=${selectedBatch.datasetId}&annotatorId=${ann.annotatorId}`);
+                                }}
+                                className="flex-1 min-w-[160px] px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm disabled:opacity-40"
+                              >
+                                Mở task chờ review
+                              </button>
+                              <button
+                                onClick={() => setSelectedReviewedAnnotatorId(ann.annotatorId)}
+                                className="flex-1 min-w-[160px] px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm"
+                              >
+                                Xem lại review
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-700 bg-[#1e293b] p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-sm font-semibold text-slate-100">Task đã review (theo project/dataset đang chọn)</h3>
+                    </div>
+
+                    {filteredReviewedTasks.length === 0 ? (
+                      <p className="text-sm text-slate-400">Chưa có task đã review cho batch này.</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {filteredReviewedTasks.slice(0, 20).map((task) => (
+                          <div key={task._id} className="rounded-xl border border-slate-700 bg-[#0f172a] p-3">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="text-sm font-semibold text-slate-100">{task.projectId?.name || 'Project'}</p>
+                                <p className="text-xs text-slate-400 mt-0.5">{task.datasetId?.name || 'Dataset'} • {task.annotatorId?.fullName || task.annotatorId?.username || 'Annotator'}</p>
+                              </div>
+                              <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${task.status === 'approved' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'}`}>
+                                {task.status === 'approved' ? 'APPROVED' : 'REJECTED'}
+                              </span>
+                            </div>
+                            <div className="mt-2 flex gap-2">
+                              <button
+                                onClick={() => navigate(`/reviewer/tasks/${task._id}?projectId=${task.projectId?._id}&datasetId=${task.datasetId?._id}&annotatorId=${task.annotatorId?._id}`)}
+                                className="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-xs"
+                              >
+                                Xem lại
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

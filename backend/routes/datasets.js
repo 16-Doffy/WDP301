@@ -628,7 +628,7 @@ router.get('/:id/items', auth, authorize('manager', 'admin'), async (req, res) =
 
     // Get all tasks for this dataset
     const tasks = await Task.find({ datasetId: dataset._id })
-      .select('status dataItem labels annotatorId reviewedAt')
+      .select('status dataItem labels annotatorId reviewedAt primaryForItem')
       .populate('annotatorId', 'username fullName')
       .populate({
         path: 'datasetId',
@@ -687,7 +687,12 @@ router.get('/:id/items', auth, authorize('manager', 'admin'), async (req, res) =
           labels: task.labels,
           status: task.status,
           reviewedAt: task.reviewedAt,
+          primaryForItem: Boolean(task.primaryForItem),
         });
+      }
+
+      if (task.primaryForItem) {
+        item.primaryAnnotator = task.annotatorId?.fullName || task.annotatorId?.username || 'Unknown';
       }
       
       // Update vote counts
