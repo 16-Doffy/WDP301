@@ -13,6 +13,27 @@ const detectType = (task) => {
 
 const notSubmittedStatuses = ['assigned', 'in_progress', 'completed', 'revised'];
 
+const buildFileUrl = (dataItem) => {
+  if (!dataItem) return '';
+  const baseUrl = API_URL.replace(/\/+$/, '');
+  if (dataItem.imageUrl) {
+    const cleanImageUrl = dataItem.imageUrl.replace(/^\/+/, '');
+    return `${baseUrl}/${cleanImageUrl}`;
+  }
+  const rawPath = dataItem.path || '';
+  const cleanPath = rawPath.replace(/^\/+/, '');
+  if (cleanPath) {
+    if (dataItem.filename && cleanPath.endsWith(dataItem.filename)) {
+      return `${baseUrl}/${cleanPath}`;
+    }
+    return dataItem.filename ? `${baseUrl}/${cleanPath}/${dataItem.filename}` : `${baseUrl}/${cleanPath}`;
+  }
+  return dataItem.filename ? `${baseUrl}/uploads/datasets/${dataItem.filename}` : '';
+};
+
+const PROJECT_APPROVE_THRESHOLD = 0.7;
+const PROJECT_REJECT_THRESHOLD = 0.3;
+
 const ReviewerDashboard = () => {
   const [allTasks, setAllTasks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -24,6 +45,7 @@ const ReviewerDashboard = () => {
   const [reviewedTasks, setReviewedTasks] = useState([]);
   const [selectedReviewedAnnotatorId, setSelectedReviewedAnnotatorId] = useState('');
   const [selectedAnnotatorIds, setSelectedAnnotatorIds] = useState([]);
+  const [expandedReviewedItemId, setExpandedReviewedItemId] = useState('');
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -159,10 +181,87 @@ const ReviewerDashboard = () => {
     });
   }, [reviewedTasks, selectedBatch?.projectId, selectedBatch?.datasetId, selectedReviewedAnnotatorId]);
 
+  const reviewedItems = useMemo(() => {
+    const map = new Map();
+    filteredReviewedTasks.forEach((task) => {
+      const dataItem = task?.dataItem || task?.datasetItemId || task?.itemId || {};
+      const itemId = dataItem?._id
+        || dataItem?.imageUrl
+        || dataItem?.path
+        || dataItem?.filename
+        || task?.datasetItemId?._id
+        || task?.datasetItemId
+        || task?.itemId?._id
+        || task?.itemId
+        || task?.dataItemId
+        || task?._id;
+      if (!itemId) return;
+      const existing = map.get(itemId.toString());
+      if (!existing) {
+        map.set(itemId.toString(), {
+          itemId: itemId.toString(),
+          dataItem,
+          tasks: [task],
+          projectName: task.projectId?.name || 'Project',
+          datasetName: task.datasetId?.name || 'Dataset',
+        });
+      } else {
+        existing.tasks.push(task);
+      }
+    });
+    return Array.from(map.values());
+  }, [filteredReviewedTasks]);
+
   const selectedPendingAnnotators = useMemo(() => {
     if (!selectedBatch?.annotatorRows) return [];
     return selectedBatch.annotatorRows.filter((ann) => selectedAnnotatorIds.includes(ann.annotatorId));
   }, [selectedBatch?.annotatorRows, selectedAnnotatorIds]);
+
+  const projectReviewStats = useMemo(() => {
+    if (!selectedBatch?.projectId || !selectedBatch?.datasetId) {
+      return {
+        totalReviewed: 0,
+        approvedCount: 0,
+        rejectedCount: 0,
+        approvedRate: 0,
+        rejectedRate: 0,
+      };
+    }
+
+    const projectReviewed = reviewedTasks.filter((task) => {
+      const projId = task.projectId?._id || task.projectId;
+      const dsId = task.datasetId?._id || task.datasetId;
+      return projId?.toString?.() === selectedBatch.projectId?.toString?.()
+        && dsId?.toString?.() === selectedBatch.datasetId?.toString?.();
+    });
+
+    const approvedCount = projectReviewed.filter((t) => t.status === 'approved').length;
+    const rejectedCount = projectReviewed.filter((t) => t.status === 'rejected').length;
+    const totalReviewed = projectReviewed.length;
+    const approvedRate = totalReviewed > 0 ? approvedCount / totalReviewed : 0;
+    const rejectedRate = totalReviewed > 0 ? rejectedCount / totalReviewed : 0;
+
+    return {
+      totalReviewed,
+      approvedCount,
+      rejectedCount,
+      approvedRate,
+      rejectedRate,
+    };
+  }, [reviewedTasks, selectedBatch?.projectId, selectedBatch?.datasetId]);
+
+  const projectMajority = useMemo(() => {
+    if (projectReviewStats.totalReviewed === 0) {
+      return { status: 'pending', label: 'Chưa đủ dữ liệu', tone: 'bg-slate-700 text-slate-200' };
+    }
+    if (projectReviewStats.approvedRate >= PROJECT_APPROVE_THRESHOLD) {
+      return { status: 'approved', label: 'Khuyến Nghị: APPROVED', tone: 'bg-emerald-500/20 text-emerald-300' };
+    }
+    if (projectReviewStats.rejectedRate >= PROJECT_REJECT_THRESHOLD) {
+      return { status: 'rejected', label: 'Khuyến Nghị: REJECTED', tone: 'bg-rose-500/20 text-rose-300' };
+    }
+    return { status: 'review', label: 'Cần rà soát thêm', tone: 'bg-amber-500/20 text-amber-300' };
+  }, [projectReviewStats]);
 
   useEffect(() => {
     const fetchProjectReview = async () => {
@@ -185,6 +284,22 @@ const ReviewerDashboard = () => {
 
   const handleProjectDecision = async (status) => {
     if (!selectedBatch?.projectId) return;
+
+    if (projectReviewInfo?.snapshot?.actionableLeft > 0) {
+      alert('Chưa thể chốt project vì vẫn còn task chưa review xong.');
+      return;
+    }
+
+    if (status === 'approved' && projectReviewStats.approvedRate < PROJECT_APPROVE_THRESHOLD) {
+      alert('Chưa đủ tỷ lệ đồng thuận để duyệt project theo số đông.');
+      return;
+    }
+
+    if (status === 'rejected' && projectReviewStats.rejectedRate < PROJECT_REJECT_THRESHOLD) {
+      alert('Chưa đủ tỷ lệ đồng thuận để từ chối project theo số đông.');
+      return;
+    }
+
     try {
       setDecisionLoading(true);
       await axios.post(`${API_URL}/api/projects/${selectedBatch.projectId}/review-decision`, {
@@ -319,9 +434,18 @@ const ReviewerDashboard = () => {
                     </p>
                   )}
 
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className={`px-2 py-1 rounded-full font-semibold ${projectMajority.tone}`}>
+                      {projectMajority.label}
+                    </span>
+                    <span className="text-slate-400">
+                      Approved: {(projectReviewStats.approvedRate * 100).toFixed(1)}% • Rejected: {(projectReviewStats.rejectedRate * 100).toFixed(1)}%
+                    </span>
+                  </div>
+
                   {projectReviewInfo?.review?.status !== 'pending' && (
                     <p className="text-xs text-blue-300">
-                      Project đã được chốt là <b>{projectReviewInfo?.review?.status?.toUpperCase()}</b>. Muốn đổi quyết định, hãy đảm bảo đã rà soát lại toàn bộ task.
+                      Project đã được chốt là <b>{projectReviewInfo?.review?.status?.toUpperCase()}</b>. 
                     </p>
                   )}
 
@@ -330,18 +454,24 @@ const ReviewerDashboard = () => {
                     onChange={(e) => setDecisionComment(e.target.value)}
                     placeholder="Ghi chú quyết định project (tuỳ chọn)"
                     className="w-full min-h-[64px] rounded-lg bg-[#0f172a] border border-slate-700 text-slate-200 px-2 py-1 text-sm"
-                    disabled={decisionLoading || (projectReviewInfo?.snapshot?.actionableLeft > 0)}
+                    disabled={decisionLoading || (projectReviewInfo?.snapshot?.actionableLeft > 0) || projectReviewInfo?.review?.status !== 'pending'}
                   />
                   <div className="flex gap-2">
                     <button
-                      disabled={decisionLoading || (projectReviewInfo?.snapshot?.actionableLeft > 0) || projectReviewInfo?.review?.status === 'approved'}
+                      disabled={decisionLoading
+                        || (projectReviewInfo?.snapshot?.actionableLeft > 0)
+                        || projectReviewInfo?.review?.status === 'approved'
+                        || projectReviewStats.approvedRate < PROJECT_APPROVE_THRESHOLD}
                       onClick={() => handleProjectDecision('approved')}
                       className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm disabled:opacity-40"
                     >
                       Duyệt project
                     </button>
                     <button
-                      disabled={decisionLoading || (projectReviewInfo?.snapshot?.actionableLeft > 0) || projectReviewInfo?.review?.status === 'rejected'}
+                      disabled={decisionLoading
+                        || (projectReviewInfo?.snapshot?.actionableLeft > 0)
+                        || projectReviewInfo?.review?.status === 'rejected'
+                        || projectReviewStats.rejectedRate < PROJECT_REJECT_THRESHOLD}
                       onClick={() => handleProjectDecision('rejected')}
                       className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-sm disabled:opacity-40"
                     >
@@ -469,31 +599,74 @@ const ReviewerDashboard = () => {
                       <h3 className="text-sm font-semibold text-slate-100">Task đã review (theo project/dataset đang chọn)</h3>
                     </div>
 
-                    {filteredReviewedTasks.length === 0 ? (
+                    {reviewedItems.length === 0 ? (
                       <p className="text-sm text-slate-400">Chưa có task đã review cho batch này.</p>
                     ) : (
-                      <div className="space-y-3">
-                        {filteredReviewedTasks.slice(0, 20).map((task) => (
-                          <div key={task._id} className="rounded-xl border border-slate-700 bg-[#0f172a] p-3">
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <p className="text-sm font-semibold text-slate-100">{task.projectId?.name || 'Project'}</p>
-                                <p className="text-xs text-slate-400 mt-0.5">{task.datasetId?.name || 'Dataset'} • {task.annotatorId?.fullName || task.annotatorId?.username || 'Annotator'}</p>
-                              </div>
-                              <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${task.status === 'approved' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'}`}>
-                                {task.status === 'approved' ? 'APPROVED' : 'REJECTED'}
-                              </span>
-                            </div>
-                            <div className="mt-2 flex gap-2">
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                        {reviewedItems.map((item) => {
+                          const thumbUrl = item?.dataItem?.mimeType?.startsWith('image/')
+                            ? buildFileUrl(item.dataItem)
+                            : '';
+                          const isExpanded = expandedReviewedItemId === item.itemId;
+                          return (
+                            <div key={item.itemId} className="rounded-xl border border-slate-700 bg-[#0f172a] p-2">
                               <button
-                                onClick={() => navigate(`/reviewer/tasks/${task._id}?projectId=${task.projectId?._id}&datasetId=${task.datasetId?._id}&annotatorId=${task.annotatorId?._id}`)}
-                                className="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-xs"
+                                type="button"
+                                onClick={() => setExpandedReviewedItemId(isExpanded ? '' : item.itemId)}
+                                className="w-full text-left"
                               >
-                                Xem lại
+                                <div className="w-full aspect-[4/3] rounded-lg overflow-hidden bg-slate-800 border border-slate-700">
+                                  {thumbUrl ? (
+                                    <img
+                                      src={thumbUrl}
+                                      alt="Item thumbnail"
+                                      className="w-full h-full object-cover"
+                                      onError={(e) => { e.target.style.display = 'none'; }}
+                                    />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center text-[10px] text-slate-500">
+                                      No image
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="mt-2 flex items-center justify-between">
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-semibold text-slate-200 truncate">{item.projectName}</p>
+                                    <p className="text-[10px] text-slate-400 truncate">{item.datasetName}</p>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-700 text-slate-200 font-semibold">
+                                      {item.tasks.length} annotator
+                                    </span>
+                                  </div>
+                                </div>
                               </button>
+
+                              {isExpanded && (
+                                <div className="mt-2 space-y-2">
+                                  {item.tasks.map((task) => (
+                                    <div key={task._id} className="rounded-lg border border-slate-700 bg-[#0b1220] p-2">
+                                      <div className="flex items-center justify-between gap-2">
+                                        <div className="min-w-0">
+                                          <p className="text-xs text-slate-300 truncate">{task.annotatorId?.fullName || task.annotatorId?.username || 'Annotator'}</p>
+                                        </div>
+                                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${task.status === 'approved' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'}`}>
+                                          {task.status === 'approved' ? 'APPROVED' : 'REJECTED'}
+                                        </span>
+                                      </div>
+                                      <button
+                                        onClick={() => navigate(`/reviewer/tasks/${task._id}?projectId=${task.projectId?._id}&datasetId=${task.datasetId?._id}&annotatorId=${task.annotatorId?._id}&reviewOnly=1`)}
+                                        className="mt-2 w-full px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-xs"
+                                      >
+                                        Xem chi tiết
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>

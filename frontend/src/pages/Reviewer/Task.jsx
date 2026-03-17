@@ -44,6 +44,7 @@ const ReviewerTask = () => {
   const scopedDatasetId = searchParams.get('datasetId') || '';
   const scopedAnnotatorId = searchParams.get('annotatorId') || '';
   const scopedAnnotatorIds = searchParams.get('annotatorIds') || '';
+  const reviewOnly = searchParams.get('reviewOnly') === '1';
 
   useEffect(() => {
     setLocalReviewed(false);
@@ -56,6 +57,8 @@ const ReviewerTask = () => {
     setSentenceStatus({});
     setProcessingSentences({});
     setActiveSentenceIdx(0);
+    setShowAnnotatorLabels(false);
+    setActiveAnnotatorId('');
     fetchTask();
     fetchAllTasks();
     fetchRelatedTasks();
@@ -225,6 +228,10 @@ const ReviewerTask = () => {
   const buildFileUrl = (dataItem) => {
     if (!dataItem) return '';
     const baseUrl = API_URL.replace(/\/+$/, '');
+    if (dataItem.imageUrl) {
+      const cleanImageUrl = dataItem.imageUrl.replace(/^\/+/, '');
+      return `${baseUrl}/${cleanImageUrl}`;
+    }
     const rawPath = dataItem.path || '';
     const cleanPath = rawPath.replace(/^\/+/, '');
     if (cleanPath) {
@@ -244,7 +251,15 @@ const ReviewerTask = () => {
       if (scopedAnnotatorIds) query.set('annotatorIds', scopedAnnotatorIds);
       const qs = query.toString();
       const res = await axios.get(`${API_URL}/api/tasks/${id}/related${qs ? `?${qs}` : ''}`);
-      const tasks = res.data || [];
+      let tasks = (res.data || []).filter((t) => t?.status === 'submitted');
+
+      if (scopedAnnotatorId) {
+        tasks = tasks.filter((t) => (t?.annotatorId?._id || t?.annotatorId)?.toString?.() === scopedAnnotatorId);
+      } else if (scopedAnnotatorIds) {
+        const allowedIds = scopedAnnotatorIds.split(',').map((val) => val.trim()).filter(Boolean);
+        tasks = tasks.filter((t) => allowedIds.includes((t?.annotatorId?._id || t?.annotatorId)?.toString?.()));
+      }
+
       setRelatedTasks(tasks);
       const visibility = {};
       tasks.forEach((t) => {
@@ -252,6 +267,12 @@ const ReviewerTask = () => {
         if (aid) visibility[aid] = true;
       });
       setAnnotatorVisibility(visibility);
+      if (scopedAnnotatorId) {
+        setActiveAnnotatorId(scopedAnnotatorId);
+      } else if (tasks.length === 1) {
+        const onlyId = tasks[0]?.annotatorId?._id || tasks[0]?.annotatorId || '';
+        setActiveAnnotatorId(onlyId);
+      }
     } catch (err) {
       console.error('Error fetching related tasks:', err);
       setRelatedTasks([]);
@@ -355,7 +376,9 @@ const ReviewerTask = () => {
   const isMyApproved = myReviewerEntry?.status === 'approved' || task?.status === 'approved';
 
   // pendingTasks from /api/reviews/all is already scoped to current reviewer queue.
-  const actionablePendingTasks = pendingTasks || [];
+  const actionablePendingTasks = reviewOnly
+    ? []
+    : (pendingTasks || []).filter((t) => t?.status === 'submitted');
 
   const goToNextPendingTask = useCallback(() => {
     if (!Array.isArray(actionablePendingTasks) || actionablePendingTasks.length === 0) {
@@ -1410,207 +1433,223 @@ const ReviewerTask = () => {
             </div>
           </div>
 
-          <div className={`mt-4 ${darkMode ? 'bg-[#1e293b] border-slate-700' : 'bg-[#1e293b] border-slate-700'} rounded-2xl border p-4 shadow-2xl`}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                REVIEW QUEUE
-              </h3>
-              <span className={`px-3 py-1 rounded-full text-xs font-semibold ${darkMode ? 'bg-emerald-900/50 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}>
-                {actionablePendingTasks.length} ACTIONABLE
-              </span>
-            </div>
-            <div className="space-y-3">
-              {actionablePendingTasks.length === 0 ? (
-                <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                  Không có task nào bạn có thể chấm lúc này.
-                </div>
-              ) : (
-                actionablePendingTasks.slice(0, 3).map((pendingTask) => {
-                  const isActive = pendingTask._id === id;
-                  const timeAgo = pendingTask.submittedAt ? getTimeAgo(new Date(pendingTask.submittedAt)) : '';
-                  return (
-                    <button
-                      key={pendingTask._id}
-                      onClick={() => {
-                        const scopeQuery = new URLSearchParams();
-                        if (scopedProjectId) scopeQuery.set('projectId', scopedProjectId);
-                        if (scopedDatasetId) scopeQuery.set('datasetId', scopedDatasetId);
-                        if (scopedAnnotatorId) scopeQuery.set('annotatorId', scopedAnnotatorId);
-                        if (scopedAnnotatorIds) scopeQuery.set('annotatorIds', scopedAnnotatorIds);
-                        const query = scopeQuery.toString();
-                        navigate(`/reviewer/tasks/${pendingTask._id}${query ? `?${query}` : ''}`);
-                      }}
-                      className={`w-full text-left rounded-xl p-3 transition-all duration-200 ${isActive
-                        ? darkMode
-                          ? 'bg-emerald-600/30 border-2 border-emerald-400'
-                          : 'bg-emerald-100 border-2 border-emerald-400'
-                        : darkMode
-                          ? 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
-                          : 'bg-white/40 border border-gray-300/50 hover:bg-white/60'
-                        }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        {pendingTask.dataItem?.mimeType?.startsWith('image/') && (
-                          <div className="w-20 h-14 rounded-lg overflow-hidden bg-gray-200 flex-shrink-0">
-                            <img
-                              src={buildFileUrl(pendingTask.dataItem)}
-                              alt="Task thumbnail"
-                              className="w-full h-full object-cover"
-                              onError={(e) => { e.target.style.display = 'none'; }}
-                            />
-                          </div>
-                        )}
-                        <div className="min-w-0">
-                          <div className={`text-xs font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                            TSK-{pendingTask._id?.substring(0, 8).toUpperCase()}
-                          </div>
-                          <div className={`text-xs truncate ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                            {pendingTask.projectId?.name || 'Project'}
-                          </div>
-                          {timeAgo && (
-                            <div className={`text-xs mt-1 ${darkMode ? 'text-gray-500' : 'text-gray-500'}`}>
-                              {timeAgo}
+          {!reviewOnly && (
+            <div className={`mt-4 ${darkMode ? 'bg-[#1e293b] border-slate-700' : 'bg-[#1e293b] border-slate-700'} rounded-2xl border p-4 shadow-2xl`}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                  REVIEW QUEUE
+                </h3>
+                <span className={`px-3 py-1 rounded-full text-xs font-semibold ${darkMode ? 'bg-emerald-900/50 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}>
+                  {actionablePendingTasks.length} ACTIONABLE
+                </span>
+              </div>
+              <div className="space-y-3">
+                {actionablePendingTasks.length === 0 ? (
+                  <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                    Không có task nào bạn có thể chấm lúc này.
+                  </div>
+                ) : (
+                  actionablePendingTasks.slice(0, 3).map((pendingTask) => {
+                    const isActive = pendingTask._id === id;
+                    const timeAgo = pendingTask.submittedAt ? getTimeAgo(new Date(pendingTask.submittedAt)) : '';
+                    return (
+                      <button
+                        key={pendingTask._id}
+                        onClick={() => {
+                          const scopeQuery = new URLSearchParams();
+                          if (scopedProjectId) scopeQuery.set('projectId', scopedProjectId);
+                          if (scopedDatasetId) scopeQuery.set('datasetId', scopedDatasetId);
+                          if (scopedAnnotatorId) scopeQuery.set('annotatorId', scopedAnnotatorId);
+                          if (scopedAnnotatorIds) scopeQuery.set('annotatorIds', scopedAnnotatorIds);
+                          const query = scopeQuery.toString();
+                          navigate(`/reviewer/tasks/${pendingTask._id}${query ? `?${query}` : ''}`);
+                        }}
+                        className={`w-full text-left rounded-xl p-3 transition-all duration-200 ${isActive
+                          ? darkMode
+                            ? 'bg-emerald-600/30 border-2 border-emerald-400'
+                            : 'bg-emerald-100 border-2 border-emerald-400'
+                          : darkMode
+                            ? 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
+                            : 'bg-white/40 border border-gray-300/50 hover:bg-white/60'
+                          }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          {pendingTask.dataItem?.mimeType?.startsWith('image/') && (
+                            <div className="w-20 h-14 rounded-lg overflow-hidden bg-gray-200 flex-shrink-0">
+                              {(() => {
+                                const thumbUrl = buildFileUrl(pendingTask.dataItem);
+                                if (!thumbUrl) {
+                                  return (
+                                    <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-500">
+                                      No image
+                                    </div>
+                                  );
+                                }
+                                return (
+                                  <img
+                                    src={thumbUrl}
+                                    alt="Task thumbnail"
+                                    className="w-full h-full object-cover"
+                                    onError={(e) => { e.target.style.display = 'none'; }}
+                                  />
+                                );
+                              })()}
                             </div>
                           )}
+                          <div className="min-w-0">
+                            <div className={`text-xs font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                              TSK-{pendingTask._id?.substring(0, 8).toUpperCase()}
+                            </div>
+                            <div className={`text-xs truncate ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                              {pendingTask.projectId?.name || 'Project'}
+                            </div>
+                            {timeAgo && (
+                              <div className={`text-xs mt-1 ${darkMode ? 'text-gray-500' : 'text-gray-500'}`}>
+                                {timeAgo}
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    </button>
-                  );
-                })
-              )}
+                      </button>
+                    );
+                  })
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Right Sidebar - Made smaller */}
-        <div className={`w-72 ${darkMode ? 'bg-[#1e293b] border-slate-700' : 'bg-[#1e293b] border-slate-700'} border-l overflow-y-auto`}>
-          <div className="p-6 space-y-6">
-            <div>
-              <h3 className="text-xl font-semibold text-white mb-3">Review Overview</h3>
-              <div className="rounded-xl border border-slate-700 bg-[#0f172a] p-4 text-sm text-slate-300 space-y-3">
-                <p className="text-slate-200 font-medium">Assigned → Submitted → In Review → Approved / Rejected</p>
-                <p>Reject phải có ít nhất 1 lỗi và comment tổng quan.</p>
-                <p>Sau khi review, task sẽ bị khóa.</p>
+        {!reviewOnly && (
+          <div className={`w-72 ${darkMode ? 'bg-[#1e293b] border-slate-700' : 'bg-[#1e293b] border-slate-700'} border-l overflow-y-auto`}>
+            <div className="p-6 space-y-6">
+              <div>
+                <h3 className="text-xl font-semibold text-white mb-3">Review Overview</h3>
+                <div className="rounded-xl border border-slate-700 bg-[#0f172a] p-4 text-sm text-slate-300 space-y-3">
+                  <p className="text-slate-200 font-medium">Assigned → Submitted → In Review → Approved / Rejected</p>
+                  <p>Reject phải có ít nhất 1 lỗi và comment tổng quan.</p>
+                  <p>Sau khi review, task sẽ bị khóa.</p>
 
-                {datasetType === 'image' && (
-                  <div className="pt-2 border-t border-slate-700 space-y-1">
-                    <p className="text-xs uppercase tracking-wider text-slate-400">Object Summary</p>
-                    <p className="text-slate-200">Detected Objects: {(task?.labels?.objects || []).length}</p>
-                    {imageClassSummary.map(([name, count]) => (
-                      <p key={name} className="text-xs text-slate-300">• {name}: {count}</p>
-                    ))}
-                  </div>
-                )}
-
-                {datasetType === 'audio' && (
-                  <div className="pt-2 border-t border-slate-700 space-y-1">
-                    <p className="text-xs uppercase tracking-wider text-slate-400">Segment Overview</p>
-                    <p className="text-slate-200">Total Segments: {audioSegments.length}</p>
-                    <p className="text-xs text-slate-300">Duration: {task?.dataItem?.duration ? `${task.dataItem.duration}s` : 'N/A'}</p>
-                  </div>
-                )}
-
-                {datasetType === 'text' && (
-                  <div className="pt-2 border-t border-slate-700 space-y-1">
-                    <p className="text-xs uppercase tracking-wider text-slate-400">Label Summary</p>
-                    <p className="text-slate-200">Entities: {textEntities.length}</p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div>
-              <h3 className="text-xl font-semibold text-white mb-3">Error Checklist ({datasetType.toUpperCase()})</h3>
-              <div className="space-y-3">
-                {issueOptions.map((issue) => {
-                  const checked = selectedIssues.includes(issue.id);
-                  return (
-                    <div key={issue.id} className="rounded-xl border border-slate-700 bg-[#0f172a] p-3">
-                      <label className="flex items-center gap-3 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(e) => {
-                            const isChecked = e.target.checked;
-                            setSelectedIssues((prev) => isChecked
-                              ? [...prev, issue.id]
-                              : prev.filter((x) => x !== issue.id));
-                          }}
-                          className="h-4 w-4 rounded border-slate-600 bg-[#0f172a] text-blue-600 focus:ring-blue-500"
-                        />
-                        <span className="text-sm text-slate-200">{issue.label}</span>
-                      </label>
-
-                      {checked && issue.needsTarget && (
-                        <div className="mt-3 space-y-2">
-                          <p className="text-xs text-slate-400">{issue.targetLabel}</p>
-                          <select
-                            value={issueTargets[issue.id] || ''}
-                            onChange={(e) => setIssueTargets((prev) => ({ ...prev, [issue.id]: e.target.value }))}
-                            className="w-full rounded-lg bg-[#0f172a] border border-slate-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-slate-200 text-sm px-3 py-2"
-                          >
-                            <option value="">Select target</option>
-                            {targetOptions.map((opt) => (
-                              <option key={opt.id} value={opt.id}>{opt.label}</option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
-
-                      {checked && (
-                        <div className="mt-3">
-                          <textarea
-                            value={issueComments[issue.id] || ''}
-                            onChange={(e) => setIssueComments((prev) => ({ ...prev, [issue.id]: e.target.value }))}
-                            rows={2}
-                            placeholder="Issue comment (optional)"
-                            className="w-full rounded-lg bg-[#0f172a] border border-slate-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-slate-200 text-sm px-3 py-2"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div>
-              <h3 className="text-xl font-semibold text-white mb-3">Structured Comment</h3>
-              <div className="rounded-xl border border-blue-700/40 bg-gradient-to-b from-[#0f172a] to-[#0b1220] p-4 space-y-3 shadow-[0_0_0_1px_rgba(59,130,246,0.15)]">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-semibold text-blue-200 block">Overall Feedback</label>
-                  <span className={`text-[11px] px-2 py-1 rounded-full border ${reviewComments.trim().length >= 12 ? 'text-emerald-300 border-emerald-600/40 bg-emerald-900/20' : 'text-amber-300 border-amber-600/40 bg-amber-900/20'}`}>
-                    {reviewComments.trim().length >= 12 ? 'Đủ nội dung' : 'Nên >= 12 ký tự'}
-                  </span>
-                </div>
-                <textarea
-                  value={reviewComments}
-                  onChange={(e) => setReviewComments(e.target.value)}
-                  rows={5}
-                  placeholder={datasetType === 'image'
-                    ? 'Ví dụ: Thiếu 1 object ở góc trái và sai class object #3.'
-                    : datasetType === 'audio'
-                      ? 'Ví dụ: Segment #2 sai nhãn, Segment #3 lệch timestamp 0.5s.'
-                      : 'Ví dụ: Missing entity LOCATION ở cuối câu, span entity #2 sai.'}
-                  disabled={isReviewed}
-                  className="w-full rounded-lg bg-[#0a1020] border border-slate-500 focus:border-blue-400 focus:ring-2 focus:ring-blue-500/30 text-slate-100 text-sm px-3 py-3 placeholder:text-slate-400 disabled:opacity-60"
-                />
-                <div className="text-xs text-slate-300 rounded-lg border border-slate-700 bg-[#0b1328] px-3 py-2">
-                  {selectedIssueDetails.length > 0 ? (
-                    <div className="space-y-1">
-                      <p className="text-blue-200 font-semibold">Issues selected ({selectedIssueDetails.length})</p>
-                      {selectedIssueDetails.map((issue) => (
-                        <p key={issue.id}>• {issue.label}{issueTargets[issue.id] ? ` (${issueTargets[issue.id]})` : ''}</p>
+                  {datasetType === 'image' && (
+                    <div className="pt-2 border-t border-slate-700 space-y-1">
+                      <p className="text-xs uppercase tracking-wider text-slate-400">Object Summary</p>
+                      <p className="text-slate-200">Detected Objects: {(task?.labels?.objects || []).length}</p>
+                      {imageClassSummary.map(([name, count]) => (
+                        <p key={name} className="text-xs text-slate-300">• {name}: {count}</p>
                       ))}
                     </div>
-                  ) : (
-                    <p className="text-amber-200">Chưa chọn issue nào. Reject sẽ bị khóa cho tới khi chọn ít nhất 1 issue.</p>
                   )}
+
+                  {datasetType === 'audio' && (
+                    <div className="pt-2 border-t border-slate-700 space-y-1">
+                      <p className="text-xs uppercase tracking-wider text-slate-400">Segment Overview</p>
+                      <p className="text-slate-200">Total Segments: {audioSegments.length}</p>
+                      <p className="text-xs text-slate-300">Duration: {task?.dataItem?.duration ? `${task.dataItem.duration}s` : 'N/A'}</p>
+                    </div>
+                  )}
+
+                  {datasetType === 'text' && (
+                    <div className="pt-2 border-t border-slate-700 space-y-1">
+                      <p className="text-xs uppercase tracking-wider text-slate-400">Label Summary</p>
+                      <p className="text-slate-200">Entities: {textEntities.length}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-xl font-semibold text-white mb-3">Error Checklist ({datasetType.toUpperCase()})</h3>
+                <div className="space-y-3">
+                  {issueOptions.map((issue) => {
+                    const checked = selectedIssues.includes(issue.id);
+                    return (
+                      <div key={issue.id} className="rounded-xl border border-slate-700 bg-[#0f172a] p-3">
+                        <label className="flex items-center gap-3 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              const isChecked = e.target.checked;
+                              setSelectedIssues((prev) => isChecked
+                                ? [...prev, issue.id]
+                                : prev.filter((x) => x !== issue.id));
+                            }}
+                            className="h-4 w-4 rounded border-slate-600 bg-[#0f172a] text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="text-sm text-slate-200">{issue.label}</span>
+                        </label>
+
+                        {checked && issue.needsTarget && (
+                          <div className="mt-3 space-y-2">
+                            <p className="text-xs text-slate-400">{issue.targetLabel}</p>
+                            <select
+                              value={issueTargets[issue.id] || ''}
+                              onChange={(e) => setIssueTargets((prev) => ({ ...prev, [issue.id]: e.target.value }))}
+                              className="w-full rounded-lg bg-[#0f172a] border border-slate-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-slate-200 text-sm px-3 py-2"
+                            >
+                              <option value="">Select target</option>
+                              {targetOptions.map((opt) => (
+                                <option key={opt.id} value={opt.id}>{opt.label}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+
+                        {checked && (
+                          <div className="mt-3">
+                            <textarea
+                              value={issueComments[issue.id] || ''}
+                              onChange={(e) => setIssueComments((prev) => ({ ...prev, [issue.id]: e.target.value }))}
+                              rows={2}
+                              placeholder="Issue comment (optional)"
+                              className="w-full rounded-lg bg-[#0f172a] border border-slate-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-slate-200 text-sm px-3 py-2"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-xl font-semibold text-white mb-3">Structured Comment</h3>
+                <div className="rounded-xl border border-blue-700/40 bg-gradient-to-b from-[#0f172a] to-[#0b1220] p-4 space-y-3 shadow-[0_0_0_1px_rgba(59,130,246,0.15)]">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-semibold text-blue-200 block">Overall Feedback</label>
+                    <span className={`text-[11px] px-2 py-1 rounded-full border ${reviewComments.trim().length >= 12 ? 'text-emerald-300 border-emerald-600/40 bg-emerald-900/20' : 'text-amber-300 border-amber-600/40 bg-amber-900/20'}`}>
+                      {reviewComments.trim().length >= 12 ? 'Đủ nội dung' : 'Nên >= 12 ký tự'}
+                    </span>
+                  </div>
+                  <textarea
+                    value={reviewComments}
+                    onChange={(e) => setReviewComments(e.target.value)}
+                    rows={5}
+                    placeholder={datasetType === 'image'
+                      ? 'Ví dụ: Thiếu 1 object ở góc trái và sai class object #3.'
+                      : datasetType === 'audio'
+                        ? 'Ví dụ: Segment #2 sai nhãn, Segment #3 lệch timestamp 0.5s.'
+                        : 'Ví dụ: Missing entity LOCATION ở cuối câu, span entity #2 sai.'}
+                    disabled={isReviewed}
+                    className="w-full rounded-lg bg-[#0a1020] border border-slate-500 focus:border-blue-400 focus:ring-2 focus:ring-blue-500/30 text-slate-100 text-sm px-3 py-3 placeholder:text-slate-400 disabled:opacity-60"
+                  />
+                  <div className="text-xs text-slate-300 rounded-lg border border-slate-700 bg-[#0b1328] px-3 py-2">
+                    {selectedIssueDetails.length > 0 ? (
+                      <div className="space-y-1">
+                        <p className="text-blue-200 font-semibold">Issues selected ({selectedIssueDetails.length})</p>
+                        {selectedIssueDetails.map((issue) => (
+                          <p key={issue.id}>• {issue.label}{issueTargets[issue.id] ? ` (${issueTargets[issue.id]})` : ''}</p>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-amber-200">Chưa chọn issue nào. Reject sẽ bị khóa cho tới khi chọn ít nhất 1 issue.</p>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Floating Action Dock */}

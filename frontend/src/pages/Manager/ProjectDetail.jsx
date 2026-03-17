@@ -9,6 +9,8 @@ import {
   Card,
   CardContent,
   Table,
+  Switch,
+  FormControlLabel,
   TableBody,
   TableCell,
   TableContainer,
@@ -39,9 +41,6 @@ import {
   Download as DownloadIcon,
   Assessment as AssessmentIcon,
   ArrowBack as ArrowBackIcon,
-  Label as LabelIcon,
-  FilterList as FilterListIcon,
-  Visibility as VisibilityIcon,
 } from '@mui/icons-material';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
@@ -164,8 +163,11 @@ const ManagerProjectDetail = () => {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentTab, setCurrentTab] = useState(0);
-  const [selectedLabelFilter, setSelectedLabelFilter] = useState('all');
   const [showLabelsDialogOpen, setShowLabelsDialogOpen] = useState(false);
+  const [approvedItemDialogOpen, setApprovedItemDialogOpen] = useState(false);
+  const [selectedApprovedItemKey, setSelectedApprovedItemKey] = useState('');
+  const [showAnnotatorLabels, setShowAnnotatorLabels] = useState(false);
+  const [showAnnotatorLabelMap, setShowAnnotatorLabelMap] = useState({});
 
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [selectedAnnotators, setSelectedAnnotators] = useState([]);
@@ -282,32 +284,82 @@ const ManagerProjectDetail = () => {
     return filtered;
   }, [tasks]);
 
-  // Filter items by selected label
-  const filteredItems = useMemo(() => {
-    if (selectedLabelFilter === 'all') return approvedTasks;
-    return approvedTasks.filter((t) => {
-      let labels = [];
-      
-      if (t.labels?.objects && Array.isArray(t.labels.objects)) {
-        labels = t.labels.objects;
-      } else if (Array.isArray(t.labels)) {
-        labels = t.labels;
-      } else if (t.annotations) {
-        const approvedAnn = t.annotations.find(a => a.status === 'approved');
-        if (approvedAnn?.labels?.objects) {
-          labels = approvedAnn.labels.objects;
-        } else if (Array.isArray(approvedAnn?.labels)) {
-          labels = approvedAnn.labels;
+  const approvedItems = useMemo(() => {
+    const map = new Map();
+    approvedTasks.forEach((task) => {
+      const dataItem = task.dataItem || task.datasetItemId || task.itemId || {};
+      const key = dataItem?._id
+        || dataItem?.imageUrl
+        || dataItem?.path
+        || dataItem?.filename
+        || task?._id;
+      if (!key) return;
+
+      const imageUrl =
+        dataItem?.imageUrl ||
+        dataItem?.url ||
+        dataItem?.path ||
+        dataItem?.filename ||
+        task.datasetItemId?.imageUrl ||
+        task.datasetItemId?.url ||
+        task.datasetItemId?.path ||
+        task.dataItem?.imageUrl ||
+        task.dataItem?.url ||
+        task.dataItem?.path ||
+        task.itemId?.imageUrl ||
+        task.itemId?.url ||
+        task.itemId?.path ||
+        '';
+
+      const annotatorName = task.annotatorId?.fullName || task.annotatorId?.username || 'Annotator';
+
+      const labels = [];
+      const rawLabels = task.labels?.objects || task.labels || [];
+      rawLabels.forEach((obj) => {
+        const labelName = obj?.label || obj;
+        if (labelName) labels.push(labelName);
+      });
+
+      const annotations = [];
+      rawLabels.forEach((obj) => {
+        if (!obj) return;
+        if (obj.bbox || obj.box) {
+          annotations.push({ bbox: obj.bbox || obj.box, label: obj.label || obj });
+        }
+      });
+
+      const isPrimary = Boolean(task?.primaryForItem);
+
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          dataItem,
+          imageUrl,
+          annotators: annotatorName ? [annotatorName] : [],
+          annotatorLabels: annotatorName ? [{ name: annotatorName, labels, annotations, isPrimary }] : [],
+          datasetId: task.datasetId?._id || task.datasetId,
+          itemId: dataItem?._id || task.datasetItemId?._id || task.itemId?._id || task._id,
+        });
+      } else {
+        const entry = map.get(key);
+        if (annotatorName && !entry.annotators.includes(annotatorName)) {
+          entry.annotators.push(annotatorName);
+        }
+        if (annotatorName) {
+          entry.annotatorLabels.push({ name: annotatorName, labels, annotations, isPrimary });
         }
       }
-      
-      return labels.some((obj) => {
-        if (obj.label === selectedLabelFilter) return true;
-        if (obj === selectedLabelFilter) return true;
-        return false;
-      });
     });
-  }, [approvedTasks, selectedLabelFilter]);
+
+    return Array.from(map.values());
+  }, [approvedTasks]);
+
+  const approvedItemPreview = useMemo(() => approvedItems.slice(0, 3), [approvedItems]);
+
+  const selectedApprovedItem = useMemo(() => {
+    if (!selectedApprovedItemKey) return null;
+    return approvedItems.find((item) => item.key?.toString?.() === selectedApprovedItemKey.toString()) || null;
+  }, [approvedItems, selectedApprovedItemKey]);
 
   const groupedByAnnotator = useMemo(() => {
     const groupsMap = new Map();
@@ -744,214 +796,52 @@ const ManagerProjectDetail = () => {
         </Box>
       )}
 
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, flexWrap: 'wrap', gap: 2 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 2 }}>
         <Typography variant="h6" fontWeight={700} color="#e2e8f0">
-          Items đã duyệt ({approvedTasks.length})
+          Items đã duyệt ({approvedItems.length})
         </Typography>
-        
-        {/* Hiển thị các nhãn đã duyệt */}
-        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-          {approvedLabels.length > 0 && (
-            <Typography variant="body2" sx={{ color: '#94a3b8', mr: 1 }}>Nhãn đã duyệt:</Typography>
-          )}
-          {approvedLabels.map((label) => {
-            const count = approvedTasks.filter((t) => {
-              let taskLabels = [];
-              if (t.labels?.objects && Array.isArray(t.labels.objects)) {
-                taskLabels = t.labels.objects;
-              } else if (Array.isArray(t.labels)) {
-                taskLabels = t.labels;
-              } else if (t.annotations) {
-                const approvedAnn = t.annotations.find(a => a.status === 'approved');
-                if (approvedAnn?.labels?.objects) {
-                  taskLabels = approvedAnn.labels.objects;
-                } else if (Array.isArray(approvedAnn?.labels)) {
-                  taskLabels = approvedAnn.labels;
-                }
-              }
-              return taskLabels.some((obj) => {
-                const labelName = obj.label || obj;
-                return labelName === label;
-              });
-            }).length;
-            return (
-              <Chip
-                key={label}
-                label={`${label} (${count})`}
-                onClick={() => setSelectedLabelFilter(selectedLabelFilter === label ? 'all' : label)}
-                sx={{
-                  bgcolor: selectedLabelFilter === label ? getLabelColor(label) : `${getLabelColor(label)}33`,
-                  color: selectedLabelFilter === label ? 'white' : getLabelColor(label),
-                  fontWeight: 700,
-                  fontSize: '0.8rem',
-                  cursor: 'pointer',
-                  border: selectedLabelFilter === label ? '2px solid' : '1px solid',
-                  borderColor: selectedLabelFilter === label ? '#fff' : getLabelColor(label),
-                  transition: 'all 0.2s',
-                  '&:hover': {
-                    bgcolor: getLabelColor(label),
-                    color: 'white',
-                  }
-                }}
-              />
-            );
-          })}
-        </Box>
-
-        <FormControl sx={{ minWidth: 200 }} size="small">
-          <InputLabel sx={{ color: '#94a3b8' }}><FilterListIcon sx={{ mr: 0.5, verticalAlign: 'middle' }} />Filter by Label</InputLabel>
-          <Select
-            value={selectedLabelFilter}
-            label="Filter by Label"
-            onChange={(e) => setSelectedLabelFilter(e.target.value)}
-            sx={{
-              bgcolor: '#0f172a',
-              color: '#e2e8f0',
-              '& .MuiOutlinedInput-notchedOutline': { borderColor: '#475569' },
-              '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#64748b' },
-            }}
-          >
-            <MenuItem value="all">All Labels ({approvedTasks.length} items)</MenuItem>
-            {approvedLabels.map((label) => {
-              const count = approvedTasks.filter((t) => {
-                let taskLabels = [];
-                if (t.labels?.objects && Array.isArray(t.labels.objects)) {
-                  taskLabels = t.labels.objects;
-                } else if (Array.isArray(t.labels)) {
-                  taskLabels = t.labels;
-                } else if (t.annotations) {
-                  const approvedAnn = t.annotations.find(a => a.status === 'approved');
-                  if (approvedAnn?.labels?.objects) {
-                    taskLabels = approvedAnn.labels.objects;
-                  } else if (Array.isArray(approvedAnn?.labels)) {
-                    taskLabels = approvedAnn.labels;
-                  }
-                }
-                return taskLabels.some((obj) => {
-                  const labelName = obj.label || obj;
-                  return labelName === label;
-                });
-              }).length;
-              return (
-                <MenuItem key={label} value={label}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Chip
-                      label={label}
-                      size="small"
-                      sx={{
-                        bgcolor: getLabelColor(label),
-                        color: 'white',
-                        fontWeight: 700,
-                        height: 20,
-                        fontSize: '0.7rem',
-                      }}
-                    />
-                    <Typography variant="body2" sx={{ color: '#94a3b8' }}>({count} items)</Typography>
-                  </Box>
-                </MenuItem>
-              );
-            })}
-          </Select>
-        </FormControl>
+        <Typography variant="body2" sx={{ color: '#94a3b8' }}>
+          Hiển thị 3 ảnh mới nhất đã được duyệt.
+        </Typography>
       </Box>
 
-      {filteredItems.length === 0 ? (
+      {approvedItemPreview.length === 0 ? (
         <Box sx={{ textAlign: 'center', py: 8 }}>
           <Typography variant="body1" sx={{ color: '#94a3b8' }}>No approved items found.</Typography>
         </Box>
       ) : (
         <Grid container spacing={2}>
-          {approvedTasks.flatMap((task, taskIdx) => {
-            // Get labels from different possible structures
-            let labels = [];
-            if (task.labels?.objects && Array.isArray(task.labels.objects)) {
-              labels = task.labels.objects;
-            } else if (Array.isArray(task.labels)) {
-              labels = task.labels;
-            } else if (task.annotations) {
-              const approvedAnn = task.annotations.find(a => a.status === 'approved');
-              if (approvedAnn?.labels?.objects) {
-                labels = approvedAnn.labels.objects;
-              } else if (Array.isArray(approvedAnn?.labels)) {
-                labels = approvedAnn.labels;
-              }
-            } else if (task.dataItem?.labels?.objects) {
-              labels = task.dataItem.labels.objects;
-            } else if (Array.isArray(task.dataItem?.labels)) {
-              labels = task.dataItem.labels;
-            }
-            
-            // Get image URL from multiple possible paths
-            const imageUrl = 
-              task.datasetItemId?.imageUrl || 
-              task.datasetItemId?.url || 
-              task.datasetItemId?.path ||
-              task.dataItem?.imageUrl ||
-              task.dataItem?.url ||
-              task.dataItem?.path ||
-              task.itemId?.imageUrl ||
-              task.itemId?.url;
-            
-            // Check filter match
-            const hasMatchingLabel = labels.some((obj) => {
-              const labelName = obj.label || obj;
-              return selectedLabelFilter === 'all' || labelName === selectedLabelFilter;
-            });
-            
-            if (!hasMatchingLabel && selectedLabelFilter !== 'all') {
-              return [];
-            }
-
-            // Return each label as a separate card
-            return labels.map((obj, labelIdx) => {
-              const labelName = obj.label || obj;
-              const matchesFilter = selectedLabelFilter === 'all' || labelName === selectedLabelFilter;
-              
-              if (!matchesFilter) return null;
-              
-              return (
-                <Grid item xs={6} sm={4} md={3} key={`${taskIdx}-${labelIdx}`}>
-                  <Card sx={{
-                    ...cardSx,
-                    border: `2px solid ${getLabelColor(labelName)}`,
-                    '&:hover': { borderColor: '#3b82f6' }
-                  }}>
-                    <Box sx={{
-                      position: 'relative',
-                      paddingTop: '100%',
-                      bgcolor: '#0f172a',
-                      overflow: 'hidden',
-                    }}>
-                      {imageUrl ? (
-                        <ImageViewer
-                          imageUrl={getFullImageUrl(imageUrl)}
-                          annotations={[{ bbox: obj.bbox || obj.box, label: labelName }]}
-                          readOnly
-                          maxHeight="100%"
-                        />
-                      ) : (
-                        <Box sx={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <Typography sx={{ color: '#64748b' }}>No Image</Typography>
-                        </Box>
-                      )}
+          {approvedItemPreview.map((item) => (
+            <Grid item xs={12} sm={6} md={4} key={item.key}>
+              <Card
+                onClick={() => {
+                  setSelectedApprovedItemKey(item.key?.toString?.() || '');
+                  setApprovedItemDialogOpen(true);
+                }}
+                sx={{
+                  ...cardSx,
+                  cursor: 'pointer',
+                  border: '2px solid #22c55e',
+                  '&:hover': { borderColor: '#34d399' }
+                }}
+              >
+                <Box sx={{ position: 'relative', paddingTop: '70%', bgcolor: '#0f172a', overflow: 'hidden' }}>
+                  {item.imageUrl ? (
+                    <Box component="img" src={getFullImageUrl(item.imageUrl)} alt="approved item" sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ) : (
+                    <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Typography sx={{ color: '#64748b' }}>No Image</Typography>
                     </Box>
-                    <CardContent sx={{ py: 1, px: 2 }}>
-                      <Chip
-                        label={labelName}
-                        size="small"
-                        sx={{
-                          bgcolor: getLabelColor(labelName),
-                          color: 'white',
-                          fontWeight: 700,
-                          fontSize: '0.75rem',
-                        }}
-                      />
-                    </CardContent>
-                  </Card>
-                </Grid>
-              );
-            });
-          })}
+                  )}
+                </Box>
+                <CardContent sx={{ py: 1.5 }}>
+                  <Typography variant="body2" sx={{ color: '#94a3b8' }}>
+                    {item.annotators.length} annotator đã approve
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+          ))}
         </Grid>
       )}
     </Box>
@@ -991,7 +881,7 @@ const ManagerProjectDetail = () => {
         <Box sx={{ borderBottom: 1, borderColor: '#334155' }}>
           <Tabs
             value={currentTab}
-            onChange={(e, newValue) => setCurrentTab(newValue)}
+            onChange={(_, newValue) => setCurrentTab(newValue)}
             sx={{
               '& .MuiTab-root': { color: '#94a3b8', textTransform: 'none', fontWeight: 600 },
               '& .Mui-selected': { color: '#3b82f6' },
@@ -1167,10 +1057,142 @@ const ManagerProjectDetail = () => {
                   />
                 );
               })}
-    </Box>
+            </Box>
           )}
         </DialogContent>
         <DialogActions><Button onClick={() => setShowLabelsDialogOpen(false)} sx={secondaryBtnSx}>Đóng</Button></DialogActions>
+      </Dialog>
+
+      <Dialog open={approvedItemDialogOpen} onClose={() => setApprovedItemDialogOpen(false)} maxWidth="md" fullWidth PaperProps={{ sx: modalPaperSx }} BackdropProps={{ sx: { backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' } }}>
+        <DialogTitle sx={{ fontWeight: 700 }}>Approved item</DialogTitle>
+        <DialogContent dividers sx={{ borderColor: '#334155' }}>
+          {!selectedApprovedItem ? (
+            <Typography sx={{ color: '#94a3b8' }}>Không tìm thấy thông tin item.</Typography>
+          ) : (
+            <Grid container spacing={2}>
+              <Grid item xs={12} md={7}>
+                <Box sx={{ width: '100%', bgcolor: '#0f172a', borderRadius: 2, border: '1px solid #334155', overflow: 'hidden', minHeight: 280 }}>
+                  {selectedApprovedItem.imageUrl ? (
+                    showAnnotatorLabels ? (
+                      <ImageViewer
+                        imageUrl={getFullImageUrl(selectedApprovedItem.imageUrl)}
+                        annotations={(selectedApprovedItem.annotatorLabels || []).flatMap((ann) => {
+                          const shouldShow = showAnnotatorLabelMap[ann.name] ?? true;
+                          return shouldShow ? (ann.annotations || []) : [];
+                        })}
+                        readOnly
+                        maxHeight="100%"
+                      />
+                    ) : (
+                      <Box component="img" src={getFullImageUrl(selectedApprovedItem.imageUrl)} alt="approved item" sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    )
+                  ) : (
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 280 }}>
+                      <Typography sx={{ color: '#64748b' }}>No Image</Typography>
+                    </Box>
+                  )}
+                </Box>
+              </Grid>
+              <Grid item xs={12} md={5}>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ color: '#94a3b8' }}>Item ID</Typography>
+                    <Typography variant="body2" sx={{ color: '#e2e8f0' }}>{selectedApprovedItem.itemId || selectedApprovedItem.key}</Typography>
+                  </Box>
+                  {selectedApprovedItem.datasetId && (
+                    <Box>
+                      <Typography variant="subtitle2" sx={{ color: '#94a3b8' }}>Dataset ID</Typography>
+                      <Typography variant="body2" sx={{ color: '#e2e8f0' }}>{selectedApprovedItem.datasetId}</Typography>
+                    </Box>
+                  )}
+                  <Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
+                      <Typography variant="subtitle2" sx={{ color: '#94a3b8' }}>Annotators approved</Typography>
+                      <FormControlLabel
+                        control={(
+                          <Switch
+                            checked={showAnnotatorLabels}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              setShowAnnotatorLabels(checked);
+                              if (checked && selectedApprovedItem?.annotatorLabels) {
+                                const nextMap = {};
+                                selectedApprovedItem.annotatorLabels.forEach((ann) => {
+                                  nextMap[ann.name] = true;
+                                });
+                                setShowAnnotatorLabelMap(nextMap);
+                              }
+                            }}
+                            size="small"
+                          />
+                        )}
+                        label="Hiện label"
+                        sx={{ color: '#94a3b8' }}
+                      />
+                    </Box>
+                    {selectedApprovedItem.annotators.length === 0 ? (
+                      <Typography variant="body2" sx={{ color: '#94a3b8' }}>Chưa có annotator.</Typography>
+                    ) : (
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mt: 1 }}>
+                        {selectedApprovedItem.annotatorLabels?.map((ann, idx) => (
+                          <Box key={`${ann.name}-${idx}`} sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+                              <Chip
+                                label={ann.isPrimary ? `${ann.name} • PRIMARY` : ann.name}
+                                sx={{
+                                  bgcolor: ann.isPrimary ? 'rgba(245,158,11,0.25)' : 'rgba(34,197,94,0.2)',
+                                  color: ann.isPrimary ? '#fbbf24' : '#22c55e',
+                                  fontWeight: 700,
+                                  width: 'fit-content',
+                                  border: ann.isPrimary ? '1px solid rgba(245,158,11,0.6)' : '1px solid transparent',
+                                }}
+                              />
+                              {showAnnotatorLabels && (
+                                <FormControlLabel
+                                  control={(
+                                    <Switch
+                                      checked={showAnnotatorLabelMap[ann.name] ?? true}
+                                      onChange={(e) => {
+                                        const checked = e.target.checked;
+                                        setShowAnnotatorLabelMap((prev) => ({ ...prev, [ann.name]: checked }));
+                                      }}
+                                      size="small"
+                                    />
+                                  )}
+                                  label="Hiện label"
+                                  sx={{ color: '#94a3b8' }}
+                                />
+                              )}
+                            </Box>
+                            {showAnnotatorLabels && (
+                              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                {(ann.labels || []).length === 0 ? (
+                                  <Typography variant="caption" sx={{ color: '#94a3b8' }}>Không có label.</Typography>
+                                ) : (
+                                  ann.labels.map((label, labelIdx) => (
+                                    <Chip
+                                      key={`${ann.name}-${labelIdx}`}
+                                      label={label}
+                                      size="small"
+                                      sx={{ bgcolor: getLabelColor(label), color: 'white', fontWeight: 700, fontSize: '0.7rem' }}
+                                    />
+                                  ))
+                                )}
+                              </Box>
+                            )}
+                          </Box>
+                        ))}
+                      </Box>
+                    )}
+                  </Box>
+                </Box>
+              </Grid>
+            </Grid>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setApprovedItemDialogOpen(false)} sx={secondaryBtnSx}>Đóng</Button>
+        </DialogActions>
       </Dialog>
     </Box>
   );

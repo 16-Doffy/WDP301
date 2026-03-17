@@ -717,12 +717,11 @@ router.post('/submit-batch', auth, authorize('annotator'), async (req, res) => {
       }
     }
 
-    // Keep already approved tasks as-is; submit only tasks that need (re)review.
-    const tasksToSubmit = tasks.filter((t) => t.status !== 'approved');
+    // Keep already approved/submitted tasks as-is; submit only tasks that need (re)review.
+    const tasksToSubmit = tasks.filter((t) => t.status === 'rejected' || t.status === 'completed');
 
     // Validate tasks that are going to be submitted
-    const invalidStatuses = ['assigned', 'submitted'];
-    const notReady = tasksToSubmit.filter((t) => invalidStatuses.includes(t.status));
+    const notReady = tasksToSubmit.filter((t) => t.status === 'assigned');
     if (notReady.length > 0) {
       return res.status(400).json({
         message: 'Please finish all editable tasks in this batch before submitting.',

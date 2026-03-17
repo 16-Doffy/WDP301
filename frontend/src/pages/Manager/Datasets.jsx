@@ -659,24 +659,6 @@ const Datasets = () => {
                                   </Box>
                                 )}
                               </Box>
-                              <Stack direction="row" spacing={1} sx={{ mt: 1, justifyContent: 'center', flexWrap: 'wrap' }}>
-                                {uniqueAnnotatorNames.length === 0 ? (
-                                  <Chip
-                                    label={item.displayLabel || 'No label'}
-                                    size="small"
-                                    sx={{ bgcolor: 'rgba(34,197,94,0.2)', color: '#22c55e', fontWeight: 600 }}
-                                  />
-                                ) : (
-                                  uniqueAnnotatorNames.slice(0, 2).map((name, nameIdx) => (
-                                    <Chip
-                                      key={`${name}-${nameIdx}`}
-                                      label={name}
-                                      size="small"
-                                      sx={{ bgcolor: 'rgba(34,197,94,0.2)', color: '#22c55e', fontWeight: 600 }}
-                                    />
-                                  ))
-                                )}
-                              </Stack>
                             </Box>
                           </Grid>
                         );
