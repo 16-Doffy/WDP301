@@ -32,7 +32,6 @@ const LayoutTailwind = () => {
         icon: <img src={datasetsIcon} alt="Datasets" className="h-5 w-5" />,
         path: '/manager/datasets',
       });
-
     }
 
     if (user.role === 'annotator') {
@@ -45,6 +44,8 @@ const LayoutTailwind = () => {
 
     if (user.role === 'admin') {
       baseItems.push({ text: 'Users', icon: '👤', path: '/admin/users' });
+      baseItems.push({ text: 'Datasets', icon: '📁', path: '/admin/datasets' });
+      baseItems.push({ text: 'Reviews', icon: '🔍', path: '/admin/reviews' });
       baseItems.push({ text: 'Activity Logs', icon: '📜', path: '/admin/activity-logs' });
       baseItems.push({ text: 'Settings', icon: '⚙️', path: '/admin/settings' });
       baseItems.push({ text: 'System Health', icon: '💻', path: '/admin/system-health' });

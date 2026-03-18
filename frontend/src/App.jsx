@@ -26,6 +26,8 @@ import AdminUsers from './pages/Admin/Users';
 import AdminActivityLogs from './pages/Admin/ActivityLogs';
 import AdminSystemSettings from './pages/Admin/SystemSettings';
 import AdminSystemHealth from './pages/Admin/SystemHealth';
+import AdminDatasets from './pages/Admin/Datasets';
+import AdminReviews from './pages/Admin/Reviews';
 import Layout from './components/LayoutTailwind';
 import { useAuth } from './context/AuthContext';
 
@@ -214,6 +216,8 @@ function App() {
               <Route path="admin/activity-logs" element={<AdminActivityLogs />} />
               <Route path="admin/settings" element={<AdminSystemSettings />} />
               <Route path="admin/system-health" element={<AdminSystemHealth />} />
+              <Route path="admin/datasets" element={<AdminDatasets />} />
+              <Route path="admin/reviews" element={<AdminReviews />} />
               <Route path="admin" element={<AdminDashboard />} />
             </Route>
           </Routes>

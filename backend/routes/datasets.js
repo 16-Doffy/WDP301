@@ -219,22 +219,37 @@ const upload = multer({
   limits: { fileSize: 200 * 1024 * 1024 } // 200MB (audio can be larger)
 });
 
-// Get all datasets for current manager (including unassigned ones)
+// Get all datasets for current manager OR all datasets for admin
 router.get('/', auth, authorize('manager', 'admin'), async (req, res) => {
   try {
-    const datasets = await Dataset.find({ managerId: req.user._id })
-      .populate({
-        path: 'projectId',
-        select: 'name labelSet',
-        options: { lean: true }
-      })
-      .sort({ createdAt: -1 })
-      .lean();
+    let datasets;
+    // Admin sees all datasets, manager sees only their own
+    if (req.user.role === 'admin') {
+      datasets = await Dataset.find()
+        .populate({
+          path: 'projectId',
+          select: 'name labelSet',
+          options: { lean: true }
+        })
+        .populate('managerId', 'username fullName')
+        .sort({ createdAt: -1 })
+        .lean();
+    } else {
+      datasets = await Dataset.find({ managerId: req.user._id })
+        .populate({
+          path: 'projectId',
+          select: 'name labelSet',
+          options: { lean: true }
+        })
+        .sort({ createdAt: -1 })
+        .lean();
+    }
 
     // Convert to plain objects and handle null projectId
     const datasetsWithProject = datasets.map(ds => ({
       ...ds,
-      projectId: ds.projectId || null
+      projectId: ds.projectId || null,
+      managerName: ds.managerId?.fullName || ds.managerId?.username || 'Unknown'
     }));
 
     res.json(datasetsWithProject);
