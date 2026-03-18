@@ -132,6 +132,33 @@ const taskSchema = new mongoose.Schema({
   errorCategory: {
     type: String
   },
+  // Store detailed issues when rejecting a task
+  reviewIssues: [
+    {
+      type: {
+        type: String,
+        required: true
+      },
+      typeId: String,
+      targetId: {
+        type: String,
+        default: null
+      },
+      targetDetails: {
+        id: String,
+        label: String,
+        index: Number
+      },
+      comment: {
+        type: String,
+        default: null
+      },
+      createdAt: {
+        type: Date,
+        default: Date.now
+      }
+    }
+  ],
   primaryForItem: {
     type: Boolean,
     default: false

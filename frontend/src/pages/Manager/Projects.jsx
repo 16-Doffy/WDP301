@@ -46,6 +46,7 @@ const tableWrapSx = {
 
 const ManagerProjects = () => {
   const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const [projects, setProjects] = useState([]);
   const [projectsWithTasks, setProjectsWithTasks] = useState({});
   const [loading, setLoading] = useState(true);
@@ -179,7 +180,6 @@ const ManagerProjects = () => {
                 startAdornment: <SearchIcon sx={{ color: '#9ca3af', mr: 1 }} fontSize="small" />,
               }}
             />
-
             {user?.role === 'manager' && (
               <Button
                 variant="contained"
@@ -381,24 +381,28 @@ const ManagerProjects = () => {
                         </TableCell>
                         <TableCell align="right" onClick={(e) => e.stopPropagation()}>
                           <Stack direction="row" spacing={1} justifyContent="flex-end">
-                            <Tooltip title="Edit">
-                              <IconButton
-                                size="small"
-                                sx={{ color: '#9ca3af', '&:hover': { bgcolor: '#1f2937', color: '#e5e7eb' } }}
-                                onClick={() => navigate(`/manager/projects/${project._id}`)}
-                              >
-                                <EditIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                            <Tooltip title="Delete">
-                              <IconButton
-                                size="small"
-                                sx={{ color: '#fb7185', '&:hover': { bgcolor: 'rgba(251,113,133,0.12)' } }}
-                                onClick={() => handleDelete(project._id)}
-                              >
-                                <DeleteIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
+                            {!isAdmin && (
+                              <>
+                                <Tooltip title="Edit">
+                                  <IconButton
+                                    size="small"
+                                    sx={{ color: '#9ca3af', '&:hover': { bgcolor: '#1f2937', color: '#e5e7eb' } }}
+                                    onClick={() => navigate(`/manager/projects/${project._id}`)}
+                                  >
+                                    <EditIcon fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                                <Tooltip title="Delete">
+                                  <IconButton
+                                    size="small"
+                                    sx={{ color: '#fb7185', '&:hover': { bgcolor: 'rgba(251,113,133,0.12)' } }}
+                                    onClick={() => handleDelete(project._id)}
+                                  >
+                                    <DeleteIcon fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                              </>
+                            )}
                           </Stack>
                         </TableCell>
                       </TableRow>

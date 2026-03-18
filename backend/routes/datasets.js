@@ -271,7 +271,7 @@ router.get('/:id', auth, async (req, res) => {
   }
 });
 
-// Create dataset and upload files (Manager only)
+// Create dataset and upload files (Manager or Admin)
 router.post('/', auth, authorize('manager', 'admin'), upload.array('files', 100), async (req, res) => {
   try {
     const { projectId, name, description, type } = req.body;
@@ -293,8 +293,21 @@ router.post('/', auth, authorize('manager', 'admin'), upload.array('files', 100)
         return res.status(404).json({ message: 'Project not found' });
       }
 
-      if (project.managerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+      // Manager can only create dataset for their own project
+      // Admin can create dataset for any project
+      if (req.user.role !== 'admin' && project.managerId.toString() !== req.user._id.toString()) {
         return res.status(403).json({ message: 'Not authorized to create dataset for this project' });
+      }
+    }
+
+    // Determine the managerId for the dataset
+    // For admin: if projectId is provided, use project's managerId; otherwise use admin's ID
+    // For manager: use their own ID
+    let managerId = req.user._id;
+    if (req.user.role === 'admin' && projectId) {
+      const project = await Project.findById(projectId);
+      if (project) {
+        managerId = project.managerId;
       }
     }
 
@@ -366,7 +379,7 @@ router.post('/', auth, authorize('manager', 'admin'), upload.array('files', 100)
     const dataset = new Dataset({
       type: datasetType,
       projectId: projectId || null, // Optional
-      managerId: req.user._id, // Required
+      managerId: managerId, // Determined above based on user role
       name: name.trim(),
       description: description?.trim() || '',
       files,
@@ -396,7 +409,7 @@ router.post('/', auth, authorize('manager', 'admin'), upload.array('files', 100)
   }
 });
 
-// Update dataset (Manager only)
+// Update dataset (Manager or Admin)
 router.put('/:id', auth, authorize('manager', 'admin'), async (req, res) => {
   try {
     const { projectId, name, description } = req.body;
@@ -406,7 +419,7 @@ router.put('/:id', auth, authorize('manager', 'admin'), async (req, res) => {
       return res.status(404).json({ message: 'Dataset not found' });
     }
 
-    // Check if user owns the dataset
+    // Check if user owns the dataset or is admin
     if (dataset.managerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Not authorized' });
     }
@@ -417,7 +430,8 @@ router.put('/:id', auth, authorize('manager', 'admin'), async (req, res) => {
       if (!project) {
         return res.status(404).json({ message: 'Project not found' });
       }
-      if (project.managerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+      // Manager can only link to their own project, Admin can link to any
+      if (req.user.role !== 'admin' && project.managerId.toString() !== req.user._id.toString()) {
         return res.status(403).json({ message: 'Not authorized to link dataset to this project' });
       }
     }
@@ -433,7 +447,7 @@ router.put('/:id', auth, authorize('manager', 'admin'), async (req, res) => {
   }
 });
 
-// Get dataset labeling status (raw vs final)
+// Get dataset labeling status (raw vs final) - Admin sees all, Manager sees own
 router.get('/:id/status', auth, authorize('manager', 'admin'), async (req, res) => {
   try {
     const dataset = await Dataset.findById(req.params.id).populate('projectId', 'reviewPolicy');
@@ -441,7 +455,8 @@ router.get('/:id/status', auth, authorize('manager', 'admin'), async (req, res) 
       return res.status(404).json({ message: 'Dataset not found' });
     }
 
-    if (dataset.managerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    // Admin can see all datasets, Manager can only see their own
+    if (req.user.role !== 'admin' && dataset.managerId.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
@@ -622,13 +637,14 @@ router.get('/:id/items', auth, authorize('manager', 'admin'), async (req, res) =
       return res.status(404).json({ message: 'Dataset not found' });
     }
 
-    if (dataset.managerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    // Admin can see all datasets, Manager can only see their own
+    if (req.user.role !== 'admin' && dataset.managerId.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
     // Get all tasks for this dataset
     const tasks = await Task.find({ datasetId: dataset._id })
-      .select('status dataItem labels annotatorId reviewedAt primaryForItem')
+      .select('status dataItem labels annotatorId reviewedAt primaryForItem reviewerId reviewComments errorCategory reviewIssues')
       .populate('annotatorId', 'username fullName')
       .populate({
         path: 'datasetId',
@@ -668,6 +684,7 @@ router.get('/:id/items', auth, authorize('manager', 'admin'), async (req, res) =
           filename: task.dataItem?.filename || task.dataItem?.name || filename || 'Unknown',
           originalName: task.dataItem?.originalName || task.dataItem?.name || 'Unknown',
           type: dataset.type,
+          mimeType: task.dataItem?.mimeType || dataset.type,
           path: itemPath,
           imageUrl: itemPath || (filename ? `/uploads/datasets/${filename}` : ''),
           labelSet,
@@ -676,6 +693,14 @@ router.get('/:id/items', auth, authorize('manager', 'admin'), async (req, res) =
           approvedCount: 0,
           rejectedCount: 0,
           totalVotes: 0,
+          // Include text content for text files
+          text: task.dataItem?.text || null,
+          // Include review info at item level
+          reviewComments: task.reviewComments,
+          errorCategory: task.errorCategory,
+          reviewIssues: task.reviewIssues,
+          reviewerId: task.reviewerId,
+          reviewedAt: task.reviewedAt,
         });
       }
       const item = itemsMap.get(itemKey);
@@ -684,10 +709,16 @@ router.get('/:id/items', auth, authorize('manager', 'admin'), async (req, res) =
       if (task.labels) {
         item.annotations.push({
           annotator: task.annotatorId?.fullName || task.annotatorId?.username || 'Unknown',
+          annotatorId: task.annotatorId?._id || task.annotatorId,
           labels: task.labels,
           status: task.status,
           reviewedAt: task.reviewedAt,
           primaryForItem: Boolean(task.primaryForItem),
+          // Include review information
+          reviewComments: task.reviewComments,
+          errorCategory: task.errorCategory,
+          reviewIssues: task.reviewIssues,
+          reviewerId: task.reviewerId,
         });
       }
 
@@ -782,7 +813,8 @@ router.get('/:id/annotators/:annotatorId/tasks', auth, authorize('manager', 'adm
     const dataset = await Dataset.findById(req.params.id);
     if (!dataset) return res.status(404).json({ message: 'Dataset not found' });
 
-    if (dataset.managerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    // Admin can see all datasets, Manager can only see their own
+    if (req.user.role !== 'admin' && dataset.managerId.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
@@ -834,7 +866,8 @@ router.get('/:id/final-export', auth, authorize('manager', 'admin'), async (req,
       return res.status(404).json({ message: 'Dataset not found' });
     }
 
-    if (dataset.managerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    // Admin can export all datasets, Manager can only export their own
+    if (req.user.role !== 'admin' && dataset.managerId.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
@@ -873,7 +906,7 @@ router.get('/:id/final-export', auth, authorize('manager', 'admin'), async (req,
   }
 });
 
-// Delete dataset (Manager only)
+// Delete dataset (Manager or Admin)
 router.delete('/:id', auth, authorize('manager', 'admin'), async (req, res) => {
   try {
     const dataset = await Dataset.findById(req.params.id);
@@ -882,7 +915,7 @@ router.delete('/:id', auth, authorize('manager', 'admin'), async (req, res) => {
       return res.status(404).json({ message: 'Dataset not found' });
     }
 
-    // Check if user owns the dataset
+    // Check if user owns the dataset or is admin
     if (dataset.managerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Not authorized' });
     }

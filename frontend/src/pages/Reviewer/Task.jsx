@@ -127,42 +127,65 @@ const ReviewerTask = () => {
     ? 'image'
     : (task?.dataItem?.mimeType || '').startsWith('audio/')
       ? 'audio'
-      : ((task?.dataItem?.mimeType || '').startsWith('text/') || !!task?.dataItem?.text)
+      : ((task?.dataItem?.mimeType || '').startsWith('text/') || !!task?.dataItem?.text || !!task?.dataItem?.content)
         ? 'text'
         : 'image';
 
+  // Issue catalog by dataset type - unified for all types
   const issueCatalogByType = {
     image: [
-      { id: 'missing_object', label: 'Missed Object', needsTarget: false },
-      { id: 'wrong_class', label: 'Wrong Class', needsTarget: true, targetLabel: 'Affected Object ID' },
-      { id: 'bbox_loose', label: 'Bounding Box Too Loose', needsTarget: true, targetLabel: 'Affected Object ID' },
-      { id: 'bbox_tight', label: 'Bounding Box Too Tight', needsTarget: true, targetLabel: 'Affected Object ID' },
-      { id: 'wrong_overlap', label: 'Wrong Overlap Handling', needsTarget: true, targetLabel: 'Affected Object ID' },
+      { id: 'missing_object', label: 'Missed Object', needsTarget: false, description: 'Object exists but not labeled' },
+      { id: 'wrong_class', label: 'Wrong Class', needsTarget: true, targetLabel: 'Object ID', description: 'Object classified incorrectly' },
+      { id: 'bbox_loose', label: 'Bounding Box Too Loose', needsTarget: true, targetLabel: 'Object ID', description: 'Box includes too much background' },
+      { id: 'bbox_tight', label: 'Bounding Box Too Tight', needsTarget: true, targetLabel: 'Object ID', description: 'Box cuts off part of object' },
+      { id: 'wrong_overlap', label: 'Wrong Overlap Handling', needsTarget: true, targetLabel: 'Object ID', description: 'Overlapping objects handled incorrectly' },
     ],
     audio: [
-      { id: 'wrong_label', label: 'Wrong Label', needsTarget: true, targetLabel: 'Segment ID' },
-      { id: 'incorrect_timestamp', label: 'Incorrect Timestamp', needsTarget: true, targetLabel: 'Segment ID' },
-      { id: 'overlapping_segments', label: 'Overlapping Segments', needsTarget: true, targetLabel: 'Segment ID' },
-      { id: 'missing_segment', label: 'Missing Segment', needsTarget: false },
-      { id: 'noise_misclassified', label: 'Background Noise Misclassified', needsTarget: true, targetLabel: 'Segment ID' },
+      { id: 'wrong_label', label: 'Wrong Label', needsTarget: true, targetLabel: 'Segment #', description: 'Audio segment labeled incorrectly' },
+      { id: 'incorrect_timestamp', label: 'Incorrect Timestamp', needsTarget: true, targetLabel: 'Segment #', description: 'Start/end time is wrong' },
+      { id: 'overlapping_segments', label: 'Overlapping Segments', needsTarget: true, targetLabel: 'Segment #', description: 'Segments should not overlap' },
+      { id: 'missing_segment', label: 'Missing Segment', needsTarget: false, description: 'Expected segment not found' },
+      { id: 'noise_misclassified', label: 'Background Noise Misclassified', needsTarget: true, targetLabel: 'Segment #', description: 'Noise labeled as speech or vice versa' },
     ],
     text: [
-      { id: 'wrong_category', label: 'Wrong Category', needsTarget: true, targetLabel: 'Entity ID' },
-      { id: 'missing_entity', label: 'Missing Entity', needsTarget: false },
-      { id: 'wrong_span', label: 'Wrong Span', needsTarget: true, targetLabel: 'Entity ID' },
-      { id: 'overlapping_entity', label: 'Overlapping Entity', needsTarget: true, targetLabel: 'Entity ID' },
-      { id: 'incorrect_classification', label: 'Incorrect Classification', needsTarget: true, targetLabel: 'Entity ID' },
+      { id: 'wrong_category', label: 'Wrong Category', needsTarget: true, targetLabel: 'Entity #', description: 'Entity category is incorrect' },
+      { id: 'missing_entity', label: 'Missing Entity', needsTarget: false, description: 'Expected entity not found in text' },
+      { id: 'wrong_span', label: 'Wrong Span', needsTarget: true, targetLabel: 'Entity #', description: 'Text span does not match entity' },
+      { id: 'overlapping_entity', label: 'Overlapping Entity', needsTarget: true, targetLabel: 'Entity #', description: 'Entities should not overlap' },
+      { id: 'incorrect_classification', label: 'Incorrect Classification', needsTarget: true, targetLabel: 'Entity #', description: 'Classification is wrong' },
     ],
   };
 
   const issueOptions = issueCatalogByType[datasetType] || issueCatalogByType.image;
-  const targetOptions = datasetType === 'image'
-    ? (task?.labels?.objects || []).map((obj, idx) => ({ id: `object_${idx + 1}`, label: `Object #${idx + 1} (${obj.label || 'Unknown'})` }))
-    : datasetType === 'audio'
-      ? ((task?.labels?.segments || []).length > 0
-        ? (task?.labels?.segments || []).map((_, idx) => ({ id: `segment_${idx + 1}`, label: `Segment #${idx + 1}` }))
-        : [{ id: 'segment_1', label: 'Segment #1' }])
-      : ((task?.labels?.spans || task?.labels?.sentences || []).map((_, idx) => ({ id: `entity_${idx + 1}`, label: `Entity #${idx + 1}` })));
+
+  // Target options based on dataset type
+  const targetOptions = useMemo(() => {
+    if (datasetType === 'image') {
+      return (task?.labels?.objects || []).map((obj, idx) => ({
+        id: `object_${idx + 1}`,
+        label: `Object #${idx + 1} (${obj.label || 'Unknown'})`,
+        index: idx
+      }));
+    } else if (datasetType === 'audio') {
+      const segments = task?.labels?.segments || [];
+      if (segments.length > 0) {
+        return segments.map((seg, idx) => ({
+          id: `segment_${idx + 1}`,
+          label: `Segment #${idx + 1} (${seg.label || 'unknown'})`,
+          index: idx
+        }));
+      }
+      return [{ id: 'segment_1', label: 'Segment #1 (no segments)', index: 0 }];
+    } else {
+      // Text - spans or sentences
+      const items = task?.labels?.spans || task?.labels?.sentences || [];
+      return items.map((item, idx) => ({
+        id: `entity_${idx + 1}`,
+        label: `Entity #${idx + 1} (${item.label || 'text'})`,
+        index: idx
+      }));
+    }
+  }, [datasetType, task?.labels]);
 
   const selectedIssueDetails = selectedIssues
     .map((issueId) => issueOptions.find((i) => i.id === issueId))
@@ -491,14 +514,19 @@ const ReviewerTask = () => {
       return;
     }
 
+    // Validation: Must select at least 1 issue for rejection
     if (selectedIssues.length === 0) {
-      alert('Reject bắt buộc chọn ít nhất 1 lỗi.');
+      alert('Vui lòng chọn ít nhất 1 lỗi (issue) trước khi từ chối task.');
       return;
     }
 
-    if (!reviewComments.trim()) {
-      alert('Reject bắt buộc có comment tổng quan.');
-      return;
+    // Validate that issues requiring targets have targets selected
+    for (const issueId of selectedIssues) {
+      const issueInfo = issueOptions.find(i => i.id === issueId);
+      if (issueInfo?.needsTarget && !issueTargets[issueId]) {
+        alert(`Vui lòng chọn ${issueInfo.targetLabel} cho lỗi "${issueInfo.label}"`);
+        return;
+      }
     }
 
     const targetTaskId = activeAnnotatorId
@@ -508,36 +536,52 @@ const ReviewerTask = () => {
     if (window.confirm('Bạn có chắc muốn từ chối task này? Annotator sẽ nhận được phản hồi và cần chỉnh sửa lại. Lưu ý: Mỗi task chỉ có thể được đánh giá 1 lần.')) {
       setProcessing(true);
       try {
-        const payloadNotes = (reviewNotes && reviewNotes.length > 0)
-          ? reviewNotes.map(n => ({
-            bbox: n.bbox,
-            label: n.label,
-            comment: n.comment
-          }))
-          : [];
-
+        // Build issues array with full details
         const issues = selectedIssues.map((issueId) => {
           const issueMeta = issueOptions.find((i) => i.id === issueId);
+          const targetId = issueTargets[issueId];
+          
+          // Get target details for display
+          let targetDetails = null;
+          if (targetId) {
+            if (datasetType === 'image') {
+              const idx = parseInt(targetId.replace('object_', '')) - 1;
+              const obj = task?.labels?.objects?.[idx];
+              targetDetails = { id: targetId, label: obj?.label || 'Unknown', index: idx };
+            } else if (datasetType === 'audio') {
+              const idx = parseInt(targetId.replace('segment_', '')) - 1;
+              const seg = task?.labels?.segments?.[idx];
+              targetDetails = { id: targetId, label: seg?.label || 'unknown', index: idx };
+            } else {
+              const idx = parseInt(targetId.replace('entity_', '')) - 1;
+              const entity = task?.labels?.spans?.[idx] || task?.labels?.sentences?.[idx];
+              targetDetails = { id: targetId, label: entity?.label || 'text', index: idx };
+            }
+          }
+
           return {
             type: issueMeta?.label || issueId,
-            targetId: issueTargets[issueId] || undefined,
-            comment: issueComments[issueId]?.trim() || undefined,
+            typeId: issueId,
+            targetId: targetId || null,
+            targetDetails: targetDetails,
+            comment: issueComments[issueId]?.trim() || null,
           };
         });
 
-        const firstIssue = issues[0]?.type?.toLowerCase?.() || 'other';
-        const backendErrorCategory = firstIssue.includes('class')
+        // Determine backend error category based on first issue
+        const firstIssue = selectedIssues[0]?.toLowerCase?.() || '';
+        const backendErrorCategory = firstIssue.includes('class') || firstIssue.includes('wrong_category') || firstIssue.includes('incorrect_classification')
           ? 'incorrect_label'
-          : firstIssue.includes('miss')
+          : firstIssue.includes('miss') || firstIssue.includes('missing')
             ? 'missing_label'
-            : firstIssue.includes('box') || firstIssue.includes('tight') || firstIssue.includes('loose')
+            : firstIssue.includes('box') || firstIssue.includes('tight') || firstIssue.includes('loose') || firstIssue.includes('span') || firstIssue.includes('timestamp')
               ? 'poor_quality'
               : 'does_not_follow_guidelines';
 
         await axios.post(`${API_URL}/api/reviews/${targetTaskId}/reject`, {
-          reviewComments: reviewComments.trim(),
+          reviewComments: reviewComments.trim() || undefined,
           errorCategory: backendErrorCategory,
-          reviewNotes: payloadNotes,
+          reviewNotes: [],
           review: {
             taskId: targetTaskId,
             datasetType,
@@ -652,20 +696,28 @@ const ReviewerTask = () => {
   }, [relatedTasks, annotatorVisibility]);
 
   const combinedAnnotations = useMemo(() => {
-    if (visibleRelatedTasks.length === 0) return [];
-    return visibleRelatedTasks.flatMap((t, tIdx) => {
+    if (relatedTasks.length === 0) return [];
+    
+    // Hiển thị tất cả annotation để reviewer có thể so sánh
+    return relatedTasks.flatMap((t, tIdx) => {
       const aid = t?.annotatorId?._id || t?.annotatorId || `ann_${tIdx}`;
       const labelSet = t?.projectId?.labelSet || [];
       const color = labelSet.find((l) => l?.name)?.color;
+      const isPrimary = Boolean(t?.primaryForItem);
+      const isSelected = activeAnnotatorId === aid || (!activeAnnotatorId && tIdx === 0);
+      
       return (t?.labels?.objects || []).map((obj, idx) => ({
         id: `${aid}_${idx}`,
         bbox: obj.bbox,
-        label: `${obj.label || 'Unknown'} • ${t?.annotatorId?.fullName || t?.annotatorId?.username || 'Annotator'}`,
+        // Thêm marker PRIMARY vào label nếu là primary
+        label: isPrimary ? `${obj.label || 'Unknown'} • ${t?.annotatorId?.fullName || t?.annotatorId?.username || 'Annotator'} (PRIMARY)` : `${obj.label || 'Unknown'} • ${t?.annotatorId?.fullName || t?.annotatorId?.username || 'Annotator'}`,
         annotatorId: aid,
         color,
+        isPrimary,
+        isSelected,
       }));
     });
-  }, [visibleRelatedTasks]);
+  }, [relatedTasks, activeAnnotatorId]);
 
   const activeAnnotatorCount = useMemo(() => {
     if (!relatedTasks || relatedTasks.length === 0) return 1;
@@ -921,16 +973,9 @@ const ReviewerTask = () => {
                       }`}>
                       <ImageViewer
                         imageUrl={buildFileUrl(task.dataItem)}
-                        annotations={(showAnnotatorLabels
-                          ? (combinedAnnotations.length > 0 ? combinedAnnotations : (task?.labels?.objects?.map((obj, idx) => ({
-                            id: idx,
-                            bbox: obj.bbox,
-                            label: obj.label,
-                            index: idx,
-                          })) || []))
-                          : [])}
+                        annotations={combinedAnnotations}
                         labelSet={task?.projectId?.labelSet || []}
-                        reviewNotes={showAnnotatorLabels ? reviewNotes : []}
+                        reviewNotes={reviewNotes}
                         readOnly={false}
                         highlightedIndex={hoveredObjectIndex}
                         maxHeight="400px"
@@ -944,41 +989,44 @@ const ReviewerTask = () => {
                       />
                     </div>
                     <div className="flex flex-wrap items-center gap-3 text-sm mb-2">
-                      <button
-                        onClick={() => setShowAnnotatorLabels((prev) => !prev)}
-                        className={`px-3 py-1 rounded-full text-xs font-semibold border ${showAnnotatorLabels
-                          ? 'bg-blue-600/20 border-blue-500/40 text-blue-200'
-                          : 'bg-slate-800 border-slate-700 text-slate-300'
-                          }`}
-                      >
-                        {showAnnotatorLabels ? 'Ẩn nhãn annotator' : 'Hiện nhãn annotator'}
-                      </button>
-                      {showAnnotatorLabels && relatedTasks.length > 0 && (
+                      {/* Hiển thị thông báo về primary annotation */}
+                      {relatedTasks.length > 0 && (
+                        <div className="flex items-center gap-2">
+                          {visibleRelatedTasks.some(t => t?.primaryForItem) ? (
+                            <div className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-600/20 border border-emerald-500/40 text-emerald-200">
+                              ✓ Đã chọn: {visibleRelatedTasks.find(t => t?.primaryForItem)?.annotatorId?.fullName || visibleRelatedTasks.find(t => t?.primaryForItem)?.annotatorId?.username || 'Annotator'} (PRIMARY)
+                            </div>
+                          ) : (
+                            <div className="px-3 py-1 rounded-full text-xs font-semibold bg-blue-600/20 border border-blue-500/40 text-blue-200">
+                              ℹ️ Hãy chọn annotator bên dưới để duyệt/từ chối
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
+                      {/* Nút chọn annotator để duyệt/từ chối */}
+                      {relatedTasks.length > 0 && (
                         <div className="flex flex-wrap items-center gap-2">
                           {relatedTasks.map((t) => {
                             const aid = t?.annotatorId?._id || t?.annotatorId;
                             const name = t?.annotatorId?.fullName || t?.annotatorId?.username || 'Annotator';
-                            const isOn = annotatorVisibility[aid] !== false;
-                            const isActive = activeAnnotatorId === aid;
+                            const isSelected = activeAnnotatorId === aid;
                             const isPrimary = Boolean(t?.primaryForItem);
                             return (
                               <button
                                 key={aid}
                                 onClick={() => {
-                                  setAnnotatorVisibility((prev) => ({ ...prev, [aid]: !isOn }));
                                   setActiveAnnotatorId(aid);
                                 }}
-                                className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${isOn
-                                  ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-200'
-                                  : 'bg-slate-800 border-slate-700 text-slate-300'
-                                  } ${isActive ? 'ring-1 ring-amber-400' : ''} ${isPrimary ? 'ring-2 ring-amber-400 shadow-[0_0_0_1px_rgba(245,158,11,0.6)]' : ''}`}
+                                className={`px-3 py-1 rounded-full text-xs font-semibold border ${isSelected
+                                  ? isPrimary
+                                    ? 'bg-amber-600 border-amber-500 text-white ring-2 ring-amber-400'
+                                    : 'bg-blue-600 border-blue-500 text-white ring-2 ring-blue-400'
+                                  : 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-600'
+                                  }`}
                               >
-                                {isOn ? 'Ẩn' : 'Hiện'} {name}
-                                {isPrimary && (
-                                  <span className="ml-2 inline-flex items-center rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-200">
-                                    PRIMARY
-                                  </span>
-                                )}
+                                {name}
+                                {isPrimary && <span className="ml-1">★</span>}
                               </button>
                             );
                           })}
@@ -1013,42 +1061,21 @@ const ReviewerTask = () => {
                       }))
                       .filter((seg) => Number.isFinite(seg.start) && Number.isFinite(seg.end) && seg.end > seg.start);
 
-                    const hasSegments = normalizedSegments.length > 0;
-
-                    // If no segments, create a pseudo-segment from the main label/note
-                    const items = hasSegments ? normalizedSegments : [
-                      {
-                        id: 'segment_global',
-                        label: task.labels?.label || 'Chưa gán nhãn',
-                        note: task.labels?.note || '',
-                        isGlobal: true
-                      }
-                    ];
-
-                    const idx = Math.min(activeSentenceIdx, items.length - 1);
-                    const item = items[idx];
-                    const key = `${id}-${idx}`;
-                    const status = sentenceStatus[key];
-                    const isProcessing = !!processingSentences[key];
-                    const feedback = sentenceFeedbacks[key] || '';
                     const audioUrl = buildFileUrl(task.dataItem);
 
                     return (
-                      <div className="flex flex-col h-full min-h-[450px]">
-                        {/* Audio Player + Annotator Segments */}
-                        <div className={`p-6 mb-6 rounded-3xl border-2 transition-all ${darkMode ? 'bg-gray-800/40 border-gray-700' : 'bg-gray-50 border-gray-200'
-                          }`}>
-                          <div className="flex items-center gap-6 mb-5">
-                            <div className={`w-16 h-16 rounded-full flex items-center justify-center text-3xl shadow-lg border-4 ${darkMode ? 'bg-gray-900 border-gray-700 text-blue-400' : 'bg-white border-white text-blue-600'
-                              }`}>
+                      <div className="flex flex-col h-full min-h-[400px]">
+                        {/* Audio Player */}
+                        <div className={`p-6 mb-4 rounded-3xl border-2 transition-all ${darkMode ? 'bg-gray-800/40 border-gray-700' : 'bg-gray-50 border-gray-200'}`}>
+                          <div className="flex items-center gap-6 mb-4">
+                            <div className={`w-14 h-14 rounded-full flex items-center justify-center text-2xl shadow-lg border-3 ${darkMode ? 'bg-gray-900 border-gray-600 text-blue-400' : 'bg-white border-gray-300 text-blue-600'}`}>
                               🎧
                             </div>
                             <div className="flex-1">
-                              <p className={`font-black truncate ${darkMode ? 'text-white' : 'text-gray-900'}`}>{task.dataItem.filename}</p>
-                              <p className="text-[10px] text-gray-400 font-black uppercase tracking-widest mt-1">Audio Source • {task.dataItem.mimeType}</p>
+                              <p className={`font-bold truncate ${darkMode ? 'text-white' : 'text-gray-900'}`}>{task.dataItem.filename}</p>
+                              <p className="text-xs text-gray-400 font-medium uppercase tracking-wider mt-1">Audio • {normalizedSegments.length} segments</p>
                             </div>
                           </div>
-
                           <AudioAnnotator
                             audioUrl={audioUrl}
                             labelSet={task?.projectId?.labelSet || []}
@@ -1057,84 +1084,27 @@ const ReviewerTask = () => {
                           />
                         </div>
 
-                        {/* Annotation Review Unit */}
-                        <div className="flex-1 flex flex-col">
-                          <div className="flex items-center justify-between mb-4">
-                            <span className={`text-[10px] font-black tracking-widest px-3 py-1.5 rounded-full ${darkMode ? 'bg-blue-900/40 text-blue-400' : 'bg-blue-100 text-blue-700'
-                              }`}>
-                              {item.isGlobal ? 'OVERALL LABEL' : `SEGMENT ${idx + 1} / ${items.length}`}
-                            </span>
-                            {hasSegments && (
-                              <div className="flex gap-2">
-                                <button onClick={() => setActiveSentenceIdx(prev => Math.max(0, prev - 1))} disabled={idx === 0} className="p-2 border rounded-xl disabled:opacity-30">←</button>
-                                <button onClick={() => setActiveSentenceIdx(prev => Math.min(items.length - 1, prev + 1))} disabled={idx === items.length - 1} className="p-2 border rounded-xl disabled:opacity-30">→</button>
-                              </div>
-                            )}
-                          </div>
-
-                          <div className={`p-8 rounded-[2rem] border-2 flex flex-col items-center justify-center text-center space-y-4 ${status === 'approved'
-                            ? 'bg-emerald-500/5 border-emerald-500/20'
-                            : status === 'rejected'
-                              ? 'bg-rose-500/5 border-rose-500/20'
-                              : darkMode ? 'bg-gray-900/30 border-gray-700' : 'bg-white border-gray-100 shadow-xl shadow-gray-200/50'
-                            }`}>
-                            <span className={`px-6 py-2 rounded-full text-sm font-black uppercase tracking-tighter shadow-sm border ${darkMode ? 'bg-gray-800 text-blue-300 border-blue-500/30' : 'bg-indigo-50 text-indigo-700 border-indigo-200'
-                              }`}>
-                              🏷️ Nhãn: {item.label}
-                            </span>
-                            <blockquote className={`text-xl font-bold leading-relaxed max-w-md ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                              "{item.note || 'Không có ghi chú chi tiết'}"
-                            </blockquote>
-                            {item.startTime !== undefined && (
-                              <p className="text-xs font-black text-gray-400 font-mono">
-                                TIME: {item.startTime}s - {item.endTime}s
-                              </p>
-                            )}
-                          </div>
-
-                          {/* Action Area */}
-                          <div className="mt-8 border-t pt-6">
-                            {!status && !isReviewed ? (
-                              <div className="space-y-4">
-                                <textarea
-                                  value={feedback}
-                                  onChange={(e) => setSentenceFeedbacks(prev => ({ ...prev, [key]: e.target.value }))}
-                                  placeholder="Nhập phản hồi đánh giá cho nhãn audio này..."
-                                  className={`w-full p-4 border rounded-2xl resize-none text-sm transition-all ${darkMode ? 'bg-gray-900 border-gray-700 text-white' : 'bg-gray-50 border-gray-200 focus:bg-white'
-                                    }`}
-                                  rows={2}
-                                />
-                                <div className="grid grid-cols-2 gap-4">
-                                  <button
-                                    onClick={() => handleSentenceAction(idx, 'approve', hasSegments ? 'segment' : 'audio')}
-                                    disabled={isProcessing}
-                                    className="py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-emerald-500/30 transition-all hover:-translate-y-1 disabled:opacity-50"
-                                  >
-                                    {isProcessing ? '⏳ DUYỆT...' : '✓ Approve'}
-                                  </button>
-                                  <button
-                                    onClick={() => handleSentenceAction(idx, 'reject', hasSegments ? 'segment' : 'audio')}
-                                    disabled={isProcessing || !feedback.trim()}
-                                    className="py-4 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-rose-500/30 transition-all hover:-translate-y-1 disabled:opacity-50 disabled:translate-y-0"
-                                  >
-                                    {isProcessing ? '⏳ TỪ CHỐI...' : '✕ Reject'}
-                                  </button>
+                        {/* Labels Summary - SIMPLIFIED */}
+                        <div className="flex-1">
+                          <h4 className={`text-sm font-bold mb-3 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                            Nhãn đã gán ({normalizedSegments.length})
+                          </h4>
+                          <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                            {normalizedSegments.map((seg, idx) => (
+                              <div key={idx} className={`p-3 rounded-xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+                                <div className="flex items-center justify-between">
+                                  <span className={`px-3 py-1 rounded-full text-xs font-semibold ${darkMode ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-700'}`}>
+                                    🏷️ {seg.label}
+                                  </span>
+                                  <span className="text-xs text-gray-400 font-mono">
+                                    {seg.start.toFixed(1)}s - {seg.end.toFixed(1)}s
+                                  </span>
                                 </div>
-                              </div>
-                            ) : (
-                              <div className={`p-6 rounded-2xl text-center border-2 ${status === 'approved' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' : 'bg-rose-500/10 border-rose-500/20 text-rose-500'
-                                }`}>
-                                <p className="font-black text-xl uppercase tracking-widest mb-2">
-                                  {status === 'approved' ? '✅ Đã phê duyệt' : '❌ Đã từ chối'}
-                                </p>
-                                {feedback && <p className="text-sm italic opacity-80">"{feedback}"</p>}
-                                {hasSegments && idx < items.length - 1 && (
-                                  <button onClick={() => setActiveSentenceIdx(idx + 1)} className="mt-4 text-[10px] font-black uppercase border-b border-current">
-                                    Next Segment →
-                                  </button>
+                                {seg.note && (
+                                  <p className={`text-sm mt-2 ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>"{seg.note}"</p>
                                 )}
                               </div>
-                            )}
+                            ))}
                           </div>
                         </div>
                       </div>
@@ -1143,283 +1113,52 @@ const ReviewerTask = () => {
                 ) : task?.dataItem?.mimeType?.startsWith('text/') || task?.dataItem?.text ? (
                   (() => {
                     const annotatedItems = task?.labels?.spans || task?.labels?.sentences || [];
-                    const hasItems = annotatedItems.length > 0;
-
-                    if (hasItems) {
-                      const idx = Math.min(activeSentenceIdx, annotatedItems.length - 1);
-                      const item = annotatedItems[idx];
-                      const key = `${id}-${idx}`;
-                      const status = sentenceStatus[key];
-                      const isProcessing = !!processingSentences[key];
-                      const feedback = sentenceFeedbacks[key] || '';
-                      const itemText = item.text || item.sentence || '';
-                      const itemLabel = item.label || 'No Label';
-                      const itemLabelColor = task?.projectId?.labelSet?.find((l) => l.name === item.label)?.color || '#6366f1';
-                      const fullText = task?.dataItem?.text || task?.dataItem?.content || '';
-
-                      const sortedItems = [...annotatedItems]
-                        .map((span) => ({
-                          ...span,
-                          text: span.text || span.sentence || '',
-                          start: typeof span.start === 'number' ? span.start : fullText.indexOf(span.text || span.sentence || ''),
-                        }))
-                        .sort((a, b) => (a.start || 0) - (b.start || 0));
-
-                      const renderTextWithHighlights = () => {
-                        if (!fullText) {
-                          return sortedItems.map((span, index) => {
-                            const isActive = index === idx;
-                            return (
-                              <span
-                                key={`fallback-${index}`}
-                                className={`inline rounded px-1 py-0.5 ${isActive ? 'bg-blue-500/30 text-blue-100' : 'bg-slate-700/40 text-slate-300'}`}
-                              >
-                                {span.text}
-                              </span>
-                            );
-                          });
-                        }
-
-                        const parts = [];
-                        let cursor = 0;
-                        sortedItems.forEach((span, index) => {
-                          const text = span.text || '';
-                          if (!text) return;
-                          const start = typeof span.start === 'number' && span.start >= 0 ? span.start : fullText.indexOf(text, cursor);
-                          if (start < 0) return;
-                          const end = start + text.length;
-
-                          if (start > cursor) {
-                            parts.push({ type: 'plain', text: fullText.slice(cursor, start) });
-                          }
-
-                          const labelColor = task?.projectId?.labelSet?.find((l) => l.name === span.label)?.color || '#3b82f6';
-                          parts.push({ type: 'span', text, label: span.label, index, labelColor });
-                          cursor = end;
-                        });
-
-                        if (cursor < fullText.length) {
-                          parts.push({ type: 'plain', text: fullText.slice(cursor) });
-                        }
-
-                        return parts.map((part, pIdx) => {
-                          if (part.type === 'plain') {
-                            return <span key={`plain-${pIdx}`} className="text-slate-200">{part.text}</span>;
-                          }
-                          const isActive = part.index === idx;
-                          const borderColor = part.labelColor || '#3b82f6';
-                          const activeBorder = hexToRgba(borderColor, 0.95);
-                          const inactiveBorder = hexToRgba(borderColor, 0.55);
-                          return (
-                            <span
-                              key={`span-${pIdx}`}
-                              className="inline rounded px-1.5 py-0.5 border font-semibold"
-                              style={{
-                                color: '#f8fafc',
-                                backgroundColor: 'transparent',
-                                borderColor: isActive ? activeBorder : inactiveBorder,
-                                boxShadow: isActive ? `0 0 0 1px ${activeBorder}, 0 4px 12px ${hexToRgba(borderColor, 0.35)}` : `0 0 0 1px ${inactiveBorder}`,
-                              }}
-                              title={`Label: ${part.label || 'Unknown'}`}
-                            >
-                              {part.text}
-                            </span>
-                          );
-                        });
-                      };
-
-                      return (
-                        <div className="flex flex-col h-full min-h-[400px]">
-                          {/* Pagination Header */}
-                          <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-100">
-                            <div className="flex items-center gap-2">
-                              <span className={`text-xs font-bold px-3 py-1.5 rounded-full ${darkMode ? 'bg-emerald-900/50 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}>
-                                CÂU {idx + 1} / {annotatedItems.length}
-                              </span>
-                              {status && (
-                                <span className={`text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider ${status === 'approved' ? 'bg-green-500 text-white shadow-lg shadow-green-500/30' : 'bg-red-500 text-white shadow-lg shadow-red-500/30'
-                                  }`}>
-                                  {status === 'approved' ? '✓ APPROVED' : '✕ REJECTED'}
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => setActiveSentenceIdx(prev => Math.max(0, prev - 1))}
-                                disabled={idx === 0}
-                                className={`p-2 rounded-xl border transition-all ${darkMode ? 'border-gray-600 bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-20' : 'bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-20 border-gray-200'}`}
-                              >
-                                ← Prev
-                              </button>
-                              <button
-                                onClick={() => setActiveSentenceIdx(prev => Math.min(annotatedItems.length - 1, prev + 1))}
-                                disabled={idx === annotatedItems.length - 1}
-                                className={`p-2 rounded-xl border transition-all ${darkMode ? 'border-gray-600 bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-20' : 'bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-20 border-gray-200'}`}
-                              >
-                                Next →
-                              </button>
-                            </div>
-                          </div>
-
-                          {/* Annotator-style Result View */}
-                          <div className="flex-1 flex flex-col justify-center items-center py-8 space-y-4">
-                            <div className="w-full rounded-2xl border-2 border-blue-500/40 bg-[#0b1730] p-5 shadow-[0_0_0_1px_rgba(59,130,246,0.25),0_16px_40px_rgba(30,64,175,0.25)]">
-                              <div className="text-xs text-blue-200 mb-3 uppercase tracking-wider font-semibold">
-                                Kết quả gán nhãn của {task?.annotatorId?.fullName || task?.annotatorId?.username || 'Annotator'}
-                              </div>
-                              <div className="max-h-64 overflow-auto text-[17px] leading-8 whitespace-pre-wrap font-medium text-slate-50">
-                                {renderTextWithHighlights()}
-                              </div>
-                            </div>
-
-                            <div className={`w-full p-6 rounded-2xl border transition-all duration-300 ${status === 'approved'
-                              ? 'bg-emerald-500/10 border-emerald-500/30'
-                              : status === 'rejected'
-                                ? 'bg-rose-500/10 border-rose-500/30'
-                                : 'bg-slate-800/40 border-slate-700'
-                              }`}>
-                              <div className="flex flex-wrap items-center gap-3 mb-3">
-                                <span className="px-4 py-1.5 rounded-full text-xs font-semibold bg-blue-500/20 text-blue-300 border border-blue-500/30">
-                                  Vùng gán nhãn {idx + 1} / {annotatedItems.length}
-                                </span>
-                                <span
-                                  className="px-4 py-1.5 rounded-full text-xs font-semibold border"
-                                  style={{
-                                    color: itemLabelColor,
-                                    borderColor: hexToRgba(itemLabelColor, 0.55),
-                                    backgroundColor: hexToRgba(itemLabelColor, 0.18),
-                                  }}
-                                >
-                                  🏷️ {itemLabel}
-                                </span>
-                              </div>
-                              <blockquote className="text-lg font-semibold text-slate-100 leading-relaxed">
-                                "{itemText}"
-                              </blockquote>
-                              {item.note && (
-                                <p className="mt-2 text-sm text-slate-400">Ghi chú annotator: {item.note}</p>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Footer Actions */}
-                          <div className={`mt-auto pt-8 border-t ${darkMode ? 'border-gray-700' : 'border-gray-100'}`}>
-                            {!status && !isReviewed ? (
-                              <div className="space-y-5">
-                                <div className="relative group">
-                                  <textarea
-                                    value={feedback}
-                                    onChange={(e) => setSentenceFeedbacks(prev => ({ ...prev, [key]: e.target.value }))}
-                                    placeholder="Nhập phản hồi đánh giá của bạn cho câu này..."
-                                    className={`w-full p-5 border rounded-2xl resize-none text-sm font-medium focus:outline-none focus:ring-4 transition-all ${darkMode
-                                      ? 'bg-gray-950 text-white border-gray-700 focus:ring-emerald-500/20'
-                                      : 'bg-white text-gray-900 border-gray-300 focus:ring-emerald-500/10 focus:border-emerald-500'
-                                      }`}
-                                    rows={3}
-                                  />
-                                  <div className="absolute right-4 bottom-4 text-[10px] text-gray-400 font-bold uppercase tracking-widest opacity-0 group-focus-within:opacity-100 transition-opacity">
-                                    {feedback.length} chars
-                                  </div>
-                                </div>
-                                <div className="rounded-xl border border-slate-700 bg-slate-900/30 p-3 text-xs text-slate-400">
-                                  Đánh giá ở mức task bằng thanh action phía dưới (Approve/Reject).
-                                </div>
-                              </div>
-                            ) : (
-                              <div className={`p-6 rounded-3xl text-center flex flex-col gap-3 group border-2 ${status === 'approved'
-                                ? 'bg-emerald-500/5 border-emerald-500/20 text-emerald-500'
-                                : status === 'rejected'
-                                  ? 'bg-rose-500/5 border-rose-500/20 text-rose-500'
-                                  : 'bg-gray-500/5 border-gray-500/20 text-gray-500'
-                                }`}>
-                                <div className="flex items-center justify-center gap-3">
-                                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl font-black ${status === 'approved' ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'
-                                    }`}>
-                                    {status === 'approved' ? '✓' : '✕'}
-                                  </div>
-                                  <p className="font-black text-xl uppercase tracking-[0.2em]">
-                                    {status === 'approved' ? 'Đã phê duyệt' : 'Đã từ chối'}
-                                  </p>
-                                </div>
-                                {feedback && (
-                                  <div className={`mx-auto max-w-md p-3 rounded-xl text-sm font-bold border-l-4 ${darkMode ? 'bg-gray-900 border-gray-600 text-gray-400' : 'bg-white border-gray-200 text-gray-600'
-                                    }`}>
-                                    " {feedback} "
-                                  </div>
-                                )}
-                                <button
-                                  onClick={() => setActiveSentenceIdx(prev => Math.min(annotatedItems.length - 1, prev + 1))}
-                                  disabled={idx === annotatedItems.length - 1}
-                                  className={`mt-4 mx-auto px-8 py-2.5 rounded-full text-xs font-black uppercase tracking-widest border-2 transition-all disabled:opacity-0 ${darkMode ? 'border-gray-700 hover:bg-gray-700 text-gray-300' : 'border-gray-200 hover:bg-white hover:border-emerald-500 text-gray-600 hover:text-emerald-500 shadow-sm'
-                                    }`}
-                                >
-                                  Câu tiếp theo →
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    }
-
-                    const rawText = task.dataItem?.text || task.dataItem?.content || '';
-                    const sentences = splitSentences(rawText);
-                    if (!sentences || sentences.length === 0) return <div className="text-center py-20 font-black opacity-20 text-4xl uppercase tracking-tighter">No Content Found</div>;
-
-                    const sIdx = Math.min(activeSentenceIdx, sentences.length - 1);
-                    const sent = sentences[sIdx];
-                    const sKey = `${id}-${sIdx}`;
-                    const sStatus = sentenceStatus[sKey];
-                    const sIsProcessing = !!processingSentences[sKey];
-                    const sFeedback = sentenceFeedbacks[sKey] || '';
+                    const fullText = task?.dataItem?.text || task?.dataItem?.content || '';
 
                     return (
                       <div className="flex flex-col h-full min-h-[400px]">
-                        <div className="flex items-center justify-between mb-4 border-b pb-4">
-                          <span className="text-[10px] font-black tracking-widest bg-amber-100 text-amber-700 px-3 py-1.5 rounded-full border border-amber-200">
-                            AUTO-SEGMENT: {sIdx + 1} / {sentences.length}
-                          </span>
-                          <div className="flex gap-2">
-                            <button onClick={() => setActiveSentenceIdx(prev => Math.max(0, prev - 1))} className="w-10 h-10 flex items-center justify-center border-2 border-gray-200 rounded-xl font-bold hover:bg-white transition-all">←</button>
-                            <button onClick={() => setActiveSentenceIdx(prev => Math.min(sentences.length - 1, prev + 1))} className="w-10 h-10 flex items-center justify-center border-2 border-gray-200 rounded-xl font-bold hover:bg-white transition-all">→</button>
+                        {/* Text Content Display - SIMPLIFIED */}
+                        <div className="mb-4">
+                          <h4 className={`text-sm font-bold mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                            Nội dung văn bản
+                          </h4>
+                          <div className={`p-4 rounded-xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+                            <p className={`whitespace-pre-wrap text-sm leading-relaxed ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                              {fullText}
+                            </p>
                           </div>
                         </div>
-                        <div className="flex-1 flex items-center justify-center p-12 bg-gray-50/50 rounded-[2.5rem] border-2 border-dashed border-gray-200 shadow-inner">
-                          <p className="text-2xl font-bold italic text-gray-800 text-center leading-relaxed">"{sent}"</p>
-                        </div>
-                        <div className="mt-8 space-y-4">
-                          {!sStatus && !isReviewed ? (
-                            <>
-                              <textarea
-                                value={sFeedback}
-                                onChange={(e) => setSentenceFeedbacks(prev => ({ ...prev, [sKey]: e.target.value }))}
-                                placeholder="Ghi chú đánh giá cho câu này..."
-                                className="w-full p-5 border-2 border-gray-200 rounded-2xl focus:border-amber-500 focus:outline-none transition-all"
-                              />
-                              <div className="grid grid-cols-2 gap-4">
-                                <button
-                                  onClick={() => handleSentenceAction(sIdx, 'approve', 'sentence')}
-                                  disabled={sIsProcessing}
-                                  className={`py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-emerald-500/20 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50`}
-                                >
-                                  {sIsProcessing ? '⏳ ĐANG LƯU...' : '✓ Approve'}
-                                </button>
-                                <button
-                                  onClick={() => handleSentenceAction(sIdx, 'reject', 'sentence')}
-                                  disabled={sIsProcessing || !sFeedback.trim()}
-                                  className={`py-4 bg-rose-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl shadow-rose-500/20 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-50`}
-                                >
-                                  {sIsProcessing ? '⏳ ĐANG LƯU...' : '✕ Reject'}
-                                </button>
-                              </div>
-                            </>
-                          ) : (
-                            <div className="p-8 bg-gray-100/50 rounded-[2rem] text-center border-2 border-gray-200">
-                              <p className="font-black text-2xl uppercase tracking-widest text-gray-400">
-                                {sStatus === 'approved' ? '✅ Duyệt thành công' : '❌ Đã từ chối'}
-                              </p>
-                            </div>
-                          )}
+
+                        {/* Labels Summary */}
+                        <div className="flex-1">
+                          <h4 className={`text-sm font-bold mb-3 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                            Nhãn đã gán ({annotatedItems.length})
+                          </h4>
+                          <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                            {annotatedItems.map((item, idx) => {
+                              const itemLabel = item.label || 'Unknown';
+                              const itemLabelColor = task?.projectId?.labelSet?.find((l) => l.name === item.label)?.color || '#3b82f6';
+                              return (
+                                <div key={idx} className={`p-3 rounded-xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <span 
+                                      className="px-2 py-0.5 rounded text-xs font-semibold"
+                                      style={{ 
+                                        backgroundColor: `${itemLabelColor}30`, 
+                                        color: itemLabelColor,
+                                        border: `1px solid ${itemLabelColor}`
+                                      }}
+                                    >
+                                      🏷️ {itemLabel}
+                                    </span>
+                                  </div>
+                                  <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                    "{item.text || item.sentence || ''}"
+                                  </p>
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
                       </div>
                     );
@@ -1559,12 +1298,17 @@ const ReviewerTask = () => {
 
               <div>
                 <h3 className="text-xl font-semibold text-white mb-3">Error Checklist ({datasetType.toUpperCase()})</h3>
+                <p className="text-xs text-slate-400 mb-3">
+                  {datasetType === 'image' && 'Chọn các lỗi về bounding box và object trong ảnh'}
+                  {datasetType === 'audio' && 'Chọn các lỗi về segment và timestamp trong audio'}
+                  {datasetType === 'text' && 'Chọn các lỗi về entity và span trong văn bản'}
+                </p>
                 <div className="space-y-3">
                   {issueOptions.map((issue) => {
                     const checked = selectedIssues.includes(issue.id);
                     return (
                       <div key={issue.id} className="rounded-xl border border-slate-700 bg-[#0f172a] p-3">
-                        <label className="flex items-center gap-3 cursor-pointer">
+                        <label className="flex items-start gap-3 cursor-pointer">
                           <input
                             type="checkbox"
                             checked={checked}
@@ -1574,20 +1318,25 @@ const ReviewerTask = () => {
                                 ? [...prev, issue.id]
                                 : prev.filter((x) => x !== issue.id));
                             }}
-                            className="h-4 w-4 rounded border-slate-600 bg-[#0f172a] text-blue-600 focus:ring-blue-500"
+                            className="h-4 w-4 mt-1 rounded border-slate-600 bg-[#0f172a] text-blue-600 focus:ring-blue-500"
                           />
-                          <span className="text-sm text-slate-200">{issue.label}</span>
+                          <div className="flex-1">
+                            <span className="text-sm text-slate-200 font-medium">{issue.label}</span>
+                            {issue.description && (
+                              <p className="text-xs text-slate-500 mt-0.5">{issue.description}</p>
+                            )}
+                          </div>
                         </label>
 
                         {checked && issue.needsTarget && (
-                          <div className="mt-3 space-y-2">
+                          <div className="mt-3 ml-7 space-y-2">
                             <p className="text-xs text-slate-400">{issue.targetLabel}</p>
                             <select
                               value={issueTargets[issue.id] || ''}
                               onChange={(e) => setIssueTargets((prev) => ({ ...prev, [issue.id]: e.target.value }))}
                               className="w-full rounded-lg bg-[#0f172a] border border-slate-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-slate-200 text-sm px-3 py-2"
                             >
-                              <option value="">Select target</option>
+                              <option value="">-- Chọn {issue.targetLabel} --</option>
                               {targetOptions.map((opt) => (
                                 <option key={opt.id} value={opt.id}>{opt.label}</option>
                               ))}
@@ -1596,12 +1345,12 @@ const ReviewerTask = () => {
                         )}
 
                         {checked && (
-                          <div className="mt-3">
+                          <div className="mt-3 ml-7">
                             <textarea
                               value={issueComments[issue.id] || ''}
                               onChange={(e) => setIssueComments((prev) => ({ ...prev, [issue.id]: e.target.value }))}
                               rows={2}
-                              placeholder="Issue comment (optional)"
+                              placeholder="Mô tả chi tiết lỗi (tùy chọn)"
                               className="w-full rounded-lg bg-[#0f172a] border border-slate-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-slate-200 text-sm px-3 py-2"
                             />
                           </div>
@@ -1669,9 +1418,9 @@ const ReviewerTask = () => {
           </button>
           <button
             onClick={handleReject}
-            disabled={processing || !reviewComments.trim() || selectedIssues.length === 0 || isReviewed || activeAnnotatorCount > 1}
+            disabled={processing || isReviewed || activeAnnotatorCount > 1}
             className="px-8 py-3 bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-xl font-bold shadow-lg shadow-red-500/50 transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-            title={isReviewed ? 'Task này đã được đánh giá rồi' : (activeAnnotatorCount > 1 ? 'Chỉ được phép khi chọn đúng 1 annotator' : (selectedIssues.length === 0 ? 'Chọn ít nhất 1 lỗi trước khi reject' : (!reviewComments.trim() ? 'Vui lòng nhập nhận xét trước khi từ chối' : '')))}
+            title={isReviewed ? 'Task này đã được đánh giá rồi' : (activeAnnotatorCount > 1 ? 'Chỉ được phép khi chọn đúng 1 annotator' : '')}
           >
             <span className="mr-2">✕</span> Reject
           </button>

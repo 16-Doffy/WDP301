@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 import {
   Box,
   Typography,
@@ -157,6 +158,8 @@ const getLabelColor = (labelName) => {
 const ManagerProjectDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
 
   const [project, setProject] = useState(null);
   const [datasets, setDatasets] = useState([]);
@@ -314,17 +317,28 @@ const ManagerProjectDetail = () => {
       const annotatorName = task.annotatorId?.fullName || task.annotatorId?.username || 'Annotator';
 
       const labels = [];
-      const rawLabels = task.labels?.objects || task.labels || [];
-      rawLabels.forEach((obj) => {
+      // Handle different data types: image (objects), text (spans/sentences), audio (segments)
+      const rawLabels = task.labels?.objects || task.labels?.spans || task.labels?.sentences || task.labels?.segments || task.labels?.label || [];
+      // Ensure rawLabels is always an array
+      const labelsArray = Array.isArray(rawLabels) ? rawLabels : [rawLabels];
+      
+      labelsArray.forEach((obj) => {
         const labelName = obj?.label || obj;
         if (labelName) labels.push(labelName);
       });
 
       const annotations = [];
-      rawLabels.forEach((obj) => {
+      // For image: get bbox, for text/audio: get spans/segments
+      labelsArray.forEach((obj) => {
         if (!obj) return;
         if (obj.bbox || obj.box) {
           annotations.push({ bbox: obj.bbox || obj.box, label: obj.label || obj });
+        } else if (obj.text || obj.sentence) {
+          // Text entity
+          annotations.push({ text: obj.text || obj.sentence, label: obj.label, start: obj.start, end: obj.end });
+        } else if (obj.start !== undefined && obj.end !== undefined) {
+          // Audio segment
+          annotations.push({ start: obj.start, end: obj.end, label: obj.label, note: obj.note });
         }
       });
 
@@ -673,7 +687,9 @@ const ManagerProjectDetail = () => {
           <Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
               <Typography variant="h6" fontWeight={700} color="#e2e8f0">Team Performance</Typography>
-              <Button variant="contained" startIcon={<AssignmentIcon />} onClick={() => setAssignDialogOpen(true)} sx={primaryBtnSx}>Phân công task từ dataset</Button>
+              {!isAdmin && (
+                <Button variant="contained" startIcon={<AssignmentIcon />} onClick={() => setAssignDialogOpen(true)} sx={primaryBtnSx}>Phân công task từ dataset</Button>
+              )}
             </Box>
 
             <Box sx={{ mb: 2, display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
@@ -873,7 +889,9 @@ const ManagerProjectDetail = () => {
             <Stack direction="row" spacing={1.5}>
               <Button variant="contained" startIcon={<AssessmentIcon />} onClick={() => setQualityDialogOpen(true)} sx={secondaryBtnSx}>Analytics</Button>
               <Button variant="contained" startIcon={<DownloadIcon />} onClick={() => setExportDialogOpen(true)} sx={secondaryBtnSx}>Export</Button>
-              <Button variant="contained" startIcon={<SettingsIcon />} onClick={() => setEditDialogOpen(true)} sx={primaryBtnSx}>Settings</Button>
+              {!isAdmin && (
+                <Button variant="contained" startIcon={<SettingsIcon />} onClick={() => setEditDialogOpen(true)} sx={primaryBtnSx}>Settings</Button>
+              )}
             </Stack>
           </Box>
           </Box>

@@ -67,11 +67,14 @@ const ImageViewer = ({
           transform: isHighlighted ? 'scale(1.02)' : 'scale(1)',
         }}
       >
-        {/* Label Chip */}
+        {/* Label Chip - làm nổi bật hơn với border và shadow */}
         <span
           className="absolute -top-6 left-0 px-2 py-0.5 text-xs font-bold text-white rounded z-10"
           style={{
             backgroundColor: borderColor,
+            border: '1px solid rgba(255,255,255,0.3)',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+            whiteSpace: 'nowrap',
           }}
         >
           {label || `Object ${index + 1}`}

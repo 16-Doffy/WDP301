@@ -403,6 +403,18 @@ router.post(
 
         task.reviewComments = req.body.reviewComments.trim();
         task.errorCategory = req.body.errorCategory || 'other';
+        
+        // Save detailed review issues
+        if (req.body.review && Array.isArray(req.body.review.issues)) {
+          task.reviewIssues = req.body.review.issues.map(issue => ({
+            type: issue.type,
+            typeId: issue.typeId,
+            targetId: issue.targetId,
+            targetDetails: issue.targetDetails || null,
+            comment: issue.comment,
+            createdAt: now
+          }));
+        }
       }
 
       task.status = decision.finalStatus;

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 import {
   Box,
   Typography,
@@ -87,6 +88,8 @@ const cardSx = {
 
 const Datasets = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const [datasets, setDatasets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -122,7 +125,7 @@ const Datasets = () => {
       return { status: 'not_started', label: 'Not Started', color: '#64748b', icon: <PendingIcon /> };
     }
 
-    const progress = (approved / totalRawItems) * 100;
+    const progress = Math.min((approved / totalRawItems) * 100, 100);
     if (progress >= 100) {
       return { status: 'ready', label: 'Ready for AI Training', color: '#22c55e', icon: <CheckCircleIcon /> };
     }
@@ -333,21 +336,23 @@ const Datasets = () => {
                 }}
                 InputProps={{ startAdornment: <SearchIcon sx={{ color: '#94a3b8', mr: 1 }} fontSize="small" /> }}
               />
-              <Button
-                variant="contained"
-                startIcon={<AddIcon />}
-                onClick={() => setCreateDialogOpen(true)}
-                sx={{
-                  borderRadius: 2,
-                  textTransform: 'none',
-                  px: 2.5,
-                  fontWeight: 700,
-                  bgcolor: '#2563eb',
-                  '&:hover': { bgcolor: '#3b82f6' }
-                }}
-              >
-                Create Dataset
-              </Button>
+              {!isAdmin && (
+                <Button
+                  variant="contained"
+                  startIcon={<AddIcon />}
+                  onClick={() => setCreateDialogOpen(true)}
+                  sx={{
+                    borderRadius: 2,
+                    textTransform: 'none',
+                    px: 2.5,
+                    fontWeight: 700,
+                    bgcolor: '#2563eb',
+                    '&:hover': { bgcolor: '#3b82f6' }
+                  }}
+                >
+                  Create Dataset
+                </Button>
+              )}
             </Stack>
           </Box>
         </Box>
@@ -374,7 +379,7 @@ const Datasets = () => {
               const stat = statusByDataset[dataset._id];
               const rawCount = stat?.totalRawItems || dataset.totalItems || 0;
               const approved = stat?.counts?.approved || 0;
-              const progress = rawCount > 0 ? Math.round((approved / rawCount) * 100) : 0;
+              const progress = rawCount > 0 ? Math.min(Math.round((approved / rawCount) * 100), 100) : 0;
               const statusInfo = getDatasetStatus(stat);
 
               const getTypeIcon = () => {
@@ -394,13 +399,15 @@ const Datasets = () => {
                             {dataset.name}
                           </Typography>
                         </Box>
-                        <IconButton
-                          size="small"
-                          sx={{ color: '#f87171' }}
-                          onClick={() => { setSelectedDataset(dataset); setDeleteDialogOpen(true); }}
-                        >
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
+                        {!isAdmin && (
+                          <IconButton
+                            size="small"
+                            sx={{ color: '#f87171' }}
+                            onClick={() => { setSelectedDataset(dataset); setDeleteDialogOpen(true); }}
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        )}
                       </Box>
 
                       <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
@@ -598,6 +605,8 @@ const Datasets = () => {
                     <Grid container spacing={2}>
                       {detailItems.map((item, idx) => {
                         const imageSrc = getFullImageUrl(item.path, item.imageUrl, item.filename);
+                        const isText = item.mimeType === 'text/plain' || item.filename?.endsWith('.txt');
+                        const isAudio = item.mimeType?.startsWith('audio/') || item.filename?.endsWith('.mp3') || item.filename?.endsWith('.wav');
                         const labelSet = normalizeLabelSet(item.labelSet || detailDataset?.projectId?.labelSet || []);
                         const annotationsRaw = (item.annotations || []).filter(a => a.status === 'approved');
                         const primaryAnnotations = annotationsRaw.filter(a => a.primaryForItem);
@@ -640,6 +649,42 @@ const Datasets = () => {
                                       objectFit: 'cover',
                                     }}
                                   />
+                                ) : isText ? (
+                                  <Box
+                                    sx={{
+                                      position: 'absolute',
+                                      top: 0,
+                                      left: 0,
+                                      width: '100%',
+                                      height: '100%',
+                                      display: 'flex',
+                                      flexDirection: 'column',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      bgcolor: '#1e293b',
+                                    }}
+                                  >
+                                    <Typography sx={{ color: '#60a5fa', fontSize: 24, mb: 1 }}>📝</Typography>
+                                    <Typography sx={{ color: '#94a3b8', fontSize: 10 }}>Text</Typography>
+                                  </Box>
+                                ) : isAudio ? (
+                                  <Box
+                                    sx={{
+                                      position: 'absolute',
+                                      top: 0,
+                                      left: 0,
+                                      width: '100%',
+                                      height: '100%',
+                                      display: 'flex',
+                                      flexDirection: 'column',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      bgcolor: '#1e293b',
+                                    }}
+                                  >
+                                    <Typography sx={{ color: '#f472b6', fontSize: 24, mb: 1 }}>🎧</Typography>
+                                    <Typography sx={{ color: '#94a3b8', fontSize: 10 }}>Audio</Typography>
+                                  </Box>
                                 ) : (
                                   <Box
                                     sx={{

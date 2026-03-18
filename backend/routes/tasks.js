@@ -282,6 +282,7 @@ router.get('/:id/related', auth, async (req, res) => {
     }
 
     const relatedTasks = await Task.find(query)
+      .select('status dataItem labels annotatorId reviewedAt primaryForItem submittedAt')
       .populate('projectId', 'name labelSet guidelines questions managerId')
       .populate('datasetId', 'name')
       .populate('annotatorId', 'username fullName')

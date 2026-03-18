@@ -29,13 +29,15 @@ const computeProjectReviewSnapshot = async (projectId) => {
   };
 };
 
-// Get all projects
+// Get all projects (Admin sees all, Manager sees own)
 router.get('/', auth, async (req, res) => {
   try {
     let query = {};
+    // Admin sees all projects, Manager sees only their own
     if (req.user.role === 'manager') {
       query.managerId = req.user._id;
     }
+    // admin role can see all projects (no filter)
     
     const projects = await Project.find(query)
       .populate('managerId', 'username fullName email')
@@ -73,6 +75,7 @@ router.get('/:id', auth, async (req, res) => {
     if (req.user.role === 'manager' && project.managerId._id.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized to view this project' });
     }
+    // Admin can view any project (no additional check needed)
 
     // Get statistics
     const stats = await Task.aggregate([
@@ -91,8 +94,8 @@ router.get('/:id', auth, async (req, res) => {
   }
 });
 
-// Create project (Manager only)
-router.post('/', auth, authorize('manager'), [
+// Create project (Manager or Admin)
+router.post('/', auth, authorize('manager', 'admin'), [
   body('name').trim().notEmpty().withMessage('Project name is required'),
   body('guidelines').trim().notEmpty().withMessage('Guidelines are required'),
   body('labelSet').optional().isArray().withMessage('labelSet must be an array'),
@@ -141,13 +144,21 @@ router.post('/', auth, authorize('manager'), [
       }
     }
 
+    // For admin: allow creating project for any manager (or self)
+    // For manager: can only create project for themselves
+    let managerId = req.user._id;
+    if (req.user.role === 'admin' && req.body.managerId) {
+      // Admin can specify a managerId to assign the project to
+      managerId = req.body.managerId;
+    }
+
     const project = new Project({
       name: req.body.name.trim(),
       description: req.body.description?.trim() || '',
       guidelines: req.body.guidelines.trim(),
       labelSet: req.body.labelSet || [],
       questions: req.body.questions || [],
-      managerId: req.user._id,
+      managerId: managerId,
       status: req.body.status || 'draft',
       reviewPolicy: {
         mode: req.body.reviewPolicy?.mode || 'full',
@@ -290,8 +301,8 @@ router.delete('/:id', auth, authorize('manager', 'admin'), async (req, res) => {
 });
 
 
-// Get quality statistics for project (Manager only)
-router.get('/:id/quality', auth, authorize('manager'), async (req, res) => {
+// Get quality statistics for project (Manager or Admin)
+router.get('/:id/quality', auth, authorize('manager', 'admin'), async (req, res) => {
   try {
     const project = await Project.findById(req.params.id);
     
@@ -299,7 +310,8 @@ router.get('/:id/quality', auth, authorize('manager'), async (req, res) => {
       return res.status(404).json({ message: 'Project not found' });
     }
 
-    if (project.managerId.toString() !== req.user._id.toString()) {
+    // Admin can see all projects, Manager can only see their own
+    if (req.user.role !== 'admin' && project.managerId.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
@@ -424,10 +436,11 @@ router.get('/:id/export', auth, authorize('manager', 'admin'), async (req, res) 
       });
     }
 
-    // Authorization check
+    // Authorization check - Manager can only export their own projects, Admin can export all
     if (req.user.role === 'manager' && project.managerId.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Not authorized' });
     }
+    // Admin can export any project (no additional check needed)
 
     // Get all tasks in the project to check completion status
     const allTasks = await Task.find({
