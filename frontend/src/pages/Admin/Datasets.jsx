@@ -186,6 +186,9 @@ const AdminDatasets = () => {
   // Filter items by status in detail modal
   const [itemStatusFilter, setItemStatusFilter] = useState('all');
 
+  // Toggle show/hide labels in item cards
+  const [showLabels, setShowLabels] = useState(true);
+
   const filteredDetailItems = useMemo(() => {
     if (itemStatusFilter === 'all') return detailItems;
     return detailItems.filter(item => item.status === itemStatusFilter);
@@ -212,12 +215,24 @@ const AdminDatasets = () => {
     <Box sx={{ p: 3 }}>
       {/* Header */}
       <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" fontWeight={800} sx={{ color: '#e2e8f0', mb: 1 }}>
-          Admin Datasets
-        </Typography>
-        <Typography variant="body1" sx={{ color: '#94a3b8' }}>
-          Quản lý và giám sát toàn bộ datasets của tất cả managers trong hệ thống
-        </Typography>
+        {/* Title with accent */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
+          <Box sx={{
+            width: 6, height: 40, bgcolor: '#3b82f6', borderRadius: 3,
+            boxShadow: '0 0 20px rgba(59,130,246,0.4)',
+          }} />
+          <Box>
+            <Typography variant="h4" fontWeight={800} sx={{ color: '#f1f5f9', mb: 0.5, fontSize: '1.75rem' }}>
+              Admin Datasets
+            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#22c55e', animation: 'pulse 2s infinite', '@keyframes pulse': { '0%, 100%': { opacity: 1 }, '50%': { opacity: 0.5 } } }} />
+              <Typography variant="body2" sx={{ color: '#94a3b8' }}>
+                Quản lý và giám sát toàn bộ datasets của tất cả managers trong hệ thống
+              </Typography>
+            </Box>
+          </Box>
+        </Box>
       </Box>
 
       {/* Stats Cards */}
@@ -422,8 +437,8 @@ const AdminDatasets = () => {
             </Box>
           ) : (
             <>
-              {/* Status Filter Tabs */}
-              <Box sx={{ px: 3, pt: 2, borderBottom: '1px solid #334155', bgcolor: '#0f172a' }}>
+              {/* Status Filter Tabs + Label Toggle */}
+              <Box sx={{ px: 3, pt: 2, pb: 0, borderBottom: '1px solid #334155', bgcolor: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <Tabs
                   value={itemStatusFilter}
                   onChange={(e, v) => setItemStatusFilter(v)}
@@ -468,6 +483,28 @@ const AdminDatasets = () => {
                     }
                   />
                 </Tabs>
+
+                {/* Toggle: Hiện/Ẩn nhãn */}
+                <Tooltip title={showLabels ? 'Ẩn nhãn annotation' : 'Hiện nhãn annotation'}>
+                  <Button
+                    size="small"
+                    variant={showLabels ? 'contained' : 'outlined'}
+                    onClick={() => setShowLabels(prev => !prev)}
+                    startIcon={showLabels ? <LabelIcon sx={{ fontSize: 16 }} /> : <ViewIcon sx={{ fontSize: 16 }} />}
+                    sx={{
+                      minWidth: 0,
+                      px: 1.5,
+                      py: 0.5,
+                      fontSize: '0.72rem',
+                      borderColor: '#334155',
+                      bgcolor: showLabels ? '#3b82f6' : 'transparent',
+                      color: showLabels ? '#fff' : '#94a3b8',
+                      '&:hover': { bgcolor: showLabels ? '#2563eb' : '#334155' },
+                    }}
+                  >
+                    {showLabels ? 'Ẩn nhãn' : 'Hiện nhãn'}
+                  </Button>
+                </Tooltip>
               </Box>
 
               {/* Items Grid */}
@@ -572,25 +609,27 @@ const AdminDatasets = () => {
                               </Box>
                             )}
 
-                            {/* Label */}
-                            <Box sx={{ mb: 1 }}>
-                              <Typography sx={{ color: '#475569', fontSize: '0.7rem', mb: 0.3, display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                <LabelIcon sx={{ fontSize: 12 }} /> Nhãn gán
-                              </Typography>
-                              <Typography sx={{
-                                color: item.displayLabel && item.displayLabel !== 'Chưa có nhãn' ? '#93c5fd' : '#475569',
-                                fontSize: '0.8rem',
-                                fontWeight: item.displayLabel && item.displayLabel !== 'Chưa có nhãn' ? 600 : 400,
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
-                              }}>
-                                {item.displayLabel || 'Chưa có nhãn'}
-                              </Typography>
-                            </Box>
+                            {/* Label - toggle by showLabels */}
+                            {showLabels && (
+                              <Box sx={{ mb: 1 }}>
+                                <Typography sx={{ color: '#475569', fontSize: '0.7rem', mb: 0.3, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                  <LabelIcon sx={{ fontSize: 12 }} /> Nhãn gán
+                                </Typography>
+                                <Typography sx={{
+                                  color: item.displayLabel && item.displayLabel !== 'Chưa có nhãn' ? '#93c5fd' : '#475569',
+                                  fontSize: '0.8rem',
+                                  fontWeight: item.displayLabel && item.displayLabel !== 'Chưa có nhãn' ? 600 : 400,
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                }}>
+                                  {item.displayLabel || 'Chưa có nhãn'}
+                                </Typography>
+                              </Box>
+                            )}
 
-                            {/* Annotators */}
-                            {item.annotations && item.annotations.length > 0 && (
+                            {/* Annotators - toggle by showLabels */}
+                            {showLabels && item.annotations && item.annotations.length > 0 && (
                               <Box>
                                 <Typography sx={{ color: '#475569', fontSize: '0.7rem', mb: 0.5, display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                   <PersonIcon sx={{ fontSize: 12 }} /> Người gán nhãn ({item.annotations.length})
