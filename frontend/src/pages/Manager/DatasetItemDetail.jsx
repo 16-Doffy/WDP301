@@ -1,21 +1,28 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Box, Button, Chip, Divider, Stack, Typography, Switch, FormControlLabel, CircularProgress } from '@mui/material';
 import { ArrowBack as ArrowBackIcon } from '@mui/icons-material';
 import axios from 'axios';
 import ImageViewer from '../../components/ImageViewer';
+import AudioAnnotator from '../../components/AudioAnnotator';
 import { API_URL } from '../../config/api';
 
 const getFullImageUrl = (dataItem) => {
   const baseUrl = API_URL.replace(/\/+$/, '');
-  const rawPath = dataItem?.path || '';
+
+  const directUrl = dataItem?.url || dataItem?.imageUrl || '';
+  if (typeof directUrl === 'string' && /^https?:\/\//i.test(directUrl)) return directUrl;
+
+  const rawPath = (dataItem?.path || directUrl || '').replace(/\\/g, '/');
   const cleanPath = rawPath.replace(/^\/+/, '');
+
   if (cleanPath) {
     if (dataItem?.filename && cleanPath.endsWith(dataItem.filename)) {
       return `${baseUrl}/${cleanPath}`;
     }
     return dataItem?.filename ? `${baseUrl}/${cleanPath}/${dataItem.filename}` : `${baseUrl}/${cleanPath}`;
   }
+
   return dataItem?.filename ? `${baseUrl}/uploads/datasets/${dataItem.filename}` : '';
 };
 
@@ -26,6 +33,12 @@ const normalizeLabelSet = (labelSet) => {
     if (label && typeof label === 'object') return { name: label.name || label.label || 'Unknown', color: label.color };
     return { name: 'Unknown' };
   });
+};
+
+const isTextItem = (it) => {
+  const mime = (it?.mimeType || it?.dataItem?.mimeType || '').toLowerCase();
+  const fileName = (it?.filename || it?.dataItem?.filename || it?.path || it?.dataItem?.path || '').toLowerCase();
+  return mime.startsWith('text/') || /\.(txt|csv|json|xml)$/i.test(fileName);
 };
 
 // Tạo màu ngẫu nhiên cho annotator
@@ -50,8 +63,24 @@ const getAnnotatorColor = (annotatorName) => {
   return annotatorColors[annotatorName];
 };
 
+const getLabelColor = (labelSet = [], label, fallback = '#3b82f6') => {
+  const found = Array.isArray(labelSet) ? labelSet.find((l) => l?.name === label) : null;
+  return found?.color || fallback;
+};
+
+const toRgba = (hexColor = '#3b82f6', alpha = 0.25) => {
+  const hex = (hexColor || '').replace('#', '').trim();
+  if (!/^[0-9a-fA-F]{6}$/.test(hex)) return `rgba(59,130,246,${alpha})`;
+  const bigint = parseInt(hex, 16);
+  const r = (bigint >> 16) & 255;
+  const g = (bigint >> 8) & 255;
+  const b = bigint & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+};
+
 const DatasetItemDetail = () => {
   const navigate = useNavigate();
+  const audioPlayerRef = useRef(null);
   const location = useLocation();
   const { datasetId } = useParams();
   const itemId = useMemo(() => {
@@ -70,32 +99,97 @@ const DatasetItemDetail = () => {
   const labelSet = resolvedLabelSet;
   const imageUrl = useMemo(() => getFullImageUrl(item?.dataItem || item), [item]);
 
+  useEffect(() => {
+    if (!resolvedItem) return;
+    if (!isTextItem(resolvedItem)) return;
+
+    const hasText = Boolean(resolvedItem?.text || resolvedItem?.dataItem?.text);
+    if (hasText) return;
+
+    const fetchText = async () => {
+      try {
+        const textUrl = getFullImageUrl(resolvedItem?.dataItem || resolvedItem);
+        if (!textUrl) return;
+        const textResp = await axios.get(textUrl, { responseType: 'text' });
+        const loadedText = typeof textResp.data === 'string' ? textResp.data : '';
+        if (!loadedText) return;
+
+        setResolvedItem((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            text: loadedText,
+            dataItem: {
+              ...(prev.dataItem || {}),
+              text: loadedText,
+            },
+          };
+        });
+      } catch (e) {
+        console.error('Error fetching text content for detail item:', e);
+      }
+    };
+
+    fetchText();
+  }, [resolvedItem]);
+
   const annotations = (item?.annotations || []);
-  const primaryAnnotations = annotations.filter(a => a.primaryForItem);
-  const approvedAnnotations = annotations.filter(a => a.status === 'approved');
-  // For display: use primary if exists, otherwise use approved, otherwise use first one
-  const displayAnnotations = primaryAnnotations.length > 0 
-    ? primaryAnnotations 
-    : approvedAnnotations.length > 0 
-      ? approvedAnnotations 
-      : (annotations.length > 0 ? [annotations[0]] : []);
-  const annotatorNames = annotations.map(a => a.annotator).filter(Boolean);
-  const uniqueAnnotatorNames = Array.from(new Set(annotatorNames));
+  const primaryAnnotations = annotations.filter((a) => a.primaryForItem);
+  const approvedAnnotations = annotations.filter((a) => a.status === 'approved');
+  // Luôn ưu tiên hiển thị tất cả annotator đã approved (không chỉ primary)
+  const displayAnnotations = approvedAnnotations.length > 0
+    ? approvedAnnotations
+    : annotations;
+  const reviewerDisplayName = useMemo(() => {
+    const looksLikeObjectId = (v) => typeof v === 'string' && /^[a-f\d]{24}$/i.test(v);
+
+    const directReviewer = item?.reviewerId;
+    if (directReviewer?.fullName) return directReviewer.fullName;
+    if (directReviewer?.username) return directReviewer.username;
+    if (directReviewer?.name) return directReviewer.name;
+    if (typeof directReviewer === 'string' && directReviewer.trim() && !looksLikeObjectId(directReviewer)) return directReviewer;
+
+    const reviewedBy = item?.reviewedBy;
+    if (reviewedBy?.fullName) return reviewedBy.fullName;
+    if (reviewedBy?.username) return reviewedBy.username;
+    if (typeof reviewedBy === 'string' && reviewedBy.trim() && !looksLikeObjectId(reviewedBy)) return reviewedBy;
+
+    if (Array.isArray(item?.annotations) && item.annotations.length > 0) {
+      const annWithReviewer = item.annotations.find((a) => a?.reviewerId?.fullName || a?.reviewerId?.username);
+      if (annWithReviewer?.reviewerId?.fullName) return annWithReviewer.reviewerId.fullName;
+      if (annWithReviewer?.reviewerId?.username) return annWithReviewer.reviewerId.username;
+    }
+
+    if (Array.isArray(item?.reviewers) && item.reviewers.length > 0) {
+      const picked = item.reviewers.find((r) => r?.status === 'approved' || r?.status === 'rejected') || item.reviewers[0];
+      const rid = picked?.reviewerId || picked?.reviewedBy;
+      if (rid?.fullName) return rid.fullName;
+      if (rid?.username) return rid.username;
+      if (typeof rid === 'string' && rid.trim() && !looksLikeObjectId(rid)) return rid;
+    }
+
+    return 'Unknown';
+  }, [item]);
 
   const normalizedAnnotations = displayAnnotations.map((ann, idx) => ({
     ...ann,
-    id: ann.annotatorId || ann.annotator || `annotator-${idx}`,
-    name: ann.annotator || 'Unknown annotator',
+    id: (ann.annotatorId?._id || ann.annotatorId || ann.annotator || `annotator-${idx}`)?.toString?.(),
+    name: ann.annotator || ann.annotatorId?.fullName || ann.annotatorId?.username || 'Unknown annotator',
     labels: ann.labels || {},
   }));
 
-  const [visibleAnnotators, setVisibleAnnotators] = useState(() => {
-    const initial = {};
-    normalizedAnnotations.forEach(a => {
-      initial[a.id] = true;
+  const [visibleAnnotators, setVisibleAnnotators] = useState({});
+
+  useEffect(() => {
+    if (!normalizedAnnotations.length) return;
+    setVisibleAnnotators((prev) => {
+      const next = {};
+      normalizedAnnotations.forEach((a) => {
+        next[a.id] = prev[a.id] ?? true;
+      });
+      return next;
     });
-    return initial;
-  });
+  }, [normalizedAnnotations]);
 
   // Determine the actual data type
   const dataType = item?.type || 
@@ -105,75 +199,90 @@ const DatasetItemDetail = () => {
 
   const mergedObjects = useMemo(() => {
     if (!item) return [];
-    
+
     // Handle text data type
     if (dataType === 'text') {
-      const spans = displayAnnotations[0]?.labels?.spans || displayAnnotations[0]?.labels?.sentences || [];
-      return spans.map((span, idx) => ({
-        id: `span_${idx}`,
-        text: span.text || span.sentence || '',
-        label: span.label || 'Unknown',
-        start: span.start,
-        end: span.end,
-        sourceAnnotator: displayAnnotations[0]?.annotator || 'Unknown',
-      }));
+      return normalizedAnnotations.flatMap((ann, annIdx) => {
+        const spans = ann?.labels?.spans || ann?.labels?.sentences || [];
+        return spans.map((span, idx) => ({
+          id: `span_${annIdx}_${idx}`,
+          text: span.text || span.sentence || '',
+          label: span.label || 'Unknown',
+          start: span.start,
+          end: span.end,
+          sourceAnnotator: ann.name,
+          sourceAnnotatorId: ann.id,
+        }));
+      });
     }
-    
+
     // Handle audio data type
     if (dataType === 'audio') {
-      const segments = displayAnnotations[0]?.labels?.segments || [];
-      return segments.map((seg, idx) => ({
-        id: `segment_${idx}`,
-        start: seg.start ?? seg.startTime ?? 0,
-        end: seg.end ?? seg.endTime ?? 0,
-        label: seg.label || 'unknown',
-        note: seg.note || '',
-        sourceAnnotator: displayAnnotations[0]?.annotator || 'Unknown',
-      }));
+      return normalizedAnnotations.flatMap((ann, annIdx) => {
+        const segments = ann?.labels?.segments || [];
+        return segments.map((seg, idx) => ({
+          id: `segment_${annIdx}_${idx}`,
+          start: seg.start ?? seg.startTime ?? 0,
+          end: seg.end ?? seg.endTime ?? 0,
+          label: seg.label || 'unknown',
+          note: seg.note || '',
+          sourceAnnotator: ann.name,
+          sourceAnnotatorId: ann.id,
+        }));
+      });
     }
-    
-    // Handle image data type - show all annotations for comparison
-    const allAnnotations = annotations.length > 0 ? annotations : displayAnnotations;
-    return allAnnotations.flatMap(ann => {
-      const isPrimary = ann.primaryForItem;
-      const annColor = getAnnotatorColor(ann.annotator);
+
+    // Handle image data type - only use annotators currently represented in normalizedAnnotations
+    // to avoid leaking non-approved labels.
+    return normalizedAnnotations.flatMap((ann, annIdx) => {
+      const annName = ann.name || 'Unknown';
+      const annId = ann.id;
+      const isPrimary = Boolean(ann.primaryForItem);
+      const annColor = getAnnotatorColor(annName);
       return (ann.labels?.objects || []).map((obj, objIdx) => ({
         ...obj,
-        id: `${ann.annotator}-${objIdx}`,
+        id: `${annName}-${annIdx}-${objIdx}`,
         label: `${obj.label || 'Unknown'}`,
         originalLabel: obj.label,
-        sourceAnnotator: ann.annotator,
-        isPrimary: isPrimary,
+        sourceAnnotator: annName,
+        sourceAnnotatorId: annId,
+        isPrimary,
         color: annColor,
       }));
     });
-  }, [item, annotations, displayAnnotations, dataType]);
+  }, [item, dataType, normalizedAnnotations]);
 
-  // Get unique labels based on data type
+  const visibleMergedObjects = useMemo(() => {
+    if (!mergedObjects.length) return [];
+    // Strict filter: only explicit ON annotators are shown.
+    return mergedObjects.filter((obj) => visibleAnnotators[obj.sourceAnnotatorId] === true);
+  }, [mergedObjects, visibleAnnotators]);
+
+  // Get unique labels based on data type (theo annotator đang bật)
   const uniqueLabels = useMemo(() => {
     if (!item) return [];
-    
+
     if (dataType === 'text' || dataType === 'audio') {
-      return Array.from(new Set(mergedObjects.map(obj => obj.label).filter(Boolean)));
+      return Array.from(new Set(visibleMergedObjects.map((obj) => obj.label).filter(Boolean)));
     }
-    
+
     // For image: get unique labels (just the label name without annotator)
-    return Array.from(new Set(mergedObjects.map(obj => obj.originalLabel || obj.label).filter(Boolean)));
-  }, [item, mergedObjects, dataType]);
+    return Array.from(new Set(visibleMergedObjects.map((obj) => obj.originalLabel || obj.label).filter(Boolean)));
+  }, [item, visibleMergedObjects, dataType]);
 
   // Base labels without annotator name
   const baseLabels = useMemo(() => {
     if (!item) return [];
-    
+
     if (dataType === 'text' || dataType === 'audio') {
-      return Array.from(new Set(mergedObjects.map(obj => obj.label?.split(' • ')[0]).filter(Boolean)));
+      return Array.from(new Set(visibleMergedObjects.map((obj) => obj.label?.split(' • ')[0]).filter(Boolean)));
     }
-    
+
     // For image: just use original labels
     return Array.from(new Set(
-      mergedObjects.map(obj => obj.originalLabel || obj.label).filter(Boolean)
+      visibleMergedObjects.map((obj) => obj.originalLabel || obj.label).filter(Boolean)
     ));
-  }, [item, mergedObjects, dataType]);
+  }, [item, visibleMergedObjects, dataType]);
 
   useEffect(() => {
     if (resolvedItem || !datasetId) return;
@@ -255,22 +364,24 @@ const DatasetItemDetail = () => {
               <Typography variant="subtitle1" fontWeight={700} sx={{ color: '#e2e8f0' }}>
                 {dataType === 'audio' ? 'Audio + Nhãn' : dataType === 'text' ? 'Text + Nhãn' : 'Ảnh gốc + Nhãn'}
               </Typography>
-              {uniqueAnnotatorNames.length > 0 && (
+              {normalizedAnnotations.length > 0 && (
                 <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', mb: 2 }}>
-                  {uniqueAnnotatorNames.map((name) => {
-                    const isPrimary = primaryAnnotations.some((ann) => ann.annotator === name || ann.name === name);
-                    const annColor = getAnnotatorColor(name);
-                    // Hiển thị tất cả annotator với màu riêng và icon sao cho primary
+                  {normalizedAnnotations.map((ann) => {
+                    const isPrimary = primaryAnnotations.some((a) => (a.annotator || a.annotatorId?.fullName || a.annotatorId?.username) === ann.name);
+                    const annColor = getAnnotatorColor(ann.name);
+                    const isVisible = visibleAnnotators[ann.id] === true;
                     return (
                       <Chip
-                        key={name}
-                        label={isPrimary ? `★ ${name}` : name}
+                        key={ann.id}
+                        label={`${isVisible ? 'ON' : 'OFF'} • ${isPrimary ? `★ ${ann.name}` : ann.name}`}
                         size="small"
+                        onClick={() => setVisibleAnnotators((prev) => ({ ...prev, [ann.id]: !isVisible }))}
                         sx={{
-                          bgcolor: `${annColor}30`,
-                          color: annColor,
+                          bgcolor: isVisible ? `${annColor}30` : 'rgba(71,85,105,0.3)',
+                          color: isVisible ? annColor : '#94a3b8',
                           fontWeight: 700,
-                          border: isPrimary ? `2px solid ${annColor}` : `1px solid ${annColor}80`,
+                          border: isPrimary ? `2px solid ${annColor}` : `1px solid ${isVisible ? `${annColor}80` : '#64748b'}`,
+                          cursor: 'pointer',
                         }}
                       />
                     );
@@ -292,47 +403,219 @@ const DatasetItemDetail = () => {
                 justifyContent: 'center',
               }}
             >
-              {imageUrl ? (
-                dataType === 'audio' ? (
-                  <Box sx={{ textAlign: 'center', p: 4 }}>
-                    <Typography sx={{ color: '#94a3b8', mb: 2 }}>Audio File</Typography>
-                    <audio controls src={imageUrl} style={{ maxWidth: '100%' }}>
-                      Your browser does not support the audio element.
-                    </audio>
-                    <Typography sx={{ color: '#64748b', mt: 2, fontSize: '0.875rem' }}>
+              {dataType === 'audio' ? (
+                imageUrl ? (
+                  <Box sx={{ p: 2, width: '100%' }}>
+                    <Typography sx={{ color: '#94a3b8', mb: 1.5, textAlign: 'center', fontWeight: 600 }}>Waveform + Segments</Typography>
+
+                    <Box sx={{ bgcolor: '#f8fafc', borderRadius: 2, p: 2 }}>
+                      <AudioAnnotator
+                        audioUrl={imageUrl}
+                        labelSet={labelSet}
+                        initialSegments={visibleMergedObjects.map((seg) => ({
+                          id: seg.id,
+                          start: Number(seg.start || 0),
+                          end: Number(seg.end || 0),
+                          label: seg.label,
+                        }))}
+                        readOnly
+                      />
+                      {(!imageUrl || !/\.(mp3|wav|ogg|m4a|aac|flac)(\?.*)?$/i.test(imageUrl)) && (
+                        <Typography sx={{ color: '#64748b', mt: 1, fontSize: '0.8rem' }}>
+                          URL audio có thể chưa đúng định dạng. Link hiện tại: {imageUrl || 'N/A'}
+                        </Typography>
+                      )}
+                    </Box>
+
+                    <audio ref={audioPlayerRef} src={imageUrl} preload="metadata" style={{ display: 'none' }} />
+
+                    <Typography sx={{ color: '#64748b', mt: 2, fontSize: '0.875rem', textAlign: 'center' }}>
                       {item?.dataItem?.filename || item?.filename || 'Unknown audio file'}
                     </Typography>
-                  </Box>
-                ) : dataType === 'text' ? (
-                  <Box sx={{ p: 3, width: '100%', maxHeight: '70vh', overflow: 'auto' }}>
-                    <Typography sx={{ color: '#94a3b8', mb: 2, fontWeight: 600 }}>
-                      Text Content:
-                    </Typography>
-                    <Box sx={{ 
-                      p: 2, 
-                      borderRadius: 2, 
-                      bgcolor: '#0f172a', 
-                      border: '1px solid #334155',
-                      whiteSpace: 'pre-wrap',
-                      fontFamily: 'monospace',
-                      fontSize: '0.875rem',
-                      color: '#e2e8f0'
-                    }}>
-                      {item?.dataItem?.text || item?.text || 'No text content available'}
-                    </Box>
+
+                    {visibleMergedObjects.length > 0 && (
+                      <Box sx={{ mt: 3, textAlign: 'left' }}>
+                        <Typography sx={{ color: '#94a3b8', mb: 1, fontWeight: 600 }}>Segments theo annotator:</Typography>
+                        <Stack spacing={1}>
+                          {visibleMergedObjects.map((seg) => {
+                            const annColor = getAnnotatorColor(seg.sourceAnnotator);
+                            const lblColor = getLabelColor(labelSet, seg.label, '#3b82f6');
+                            return (
+                              <Box key={seg.id} sx={{ p: 1.2, border: '1px solid #334155', borderRadius: 1, bgcolor: '#0f172a' }}>
+                                <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" justifyContent="space-between">
+                                  <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                                    <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: lblColor }} />
+                                    <Typography sx={{ color: '#e2e8f0', fontSize: '0.85rem', fontWeight: 600 }}>
+                                      [{Number(seg.start || 0).toFixed(1)}s - {Number(seg.end || 0).toFixed(1)}s] {seg.label}
+                                    </Typography>
+                                    <Chip
+                                      size="small"
+                                      label={seg.sourceAnnotator}
+                                      sx={{
+                                        height: 22,
+                                        bgcolor: `${annColor}30`,
+                                        color: annColor,
+                                        border: `1px solid ${annColor}80`,
+                                        fontWeight: 700,
+                                      }}
+                                    />
+                                  </Stack>
+
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    sx={{
+                                      borderColor: `${lblColor}88`,
+                                      color: lblColor,
+                                      minWidth: 76,
+                                      textTransform: 'none',
+                                      fontWeight: 700,
+                                    }}
+                                    onClick={() => {
+                                      const audioEl = audioPlayerRef.current;
+                                      if (!audioEl) return;
+                                      const start = Number(seg.start || 0);
+                                      const end = Number(seg.end || 0);
+                                      audioEl.currentTime = start;
+                                      audioEl.play();
+                                      const clear = () => {
+                                        audioEl.removeEventListener('timeupdate', onTimeUpdate);
+                                      };
+                                      const onTimeUpdate = () => {
+                                        if (audioEl.currentTime >= end) {
+                                          audioEl.pause();
+                                          clear();
+                                        }
+                                      };
+                                      audioEl.addEventListener('timeupdate', onTimeUpdate);
+                                    }}
+                                  >
+                                    ▶ Play đoạn
+                                  </Button>
+                                </Stack>
+                              </Box>
+                            );
+                          })}
+                        </Stack>
+                      </Box>
+                    )}
                   </Box>
                 ) : (
-                  <ImageViewer
-                    imageUrl={imageUrl}
-                    annotations={mergedObjects.map((obj) => ({
+                  <Typography sx={{ color: '#94a3b8' }}>Không có audio để hiển thị.</Typography>
+                )
+              ) : dataType === 'text' ? (
+                <Box sx={{ p: 3, width: '100%', maxHeight: '70vh', overflow: 'auto' }}>
+                  <Typography sx={{ color: '#94a3b8', mb: 2, fontWeight: 600 }}>
+                    Text Content:
+                  </Typography>
+
+                  {(() => {
+                    const rawText = item?.dataItem?.text || item?.text || '';
+                    if (!rawText) {
+                      return (
+                        <Box sx={{ p: 2, borderRadius: 2, bgcolor: '#0f172a', border: '1px solid #334155', color: '#94a3b8' }}>
+                          Không có dữ liệu để hiển thị.
+                        </Box>
+                      );
+                    }
+
+                    const spans = visibleMergedObjects
+                      .filter((s) => Number.isFinite(Number(s.start)) && Number.isFinite(Number(s.end)))
+                      .map((s) => {
+                        const start = Math.max(0, Math.min(rawText.length, Number(s.start) || 0));
+                        const end = Math.max(start, Math.min(rawText.length, Number(s.end) || 0));
+                        return { ...s, start, end };
+                      })
+                      .filter((s) => s.end > s.start)
+                      // dedupe span trùng hệt nhau giữa các annotator để tránh text bị render đè/lặp
+                      .reduce((acc, cur) => {
+                        const key = `${cur.start}-${cur.end}-${cur.label}`;
+                        if (!acc.some((x) => `${x.start}-${x.end}-${x.label}` === key)) acc.push(cur);
+                        return acc;
+                      }, [])
+                      .sort((a, b) => (a.start - b.start) || (b.end - a.end));
+
+                    if (!spans.length) {
+                      return (
+                        <Box sx={{ p: 2, borderRadius: 2, bgcolor: '#0f172a', border: '1px solid #334155', whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '0.875rem', color: '#e2e8f0' }}>
+                          {rawText}
+                        </Box>
+                      );
+                    }
+
+                    const boundaries = new Set([0, rawText.length]);
+                    spans.forEach((s) => {
+                      boundaries.add(s.start);
+                      boundaries.add(s.end);
+                    });
+                    const points = Array.from(boundaries).sort((a, b) => a - b);
+
+                    const chunks = [];
+                    for (let i = 0; i < points.length - 1; i += 1) {
+                      const start = points[i];
+                      const end = points[i + 1];
+                      if (end <= start) continue;
+                      const active = spans.filter((s) => s.start <= start && s.end >= end);
+                      chunks.push({
+                        key: `c-${i}-${start}-${end}`,
+                        text: rawText.slice(start, end),
+                        active,
+                      });
+                    }
+
+                    return (
+                      <Box sx={{ p: 2, borderRadius: 2, bgcolor: '#0f172a', border: '1px solid #334155', whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '0.875rem', color: '#e2e8f0', lineHeight: 1.8 }}>
+                        {chunks.map((chunk) => {
+                          if (!chunk.active.length) return <span key={chunk.key}>{chunk.text}</span>;
+                          const top = chunk.active[0];
+                          const labelColor = getLabelColor(labelSet, top.label, '#3b82f6');
+                          const annotatorColor = getAnnotatorColor(top.sourceAnnotator);
+                          return (
+                            <mark
+                              key={chunk.key}
+                              title={`${top.label} • ${top.sourceAnnotator}`}
+                              style={{
+                                backgroundColor: toRgba(labelColor, 0.25),
+                                color: '#e2e8f0',
+                                borderBottom: `1px solid ${labelColor}`,
+                                padding: '0 2px',
+                                borderRadius: '2px',
+                              }}
+                            >
+                              {chunk.text}
+                              <span
+                                style={{
+                                  marginLeft: 4,
+                                  padding: '0 4px',
+                                  borderRadius: 4,
+                                  fontSize: '0.72em',
+                                  fontWeight: 700,
+                                  backgroundColor: toRgba(annotatorColor, 0.22),
+                                  color: annotatorColor,
+                                  border: `1px solid ${toRgba(annotatorColor, 0.5)}`,
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                [{top.label} • {top.sourceAnnotator}]
+                              </span>
+                            </mark>
+                          );
+                        })}
+                      </Box>
+                    );
+                  })()}
+                </Box>
+              ) : imageUrl ? (
+                <ImageViewer
+                  imageUrl={imageUrl}
+                  annotations={visibleMergedObjects.map((obj) => ({
                       bbox: obj.bbox,
                       label: obj.isPrimary ? `${obj.label} • PRIMARY` : obj.label,
                     }))}
-                    labelSet={labelSet}
-                    readOnly
-                    maxHeight="70vh"
-                  />
-                )
+                  labelSet={labelSet}
+                  readOnly
+                  maxHeight="70vh"
+                />
               ) : (
                 <Typography sx={{ color: '#94a3b8' }}>Không có dữ liệu để hiển thị.</Typography>
               )}
@@ -360,14 +643,17 @@ const DatasetItemDetail = () => {
                   {uniqueLabels.length === 0 ? (
                     <Typography sx={{ color: '#94a3b8' }}>Không có nhãn.</Typography>
                   ) : (
-                    uniqueLabels.map((label, idx) => (
-                      <Chip
-                        key={`${label}-${idx}`}
-                        label={label}
-                        size="small"
-                        sx={{ bgcolor: 'rgba(59,130,246,0.2)', color: '#60a5fa', fontWeight: 600 }}
-                      />
-                    ))
+                    uniqueLabels.map((label, idx) => {
+                      const c = getLabelColor(labelSet, label, '#3b82f6');
+                      return (
+                        <Chip
+                          key={`${label}-${idx}`}
+                          label={label}
+                          size="small"
+                          sx={{ bgcolor: toRgba(c, 0.2), color: c, border: `1px solid ${toRgba(c, 0.45)}`, fontWeight: 700 }}
+                        />
+                      );
+                    })
                   )}
                 </Stack>
               </Box>
@@ -378,14 +664,17 @@ const DatasetItemDetail = () => {
                   {baseLabels.length === 0 ? (
                     <Typography sx={{ color: '#94a3b8' }}>Không có nhãn.</Typography>
                   ) : (
-                    baseLabels.map((label, idx) => (
-                      <Chip
-                        key={`base-${label}-${idx}`}
-                        label={label}
-                        size="small"
-                        sx={{ bgcolor: 'rgba(34,197,94,0.2)', color: '#22c55e', fontWeight: 600 }}
-                      />
-                    ))
+                    baseLabels.map((label, idx) => {
+                      const c = getLabelColor(labelSet, label, '#22c55e');
+                      return (
+                        <Chip
+                          key={`base-${label}-${idx}`}
+                          label={label}
+                          size="small"
+                          sx={{ bgcolor: toRgba(c, 0.2), color: c, border: `1px solid ${toRgba(c, 0.45)}`, fontWeight: 700 }}
+                        />
+                      );
+                    })
                   )}
                 </Stack>
               </Box>
@@ -409,14 +698,12 @@ const DatasetItemDetail = () => {
                       }}
                     />
                     
-                    {item.reviewerId && (
-                      <Box sx={{ mb: 2 }}>
-                        <Typography variant="caption" sx={{ color: '#94a3b8' }}>Reviewer:</Typography>
-                        <Typography sx={{ color: '#e2e8f0', fontSize: '0.875rem' }}>
-                          {item.reviewerId?.fullName || item.reviewerId?.username || 'Unknown'}
-                        </Typography>
-                      </Box>
-                    )}
+                    <Box sx={{ mb: 2 }}>
+                      <Typography variant="caption" sx={{ color: '#94a3b8' }}>Reviewer:</Typography>
+                      <Typography sx={{ color: '#e2e8f0', fontSize: '0.875rem' }}>
+                        {reviewerDisplayName}
+                      </Typography>
+                    </Box>
                     
                     {item.reviewedAt && (
                       <Box sx={{ mb: 2 }}>
@@ -427,71 +714,7 @@ const DatasetItemDetail = () => {
                       </Box>
                     )}
                     
-                    {item.reviewComments && (
-                      <Box sx={{ mb: 2 }}>
-                        <Typography variant="caption" sx={{ color: '#94a3b8' }}>Nhận xét:</Typography>
-                        <Box sx={{ 
-                          p: 1.5, 
-                          borderRadius: 1, 
-                          bgcolor: '#0f172a', 
-                          border: '1px solid #334155',
-                          mt: 0.5
-                        }}>
-                          <Typography sx={{ color: '#e2e8f0', fontSize: '0.875rem', fontStyle: 'italic' }}>
-                            "{item.reviewComments}"
-                          </Typography>
-                        </Box>
-                      </Box>
-                    )}
-                    
-                    {item.errorCategory && (
-                      <Box sx={{ mb: 2 }}>
-                        <Typography variant="caption" sx={{ color: '#94a3b8' }}>Loại lỗi:</Typography>
-                        <Typography sx={{ color: '#ef4444', fontSize: '0.875rem', fontWeight: 600 }}>
-                          {item.errorCategory === 'incorrect_label' && 'Sai nhãn'}
-                          {item.errorCategory === 'missing_label' && 'Thiếu nhãn'}
-                          {item.errorCategory === 'poor_quality' && 'Chất lượng kém'}
-                          {item.errorCategory === 'does_not_follow_guidelines' && 'Không đúng hướng dẫn'}
-                          {item.errorCategory === 'other' && 'Khác'}
-                        </Typography>
-                      </Box>
-                    )}
-                    
-                    {/* Detailed Issues */}
-                    {item.reviewIssues && item.reviewIssues.length > 0 && (
-                      <Box>
-                        <Typography variant="caption" sx={{ color: '#94a3b8', mb: 1, display: 'block' }}>
-                          Chi tiết các lỗi:
-                        </Typography>
-                        <Stack spacing={1}>
-                          {item.reviewIssues.map((issue, idx) => (
-                            <Box 
-                              key={idx}
-                              sx={{ 
-                                p: 1.5, 
-                                borderRadius: 1, 
-                                bgcolor: 'rgba(239,68,68,0.1)', 
-                                border: '1px solid rgba(239,68,68,0.3)'
-                              }}
-                            >
-                              <Typography sx={{ color: '#ef4444', fontSize: '0.8rem', fontWeight: 600 }}>
-                                {idx + 1}. {issue.type}
-                              </Typography>
-                              {issue.targetDetails && (
-                                <Typography sx={{ color: '#fb923c', fontSize: '0.75rem', mt: 0.5 }}>
-                                  Target: {issue.targetDetails.label} (Index: {issue.targetDetails.index})
-                                </Typography>
-                              )}
-                              {issue.comment && (
-                                <Typography sx={{ color: '#94a3b8', fontSize: '0.75rem', mt: 0.5, fontStyle: 'italic' }}>
-                                  "{issue.comment}"
-                                </Typography>
-                              )}
-                            </Box>
-                          ))}
-                        </Stack>
-                      </Box>
-                    )}
+
                   </Box>
                 </>
               ) : item?.status === 'submitted' ? (

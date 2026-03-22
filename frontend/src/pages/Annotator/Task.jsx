@@ -1012,7 +1012,7 @@ const AnnotatorTask = () => {
                   <span className="text-xs text-gray-400">{task?.dataItem?.mimeType}</span>
                 </div>
                 <AudioAnnotator
-                  audioUrl={`${API_URL}/${task?.dataItem?.path}/${task?.dataItem?.filename}`}
+                  audioUrl={buildFileUrl(task?.dataItem)}
                   labelSet={task?.projectId?.labelSet || []}
                   initialSegments={labels?.segments || []}
                   readOnly={task?.status === 'submitted' || task?.status === 'approved'}

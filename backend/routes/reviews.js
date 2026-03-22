@@ -6,6 +6,14 @@ const { createActivityLog } = require('./activityLogs');
 
 const router = express.Router();
 
+const isTaskOverdue = (task) => {
+  const deadline = task?.projectId?.deadline;
+  if (!deadline) return false;
+  const deadlineDate = new Date(deadline);
+  if (Number.isNaN(deadlineDate.getTime())) return false;
+  return deadlineDate < new Date();
+};
+
 const applyMajorityDecision = (task) => {
   const votes = Array.isArray(task.reviewers) ? task.reviewers : [];
   const approveCount = votes.filter((r) => r.status === 'approved').length;
@@ -80,18 +88,39 @@ router.get('/pending', auth, authorize('reviewer', 'admin'), async (req, res) =>
             },
           },
         },
-        { reviewerId: { $in: [reviewerId, reviewerIdString] } },
+        {
+          $and: [
+            {
+          $and: [
+            { reviewerId: { $in: [reviewerId, reviewerIdString] } },
+            {
+              $or: [
+                { reviewers: { $exists: false } },
+                { reviewers: { $size: 0 } },
+              ],
+            },
+          ],
+        },
+            {
+              $or: [
+                { reviewers: { $exists: false } },
+                { reviewers: { $size: 0 } },
+              ],
+            },
+          ],
+        },
         { reviewers: { $exists: true, $size: 0 } },
         { reviewers: { $exists: false } },
       ],
     })
-      .populate('projectId', 'name labelSet guidelines questions')
+      .populate('projectId', 'name labelSet guidelines questions deadline')
       .populate('datasetId', 'name')
       .populate('annotatorId', 'username fullName')
       .populate('reviewers.reviewerId', 'username fullName')
       .sort({ submittedAt: 1 });
 
-    res.json(tasks);
+    const actionableTasks = tasks.filter((t) => !isTaskOverdue(t));
+    res.json(actionableTasks);
   } catch (error) {
     console.error('Error in /api/reviews/pending:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
@@ -136,7 +165,7 @@ router.get('/all', auth, authorize('reviewer', 'admin'), async (req, res) => {
     const reviewerId = req.user._id;
     const reviewerIdString = reviewerId.toString();
 
-    const pendingTasks = await Task.find({
+    const pendingTasksRaw = await Task.find({
       status: 'submitted',
       $or: [
         {
@@ -152,11 +181,13 @@ router.get('/all', auth, authorize('reviewer', 'admin'), async (req, res) => {
         { reviewers: { $exists: false } },
       ],
     })
-      .populate('projectId', 'name labelSet guidelines questions')
+      .populate('projectId', 'name labelSet guidelines questions deadline')
       .populate('datasetId', 'name')
       .populate('annotatorId', 'username fullName')
       .populate('reviewers.reviewerId', 'username fullName')
       .sort({ submittedAt: 1 });
+
+    const pendingTasks = pendingTasksRaw.filter((t) => !isTaskOverdue(t));
 
     const reviewedTasks = await Task.find({
       status: { $in: ['approved', 'rejected'] },
@@ -206,7 +237,7 @@ router.get('/overview', auth, authorize('reviewer', 'admin'), async (req, res) =
     };
 
     const tasks = await Task.find(reviewerAssignedQuery)
-      .populate('projectId', 'name')
+      .populate('projectId', 'name deadline projectReview')
       .populate('datasetId', 'name')
       .populate('annotatorId', 'username fullName')
       .sort({ updatedAt: -1 });
@@ -226,6 +257,11 @@ router.post('/:id/primary', auth, authorize('reviewer', 'admin'), async (req, re
 
     if (task.status !== 'approved') {
       return res.status(400).json({ message: 'Chỉ được chọn ảnh chính cho task đã approved.' });
+    }
+
+    const mimeType = (task?.dataItem?.mimeType || '').toLowerCase();
+    if (!mimeType.startsWith('image/')) {
+      return res.status(400).json({ message: 'Chỉ task image mới được đặt Primary.' });
     }
 
     // Clear other primary selections for same raw item in this dataset
@@ -257,12 +293,18 @@ router.post('/:id/primary', auth, authorize('reviewer', 'admin'), async (req, re
 // Approve task
 router.post('/:id/approve', auth, authorize('reviewer', 'admin'), async (req, res) => {
   try {
-    const task = await Task.findById(req.params.id).populate('projectId', 'name guidelines');
+    const task = await Task.findById(req.params.id).populate('projectId', 'name guidelines deadline');
     if (!task) return res.status(404).json({ message: 'Task not found' });
 
     if (task.status !== 'submitted') {
       return res.status(400).json({
         message: `Task cannot be approved. Current status: ${task.status}. Only submitted tasks can be approved.`,
+      });
+    }
+
+    if (isTaskOverdue(task)) {
+      return res.status(400).json({
+        message: 'Task đã quá hạn deadline project, reviewer không thể review nữa.',
       });
     }
 
@@ -349,12 +391,18 @@ router.post(
       const errors = validationResult(req);
       if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
-      const task = await Task.findById(req.params.id).populate('projectId', 'name guidelines');
+      const task = await Task.findById(req.params.id).populate('projectId', 'name guidelines deadline');
       if (!task) return res.status(404).json({ message: 'Task not found' });
 
       if (task.status !== 'submitted') {
         return res.status(400).json({
           message: `Task cannot be rejected. Current status: ${task.status}. Only submitted tasks can be rejected.`,
+        });
+      }
+
+      if (isTaskOverdue(task)) {
+        return res.status(400).json({
+          message: 'Task đã quá hạn deadline project, reviewer không thể review nữa.',
         });
       }
 

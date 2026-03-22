@@ -114,6 +114,24 @@ const getFullImageUrl = (path) => {
   return baseUrl + '/' + relativePath;
 };
 
+const getItemMediaInfo = (dataItem = {}) => {
+  const mime = (dataItem?.mimeType || '').toLowerCase();
+  const fileName = dataItem?.originalName || dataItem?.filename || dataItem?.path || 'Unknown item';
+  const rawPath = dataItem?.imageUrl || dataItem?.url || dataItem?.path || dataItem?.filename || '';
+  const fileUrl = rawPath ? getFullImageUrl(rawPath) : '';
+
+  // Ưu tiên nhận diện theo đuôi file để tránh mimeType bị sai từ backend.
+  let mediaType = 'other';
+  if (/\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(fileName)) mediaType = 'audio';
+  else if (/\.(txt|csv|json|xml)$/i.test(fileName)) mediaType = 'text';
+  else if (/\.(jpg|jpeg|png|gif|bmp|webp|svg)$/i.test(fileName)) mediaType = 'image';
+  else if (mime.startsWith('audio/')) mediaType = 'audio';
+  else if (mime.startsWith('text/')) mediaType = 'text';
+  else if (mime.startsWith('image/')) mediaType = 'image';
+
+  return { mediaType, fileName, fileUrl };
+};
+
 const getLabelColor = (labelName) => {
   const label = labelName?.toLowerCase() || '';
   
@@ -344,11 +362,16 @@ const ManagerProjectDetail = () => {
 
       const isPrimary = Boolean(task?.primaryForItem);
 
+      const mediaInfo = getItemMediaInfo(dataItem);
+
       if (!map.has(key)) {
         map.set(key, {
           key,
           dataItem,
           imageUrl,
+          mediaType: mediaInfo.mediaType,
+          fileName: mediaInfo.fileName,
+          fileUrl: mediaInfo.fileUrl,
           annotators: annotatorName ? [annotatorName] : [],
           annotatorLabels: annotatorName ? [{ name: annotatorName, labels, annotations, isPrimary }] : [],
           datasetId: task.datasetId?._id || task.datasetId,
@@ -817,7 +840,7 @@ const ManagerProjectDetail = () => {
           Items đã duyệt ({approvedItems.length})
         </Typography>
         <Typography variant="body2" sx={{ color: '#94a3b8' }}>
-          Hiển thị 3 ảnh mới nhất đã được duyệt.
+          Hiển thị 3 item mới nhất đã được duyệt.
         </Typography>
       </Box>
 
@@ -842,11 +865,25 @@ const ManagerProjectDetail = () => {
                 }}
               >
                 <Box sx={{ position: 'relative', paddingTop: '70%', bgcolor: '#0f172a', overflow: 'hidden' }}>
-                  {item.imageUrl ? (
-                    <Box component="img" src={getFullImageUrl(item.imageUrl)} alt="approved item" sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                  {item.mediaType === 'image' && item.fileUrl ? (
+                    <Box component="img" src={item.fileUrl} alt="approved item" sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ) : item.mediaType === 'audio' ? (
+                    <Box sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
+                      <Typography sx={{ color: '#f472b6', fontSize: 32 }}>🎧</Typography>
+                      <Typography sx={{ color: '#94a3b8', fontSize: 12, px: 1, textAlign: 'center' }}>
+                        {item.fileName}
+                      </Typography>
+                    </Box>
+                  ) : item.mediaType === 'text' ? (
+                    <Box sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
+                      <Typography sx={{ color: '#60a5fa', fontSize: 32 }}>📝</Typography>
+                      <Typography sx={{ color: '#94a3b8', fontSize: 12, px: 1, textAlign: 'center' }}>
+                        {item.fileName}
+                      </Typography>
+                    </Box>
                   ) : (
                     <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <Typography sx={{ color: '#64748b' }}>No Image</Typography>
+                      <Typography sx={{ color: '#64748b' }}>No Preview</Typography>
                     </Box>
                   )}
                 </Box>
@@ -1090,10 +1127,10 @@ const ManagerProjectDetail = () => {
             <Grid container spacing={2}>
               <Grid item xs={12} md={7}>
                 <Box sx={{ width: '100%', bgcolor: '#0f172a', borderRadius: 2, border: '1px solid #334155', overflow: 'hidden', minHeight: 280 }}>
-                  {selectedApprovedItem.imageUrl ? (
+                  {selectedApprovedItem.mediaType === 'image' && selectedApprovedItem.fileUrl ? (
                     showAnnotatorLabels ? (
                       <ImageViewer
-                        imageUrl={getFullImageUrl(selectedApprovedItem.imageUrl)}
+                        imageUrl={selectedApprovedItem.fileUrl}
                         annotations={(selectedApprovedItem.annotatorLabels || []).flatMap((ann) => {
                           const shouldShow = showAnnotatorLabelMap[ann.name] ?? true;
                           return shouldShow ? (ann.annotations || []) : [];
@@ -1102,11 +1139,36 @@ const ManagerProjectDetail = () => {
                         maxHeight="100%"
                       />
                     ) : (
-                      <Box component="img" src={getFullImageUrl(selectedApprovedItem.imageUrl)} alt="approved item" sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      <Box component="img" src={selectedApprovedItem.fileUrl} alt="approved item" sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     )
+                  ) : selectedApprovedItem.mediaType === 'audio' && selectedApprovedItem.fileUrl ? (
+                    <Box sx={{ height: 280, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, px: 2 }}>
+                      <Typography sx={{ color: '#f472b6', fontSize: 36 }}>🎧</Typography>
+                      <Typography sx={{ color: '#94a3b8', fontSize: 14, textAlign: 'center' }}>
+                        {selectedApprovedItem.fileName}
+                      </Typography>
+                      <Box component="audio" controls src={selectedApprovedItem.fileUrl} sx={{ width: '100%' }} />
+                    </Box>
+                  ) : selectedApprovedItem.mediaType === 'text' ? (
+                    <Box sx={{ height: 280, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, px: 2 }}>
+                      <Typography sx={{ color: '#60a5fa', fontSize: 36 }}>📝</Typography>
+                      <Typography sx={{ color: '#94a3b8', fontSize: 14, textAlign: 'center' }}>
+                        {selectedApprovedItem.fileName}
+                      </Typography>
+                      {selectedApprovedItem.fileUrl && (
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={() => window.open(selectedApprovedItem.fileUrl, '_blank')}
+                          sx={{ mt: 1, borderColor: '#3b82f6', color: '#60a5fa', textTransform: 'none' }}
+                        >
+                          Mở file text
+                        </Button>
+                      )}
+                    </Box>
                   ) : (
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 280 }}>
-                      <Typography sx={{ color: '#64748b' }}>No Image</Typography>
+                      <Typography sx={{ color: '#64748b' }}>No Preview</Typography>
                     </Box>
                   )}
                 </Box>

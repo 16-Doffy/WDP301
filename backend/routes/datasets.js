@@ -659,8 +659,10 @@ router.get('/:id/items', auth, authorize('manager', 'admin'), async (req, res) =
 
     // Get all tasks for this dataset
     const tasks = await Task.find({ datasetId: dataset._id })
-      .select('status dataItem labels annotatorId reviewedAt primaryForItem reviewerId reviewComments errorCategory reviewIssues')
+      .select('status dataItem labels annotatorId reviewedAt primaryForItem reviewerId reviewers reviewComments errorCategory reviewIssues')
       .populate('annotatorId', 'username fullName')
+      .populate('reviewerId', 'username fullName')
+      .populate('reviewers.reviewerId', 'username fullName')
       .populate({
         path: 'datasetId',
         select: 'projectId',

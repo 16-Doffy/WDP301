@@ -34,6 +34,43 @@ const buildFileUrl = (dataItem) => {
 const PROJECT_APPROVE_THRESHOLD = 0.7;
 const PROJECT_REJECT_THRESHOLD = 0.3;
 
+const getProjectTimelineStatus = ({ deadline, reviewStatus }) => {
+  const normalizedReview = (reviewStatus || 'pending').toLowerCase();
+
+  if (normalizedReview === 'approved') {
+    return {
+      key: 'approved',
+      label: 'ĐÃ APPROVE',
+      tone: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+    };
+  }
+
+  if (normalizedReview === 'rejected') {
+    return {
+      key: 'rejected',
+      label: 'ĐÃ REJECT',
+      tone: 'bg-rose-500/20 text-rose-300 border-rose-500/30',
+    };
+  }
+
+  if (deadline) {
+    const isOverdue = new Date(deadline) < new Date();
+    if (isOverdue) {
+      return {
+        key: 'overdue',
+        label: 'QUÁ HẠN',
+        tone: 'bg-orange-500/20 text-orange-300 border-orange-500/30',
+      };
+    }
+  }
+
+  return {
+    key: 'on_time',
+    label: 'CÒN HẠN',
+    tone: 'bg-sky-500/20 text-sky-300 border-sky-500/30',
+  };
+};
+
 const ReviewerDashboard = () => {
   const [allTasks, setAllTasks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -141,6 +178,14 @@ const ReviewerDashboard = () => {
         const notSubmittedAnnotators = annotatorRows.filter((a) => a.submittedTasks === 0 && a.reviewedTasks === 0).length;
         const firstActionableTaskId = annotatorRows.find((a) => a.actionableTaskIds.length > 0)?.actionableTaskIds?.[0] || null;
 
+        const projectDeadline = group.tasks
+          .map((t) => t?.projectId?.deadline)
+          .find(Boolean) || null;
+
+        const projectDecisionStatus = group.tasks
+          .map((t) => t?.projectId?.projectReview?.status)
+          .find((s) => s === 'approved' || s === 'rejected') || 'pending';
+
         return {
           ...group,
           annotatorRows,
@@ -149,6 +194,8 @@ const ReviewerDashboard = () => {
           reviewedAnnotators,
           notSubmittedAnnotators,
           firstActionableTaskId,
+          projectDeadline,
+          projectDecisionStatus,
         };
       })
       .sort((a, b) => {
@@ -160,6 +207,16 @@ const ReviewerDashboard = () => {
   const selectedBatch = useMemo(() => {
     return groupedBatches.find((g) => g.key === selectedBatchKey) || groupedBatches[0] || null;
   }, [groupedBatches, selectedBatchKey]);
+
+  const selectedBatchTimelineStatus = useMemo(() => {
+    if (!selectedBatch) return null;
+    return getProjectTimelineStatus({
+      deadline: selectedBatch.projectDeadline,
+      reviewStatus: selectedBatch.projectDecisionStatus,
+    });
+  }, [selectedBatch]);
+
+  const isSelectedBatchOverdue = selectedBatchTimelineStatus?.key === 'overdue';
 
   useEffect(() => {
     if (!selectedBatch?.annotatorRows) return;
@@ -398,35 +455,71 @@ const ReviewerDashboard = () => {
             <div className="max-h-[640px] overflow-auto">
               {groupedBatches.length === 0 ? (
                 <div className="p-6 text-sm text-slate-400">Không có batch nào.</div>
-              ) : groupedBatches.map((batch) => (
-                <button
-                  key={batch.key}
-                  onClick={() => setSelectedBatchKey(batch.key)}
-                  className={`w-full text-left p-4 border-b border-slate-700/60 hover:bg-slate-700/30 ${selectedBatch?.key === batch.key ? 'bg-slate-700/40' : ''}`}
-                >
-                  <p className="font-semibold text-slate-100">{batch.projectName}</p>
-                  <p className="text-xs text-slate-400 mt-0.5">{batch.datasetName} • {batch.type.toUpperCase()}</p>
-                  <p className="text-xs mt-2 text-slate-300">
-                    Annotators: {batch.annotatorCount} • Đã nộp: {batch.submittedAnnotators} • Chưa nộp: {batch.notSubmittedAnnotators}
-                  </p>
-                </button>
-              ))}
+              ) : groupedBatches.map((batch) => {
+                const timelineStatus = getProjectTimelineStatus({
+                  deadline: batch.projectDeadline,
+                  reviewStatus: batch.projectDecisionStatus,
+                });
+
+                return (
+                  <button
+                    key={batch.key}
+                    onClick={() => setSelectedBatchKey(batch.key)}
+                    className={`w-full text-left p-4 border-b border-slate-700/60 hover:bg-slate-700/30 ${selectedBatch?.key === batch.key ? 'bg-slate-700/40' : ''}`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="font-semibold text-slate-100">{batch.projectName}</p>
+                      <span className={`text-[10px] px-2 py-1 rounded-full border font-semibold ${timelineStatus.tone}`}>
+                        {timelineStatus.label}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-0.5">{batch.datasetName} • {batch.type.toUpperCase()}</p>
+                    <p className="text-xs mt-2 text-slate-300">
+                      Annotators: {batch.annotatorCount} • Đã nộp: {batch.submittedAnnotators} • Chưa nộp: {batch.notSubmittedAnnotators}
+                    </p>
+                    {batch.projectDeadline && (
+                      <p className="text-[11px] mt-1 text-slate-400">
+                        Deadline: {new Date(batch.projectDeadline).toLocaleString('vi-VN')}
+                      </p>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
           <div className="lg:col-span-2 bg-[#0f172a]">
             <div className="p-4 border-b border-slate-700 space-y-2">
-              <h2 className="text-lg font-semibold text-white">{selectedBatch?.projectName || 'Chọn một batch'}</h2>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-lg font-semibold text-white">{selectedBatch?.projectName || 'Chọn một batch'}</h2>
+                {selectedBatchTimelineStatus && (
+                  <span className={`text-xs px-2.5 py-1 rounded-full border font-semibold ${selectedBatchTimelineStatus.tone}`}>
+                    {selectedBatchTimelineStatus.label}
+                  </span>
+                )}
+              </div>
               <p className="text-sm text-slate-400">{selectedBatch?.datasetName || ''}</p>
 
               {selectedBatch?.projectId && (
                 <div className="rounded-xl border border-slate-700 bg-[#1e293b] p-3 space-y-2">
-                  <p className="text-xs text-slate-300">
-                    Trạng thái duyệt project: <b className="text-white">{(projectReviewInfo?.review?.status || 'pending').toUpperCase()}</b>
-                  </p>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <p className="text-xs text-slate-300">
+                      Trạng thái duyệt project: <b className="text-white">{(projectReviewInfo?.review?.status || 'pending').toUpperCase()}</b>
+                    </p>
+                    {selectedBatchTimelineStatus && (
+                      <span className={`text-[10px] px-2 py-1 rounded-full border font-semibold ${selectedBatchTimelineStatus.tone}`}>
+                        {selectedBatchTimelineStatus.label}
+                      </span>
+                    )}
+                  </div>
                   <p className="text-xs text-slate-400">
                     Còn cần xử lý: {projectReviewInfo?.snapshot?.actionableLeft ?? '-'} task
                   </p>
+                  {selectedBatch?.projectDeadline && (
+                    <p className="text-xs text-slate-400">
+                      Deadline project: {new Date(selectedBatch.projectDeadline).toLocaleString('vi-VN')}
+                    </p>
+                  )}
 
                   {projectReviewInfo?.snapshot?.actionableLeft > 0 && (
                     <p className="text-xs text-amber-300">
@@ -507,8 +600,12 @@ const ReviewerDashboard = () => {
                           Bỏ chọn
                         </button>
                         <button
-                          disabled={selectedAnnotatorIds.length === 0}
+                          disabled={selectedAnnotatorIds.length === 0 || isSelectedBatchOverdue}
                           onClick={() => {
+                            if (isSelectedBatchOverdue) {
+                              alert('Project đã quá hạn, không thể mở task để review.');
+                              return;
+                            }
                             const chosen = selectedPendingAnnotators
                               .find((ann) => ann.actionableTaskIds[0])
                               ?.actionableTaskIds?.[0];
@@ -572,8 +669,12 @@ const ReviewerDashboard = () => {
 
                             <div className="mt-3 flex gap-2">
                               <button
-                                disabled={!hasSubmission || !ann.actionableTaskIds[0]}
+                                disabled={!hasSubmission || !ann.actionableTaskIds[0] || isSelectedBatchOverdue}
                                 onClick={() => {
+                                  if (isSelectedBatchOverdue) {
+                                    alert('Project đã quá hạn, không thể mở task để review.');
+                                    return;
+                                  }
                                   if (!ann.actionableTaskIds[0]) return;
                                   navigate(`/reviewer/tasks/${ann.actionableTaskIds[0]}?projectId=${selectedBatch.projectId}&datasetId=${selectedBatch.datasetId}&annotatorId=${ann.annotatorId}`);
                                 }}
@@ -582,8 +683,9 @@ const ReviewerDashboard = () => {
                                 Mở task chờ review
                               </button>
                               <button
+                                disabled={!hasReviewed}
                                 onClick={() => setSelectedReviewedAnnotatorId(ann.annotatorId)}
-                                className="flex-1 min-w-[160px] px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm"
+                                className="flex-1 min-w-[160px] px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm disabled:opacity-40"
                               >
                                 Xem lại review
                               </button>

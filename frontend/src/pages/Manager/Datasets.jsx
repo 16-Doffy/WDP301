@@ -595,7 +595,7 @@ const Datasets = () => {
               {detailTab === 1 && (
                 <Box>
                   <Typography variant="body2" sx={{ color: '#94a3b8', mb: 2 }}>
-                    Showing items (one image per item)
+                    Showing items (image/audio/text)
                   </Typography>
                   {detailItemsLoading ? (
                     <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
@@ -605,8 +605,9 @@ const Datasets = () => {
                     <Grid container spacing={2}>
                       {detailItems.map((item, idx) => {
                         const imageSrc = getFullImageUrl(item.path, item.imageUrl, item.filename);
-                        const isText = item.mimeType === 'text/plain' || item.filename?.endsWith('.txt');
-                        const isAudio = item.mimeType?.startsWith('audio/') || item.filename?.endsWith('.mp3') || item.filename?.endsWith('.wav');
+                        const fileName = item.originalName || item.filename || item.path || 'Unknown item';
+                        const isText = /\.(txt|csv|json|xml)$/i.test(fileName) || item.mimeType?.startsWith('text/');
+                        const isAudio = /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(fileName) || item.mimeType?.startsWith('audio/');
                         const labelSet = normalizeLabelSet(item.labelSet || detailDataset?.projectId?.labelSet || []);
                         const annotationsRaw = (item.annotations || []).filter(a => a.status === 'approved');
                         const primaryAnnotations = annotationsRaw.filter(a => a.primaryForItem);
@@ -662,10 +663,14 @@ const Datasets = () => {
                                       alignItems: 'center',
                                       justifyContent: 'center',
                                       bgcolor: '#1e293b',
+                                      px: 1,
                                     }}
                                   >
                                     <Typography sx={{ color: '#60a5fa', fontSize: 24, mb: 1 }}>📝</Typography>
-                                    <Typography sx={{ color: '#94a3b8', fontSize: 10 }}>Text</Typography>
+                                    <Typography sx={{ color: '#94a3b8', fontSize: 10, textAlign: 'center' }}>Text</Typography>
+                                    <Typography sx={{ color: '#64748b', fontSize: 9, mt: 0.5, textAlign: 'center', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                      {fileName}
+                                    </Typography>
                                   </Box>
                                 ) : isAudio ? (
                                   <Box
@@ -680,10 +685,14 @@ const Datasets = () => {
                                       alignItems: 'center',
                                       justifyContent: 'center',
                                       bgcolor: '#1e293b',
+                                      px: 1,
                                     }}
                                   >
                                     <Typography sx={{ color: '#f472b6', fontSize: 24, mb: 1 }}>🎧</Typography>
-                                    <Typography sx={{ color: '#94a3b8', fontSize: 10 }}>Audio</Typography>
+                                    <Typography sx={{ color: '#94a3b8', fontSize: 10, textAlign: 'center' }}>Audio</Typography>
+                                    <Typography sx={{ color: '#64748b', fontSize: 9, mt: 0.5, textAlign: 'center', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                      {fileName}
+                                    </Typography>
                                   </Box>
                                 ) : (
                                   <Box
