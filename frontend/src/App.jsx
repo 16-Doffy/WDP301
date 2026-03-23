@@ -24,8 +24,6 @@ import ReviewerTask from './pages/Reviewer/Task';
 import AdminDashboard from './pages/Admin/Dashboard';
 import AdminUsers from './pages/Admin/Users';
 import AdminActivityLogs from './pages/Admin/ActivityLogs';
-import AdminSystemSettings from './pages/Admin/SystemSettings';
-import AdminSystemHealth from './pages/Admin/SystemHealth';
 import AdminDatasets from './pages/Admin/Datasets';
 
 import Layout from './components/LayoutTailwind';
@@ -214,8 +212,6 @@ function App() {
               <Route path="reviewer/tasks/:id" element={<ReviewerTask />} />
               <Route path="admin/users" element={<AdminUsers />} />
               <Route path="admin/activity-logs" element={<AdminActivityLogs />} />
-              <Route path="admin/settings" element={<AdminSystemSettings />} />
-              <Route path="admin/system-health" element={<AdminSystemHealth />} />
               <Route path="admin/datasets" element={<AdminDatasets />} />
               <Route path="admin" element={<AdminDashboard />} />
             </Route>
