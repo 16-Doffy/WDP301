@@ -17,7 +17,11 @@ const LayoutTailwind = () => {
       {
         text: 'Dashboard',
         icon: <img src={dashboardIcon} alt="Dashboard" className="h-5 w-5" />,
-        path: user.role === 'annotator' ? '/annotator' : '/dashboard',
+        path: user.role === 'annotator'
+          ? '/annotator'
+          : user.role === 'reviewer'
+            ? '/reviewer'
+            : '/dashboard',
       },
     ];
 
@@ -80,9 +84,9 @@ const LayoutTailwind = () => {
 
         <nav className="flex-1 space-y-1 p-3">
           {getMenuItems().map((item) => {
-            const isActive =
-              location.pathname === item.path ||
-              (item.path !== '/dashboard' && location.pathname.startsWith(item.path));
+            const isActive = item.path === '/dashboard' || item.path === '/annotator' || item.path === '/reviewer'
+              ? location.pathname === item.path
+              : (location.pathname === item.path || location.pathname.startsWith(`${item.path}/`));
 
             return (
               <button

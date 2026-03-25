@@ -613,6 +613,7 @@ const AnnotatorTask = () => {
     );
 
   const batchProgress = batchTasks.length > 0 ? ((currentTaskIndex + 1) / batchTasks.length) * 100 : 0;
+  const completedInBatch = batchTasks.filter((t) => t.status === 'completed' || t.status === 'submitted' || t.status === 'approved').length;
 
   const getStatusBadge = () => {
     if (!task) return null;
@@ -671,28 +672,51 @@ const AnnotatorTask = () => {
     <div className="flex-1 flex flex-col overflow-hidden overflow-x-hidden bg-gray-50 h-screen">
       {getStatusBadge() && <div className="px-6 pt-4">{getStatusBadge()}</div>}
 
+      <div className="px-6 pt-3">
+        <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-base font-semibold text-blue-900">{task?.projectId?.name || 'Project Detail'}</h2>
+              <p className="text-xs text-blue-600 mt-0.5">
+                Task hiện tại: {Math.max(1, currentTaskIndex + 1)} / {Math.max(1, batchTasks.length)}
+                {' '}• Đã hoàn thành: {completedInBatch}/{Math.max(1, batchTasks.length)}
+              </p>
+              {task?.projectId?.deadline && (
+                <p className="text-xs font-medium text-rose-600 mt-0.5">
+                  Deadline: {new Date(task.projectId.deadline).toLocaleString('vi-VN')}
+                </p>
+              )}
+              <p className="text-xs text-blue-700 mt-0.5">Dataset: {task?.datasetId?.name || 'N/A'}</p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => navigate('/annotator/tasks')}
+                className="rounded-md bg-white px-2.5 py-1.5 text-xs font-medium text-blue-700 border border-blue-300 hover:bg-blue-100"
+              >
+                Quay lại danh sách project
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-2 h-2 w-full rounded-full bg-blue-100">
+            <div
+              className="h-2 rounded-full bg-blue-600 transition-all"
+              style={{ width: `${Math.min(100, Math.round(batchProgress || 0))}%` }}
+            />
+          </div>
+        </div>
+      </div>
+
       <div className="flex-1 flex overflow-hidden">
         <div className="flex-1 flex flex-col overflow-hidden bg-gray-100" ref={canvasRef}>
           {/* NOTE: UI phần dưới giữ nguyên như file hiện tại (không đụng vào để tránh sửa lớn). */}
-          <div className="flex-1 overflow-auto bg-gray-50 p-6 flex items-center justify-center">
+          <div className="flex-1 overflow-auto bg-gray-50 p-4 md:p-6">
             {getTaskKind(task) === 'image' ? (
-              <div className="bg-white rounded-lg shadow-lg p-4 max-w-full w-full">
-                <div className="mb-4 rounded-lg border border-blue-100 bg-blue-50 p-3">
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
-                    <div>
-                      <p className="text-sm font-semibold text-blue-900">Image Progress in Project</p>
-                      <p className="text-sm text-blue-700">
-                        Ảnh {Math.max(1, currentTaskIndex + 1)} / {Math.max(1, batchTasks.length)}
-                        {' '}• Hoàn thành {batchTasks.filter((t) => t.status === 'completed' || t.status === 'submitted' || t.status === 'approved').length}/{Math.max(1, batchTasks.length)}
-                      </p>
-                    </div>
-                    <div className="w-full md:w-72 bg-blue-100 rounded-full h-2.5">
-                      <div
-                        className="bg-blue-600 h-2.5 rounded-full transition-all"
-                        style={{ width: `${Math.min(100, Math.round(batchProgress || 0))}%` }}
-                      />
-                    </div>
-                  </div>
+              <div className="mx-auto w-full max-w-6xl rounded-xl border border-slate-200 bg-white shadow-sm p-4 md:p-5">
+                <div className="mb-3 flex items-center justify-between">
+                  <h3 className="text-lg font-semibold text-slate-800">Image Annotation</h3>
+                  <span className="text-xs text-slate-500">{task?.dataItem?.filename || 'Image file'}</span>
                 </div>
 
                 <ImageAnnotator
@@ -704,26 +728,29 @@ const AnnotatorTask = () => {
                   readOnly={task?.status === 'submitted' || task?.status === 'approved'}
                 />
 
-                <div className="mt-4 flex flex-wrap gap-3 justify-between">
-                  <div className="flex flex-wrap gap-3">
+                <div className="mt-4 border-t border-slate-200 pt-4 flex flex-wrap gap-3 justify-between">
+                  <div className="flex flex-wrap gap-2">
                     <Button
+                      size="small"
                       variant="outlined"
                       onClick={navigateToPrevious}
                       disabled={saving || currentTaskIndex <= 0}
                     >
-                      Back
+                      Ảnh Sau
                     </Button>
                     <Button
+                      size="small"
                       variant="outlined"
                       onClick={navigateToNext}
                       disabled={saving || currentTaskIndex >= batchTasks.length - 1}
                     >
-                      Next
+                      Ảnh trước
                     </Button>
                   </div>
 
-                  <div className="flex flex-wrap gap-3">
+                  <div className="flex flex-wrap gap-2">
                     <Button
+                      size="small"
                       variant="contained"
                       color="primary"
                       onClick={handleCompleteImage}
@@ -732,6 +759,7 @@ const AnnotatorTask = () => {
                       Submit Image
                     </Button>
                     <Button
+                      size="small"
                       variant="contained"
                       color="success"
                       onClick={handleBatchSubmit}
@@ -743,23 +771,10 @@ const AnnotatorTask = () => {
                 </div>
               </div>
             ) : getTaskKind(task) === 'text' ? (
-              <div className="bg-slate-50 rounded-lg shadow-lg p-4 max-w-4xl w-full space-y-4 relative">
-                <div className="mb-2 rounded-lg border border-blue-100 bg-blue-50 p-3">
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
-                    <div>
-                      <p className="text-sm font-semibold text-blue-900">Text Progress in Project</p>
-                      <p className="text-sm text-blue-700">
-                        File {Math.max(1, currentTaskIndex + 1)} / {Math.max(1, batchTasks.length)}
-                        {' '}• Hoàn thành {batchTasks.filter((t) => t.status === 'completed' || t.status === 'submitted' || t.status === 'approved').length}/{Math.max(1, batchTasks.length)}
-                      </p>
-                    </div>
-                    <div className="w-full md:w-72 bg-blue-100 rounded-full h-2.5">
-                      <div
-                        className="bg-blue-600 h-2.5 rounded-full transition-all"
-                        style={{ width: `${Math.min(100, Math.round(batchProgress || 0))}%` }}
-                      />
-                    </div>
-                  </div>
+              <div className="mx-auto w-full max-w-5xl space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm relative">
+                <div className="mb-1 flex items-center justify-between">
+                  <h3 className="text-lg font-semibold text-slate-800">Text Annotation</h3>
+                  <span className="text-xs font-medium text-slate-500">{task?.dataItem?.mimeType}</span>
                 </div>
 
                 <div className="flex justify-between items-center">
@@ -860,8 +875,8 @@ const AnnotatorTask = () => {
                               setShowLabelDropdown(false);
                               window.getSelection()?.removeAllRanges();
                             }}
-                            className="w-full text-left px-3 py-2 text-sm rounded hover:bg-blue-50 border border-transparent hover:border-blue-200 transition-colors"
-                            style={{ borderLeftColor: lbl.color || '#3b82f6', borderLeftWidth: '3px' }}
+                            className="w-full bg-white text-slate-800 text-left px-3 py-2 text-sm rounded hover:bg-blue-50 hover:text-slate-900 border border-transparent hover:border-blue-200 transition-colors"
+                            style={{ borderLeftColor: lbl.color || '#3b82f6', borderLeftWidth: '30px' }}
                           >
                             {lbl.name}
                           </button>
@@ -937,26 +952,29 @@ const AnnotatorTask = () => {
                   />
                 </div>
 
-                <div className="mt-4 flex flex-wrap gap-3 justify-between">
-                  <div className="flex flex-wrap gap-3">
+                <div className="mt-4 border-t border-slate-200 pt-4 flex flex-wrap gap-3 justify-between">
+                  <div className="flex flex-wrap gap-2">
                     <Button
+                      size="small"
                       variant="outlined"
                       onClick={navigateToPrevious}
                       disabled={saving || currentTaskIndex <= 0}
                     >
-                      Back
+                      Sau
                     </Button>
                     <Button
+                      size="small"
                       variant="outlined"
                       onClick={navigateToNext}
                       disabled={saving || currentTaskIndex >= batchTasks.length - 1}
                     >
-                      Next
+                      Tiếp
                     </Button>
                   </div>
 
-                  <div className="flex items-center gap-3 pt-1">
+                  <div className="flex items-center gap-2 pt-1">
                     <Button
+                      size="small"
                       variant="outlined"
                       onClick={handleSave}
                       disabled={saving || task?.status === 'submitted' || task?.status === 'approved'}
@@ -964,6 +982,7 @@ const AnnotatorTask = () => {
                       Lưu
                     </Button>
                     <Button
+                      size="small"
                       variant="contained"
                       color="primary"
                       onClick={handleCompleteImage}
@@ -972,6 +991,7 @@ const AnnotatorTask = () => {
                       Submit Text
                     </Button>
                     <Button
+                      size="small"
                       variant="contained"
                       color="success"
                       onClick={handleBatchSubmit}
@@ -983,23 +1003,10 @@ const AnnotatorTask = () => {
                 </div>
               </div>
             ) : getTaskKind(task) === 'audio' ? (
-              <div className="bg-white rounded-lg shadow-lg p-4 max-w-4xl w-full space-y-4">
-                <div className="mb-2 rounded-lg border border-blue-100 bg-blue-50 p-3">
-                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
-                    <div>
-                      <p className="text-sm font-semibold text-blue-900">Audio Progress in Project</p>
-                      <p className="text-sm text-blue-700">
-                        File {Math.max(1, currentTaskIndex + 1)} / {Math.max(1, batchTasks.length)}
-                        {' '}• Hoàn thành {batchTasks.filter((t) => t.status === 'completed' || t.status === 'submitted' || t.status === 'approved').length}/{Math.max(1, batchTasks.length)}
-                      </p>
-                    </div>
-                    <div className="w-full md:w-72 bg-blue-100 rounded-full h-2.5">
-                      <div
-                        className="bg-blue-600 h-2.5 rounded-full transition-all"
-                        style={{ width: `${Math.min(100, Math.round(batchProgress || 0))}%` }}
-                      />
-                    </div>
-                  </div>
+              <div className="mx-auto w-full max-w-5xl space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="mb-1 flex items-center justify-between">
+                  <h3 className="text-lg font-semibold text-slate-800">Audio Annotation</h3>
+                  <span className="text-xs font-medium text-slate-500">{task?.dataItem?.mimeType}</span>
                 </div>
 
                 <div className="flex justify-between items-center">
@@ -1033,26 +1040,29 @@ const AnnotatorTask = () => {
                   />
                 </div>
 
-                <div className="mt-4 flex flex-wrap gap-3 justify-between">
-                  <div className="flex flex-wrap gap-3">
+                <div className="mt-4 border-t border-slate-200 pt-4 flex flex-wrap gap-3 justify-between">
+                  <div className="flex flex-wrap gap-2">
                     <Button
+                      size="small"
                       variant="outlined"
                       onClick={navigateToPrevious}
                       disabled={saving || currentTaskIndex <= 0}
                     >
-                      Back
+                      Trước
                     </Button>
                     <Button
+                      size="small"
                       variant="outlined"
                       onClick={navigateToNext}
                       disabled={saving || currentTaskIndex >= batchTasks.length - 1}
                     >
-                      Next
+                      Tiếp
                     </Button>
                   </div>
 
-                  <div className="flex items-center gap-3 pt-1">
+                  <div className="flex items-center gap-2 pt-1">
                     <Button
+                      size="small"
                       variant="outlined"
                       onClick={handleSave}
                       disabled={saving || task?.status === 'submitted' || task?.status === 'approved'}
@@ -1060,6 +1070,7 @@ const AnnotatorTask = () => {
                       Lưu
                     </Button>
                     <Button
+                      size="small"
                       variant="contained"
                       color="primary"
                       onClick={handleCompleteImage}
@@ -1068,6 +1079,7 @@ const AnnotatorTask = () => {
                       Submit Audio
                     </Button>
                     <Button
+                      size="small"
                       variant="contained"
                       color="success"
                       onClick={handleBatchSubmit}

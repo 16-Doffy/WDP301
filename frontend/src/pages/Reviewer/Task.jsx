@@ -1016,6 +1016,13 @@ const ReviewerTask = () => {
       {/* Top Header - Dynamic Style */}
       <div className={`${darkMode ? 'bg-[#1e293b] border-slate-700 shadow-[0_0_0_1px_rgba(59,130,246,0.1)]' : 'bg-[#1e293b] border-slate-700'} border-b px-6 py-4 flex items-center justify-between z-10`}>
         <div className="flex items-center gap-4">
+          <button
+            onClick={() => navigate(-1)}
+            className={`px-3 py-2 rounded-lg text-sm font-semibold transition-all ${darkMode ? 'bg-slate-700 text-slate-200 hover:bg-slate-600' : 'bg-gray-200 text-gray-800 hover:bg-gray-300'}`}
+            title="Quay về trang trước"
+          >
+            ← Quay lại
+          </button>
           <h1 className={`text-2xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
             {task?.projectId?.name || 'Project Review'}
             <span className={`ml-3 align-middle text-xs px-2 py-1 rounded-full ${darkMode ? 'bg-slate-700 text-slate-300' : 'bg-gray-100 text-gray-700'}`}>

@@ -5,6 +5,7 @@ import { API_URL } from '../../config/api';
 
 const AnnotatorDashboard = () => {
   const [batches, setBatches] = useState([]);
+  const [selectedBatch, setSelectedBatch] = useState(null);
 
   const getTaskFormat = (task) => {
     const mime = (task?.dataItem?.mimeType || '').toLowerCase();
@@ -214,6 +215,15 @@ const AnnotatorDashboard = () => {
     return map[format] || map.other;
   };
 
+  const openBatchDetail = (batch) => {
+    if (!batch || batch.status === 'overdue') return;
+    setSelectedBatch(batch);
+  };
+
+  const closeBatchDetail = () => {
+    setSelectedBatch(null);
+  };
+
   const renderBatchCard = (batch) => {
     const progress = getProgressPercentage(batch);
     const statusBadge = getStatusBadge(batch.status);
@@ -226,10 +236,7 @@ const AnnotatorDashboard = () => {
         className={`overflow-hidden rounded-xl border border-gray-700 bg-gray-900 shadow-lg transition ${
           batch.status === 'overdue' ? 'cursor-not-allowed opacity-95' : 'cursor-pointer hover:border-gray-600'
         }`}
-        onClick={() => {
-          if (batch.status === 'overdue') return;
-          if (firstTask) navigate(`/annotator/tasks/${firstTask._id}`);
-        }}
+        onClick={() => openBatchDetail(batch)}
       >
         <div className={`relative h-48 overflow-hidden border-b ${formatUi.border}`}>
           {batch.format === 'image' && batch.previewImage ? (
@@ -476,6 +483,83 @@ const AnnotatorDashboard = () => {
           </div>
         )}
       </div>
+
+      {selectedBatch && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          onClick={closeBatchDetail}
+        >
+          <div
+            className="w-full max-w-3xl rounded-2xl border border-gray-700 bg-gray-900 p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-2xl font-bold text-gray-100">{selectedBatch.name}</h3>
+                <p className="mt-1 text-sm text-gray-400">Project: {selectedBatch.project}</p>
+              </div>
+              <button
+                onClick={closeBatchDetail}
+                className="rounded-lg border border-gray-600 px-3 py-1 text-sm text-gray-300 hover:bg-gray-800"
+              >
+                Đóng
+              </button>
+            </div>
+
+            <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+              <div className="rounded-lg border border-gray-700 bg-gray-800 p-3">
+                <p className="text-xs text-gray-400">Tổng task</p>
+                <p className="text-lg font-semibold text-gray-100">{selectedBatch.totalTasks}</p>
+              </div>
+              <div className="rounded-lg border border-gray-700 bg-gray-800 p-3">
+                <p className="text-xs text-gray-400">Đã xong</p>
+                <p className="text-lg font-semibold text-emerald-400">{selectedBatch.completedTasks}</p>
+              </div>
+              <div className="rounded-lg border border-gray-700 bg-gray-800 p-3">
+                <p className="text-xs text-gray-400">Đang làm</p>
+                <p className="text-lg font-semibold text-blue-400">{selectedBatch.inProgressTasks}</p>
+              </div>
+              <div className="rounded-lg border border-gray-700 bg-gray-800 p-3">
+                <p className="text-xs text-gray-400">Tiến độ</p>
+                <p className="text-lg font-semibold text-gray-100">{getProgressPercentage(selectedBatch)}%</p>
+              </div>
+            </div>
+
+            <div className="mb-4 rounded-lg border border-gray-700 bg-gray-800 p-4">
+              <p className="text-sm text-gray-300">
+                Assigned: {selectedBatch.assignedDate ? new Date(selectedBatch.assignedDate).toLocaleString('vi-VN') : '-'}
+              </p>
+              {selectedBatch.deadline && (
+                <p className="mt-1 text-sm font-medium text-rose-300">
+                  Deadline: {new Date(selectedBatch.deadline).toLocaleString('vi-VN')}
+                </p>
+              )}
+            </div>
+
+            <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+              {selectedBatch.tasks.map((t, idx) => (
+                <div
+                  key={t._id}
+                  className="flex items-center justify-between rounded-lg border border-gray-700 bg-gray-800 px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-gray-200">
+                      {idx + 1}. {t?.dataItem?.originalName || t?.dataItem?.filename || t?._id}
+                    </p>
+                    <p className="text-xs text-gray-400">Status: {t.status || 'new'}</p>
+                  </div>
+                  <button
+                    onClick={() => navigate(`/annotator/tasks/${t._id}`)}
+                    className="rounded-md bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700"
+                  >
+                    Mở task
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

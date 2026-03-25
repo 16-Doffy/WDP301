@@ -20,6 +20,7 @@ import AnnotatorOverview from './pages/Annotator/Overview';
 import AnnotatorTask from './pages/Annotator/Task';
 import Rules from './pages/Annotator/Rules';
 import ReviewerDashboard from './pages/Reviewer/Dashboard';
+import ReviewerOverview from './pages/Reviewer/Overview';
 import ReviewerTask from './pages/Reviewer/Task';
 import AdminDashboard from './pages/Admin/Dashboard';
 import AdminUsers from './pages/Admin/Users';
@@ -170,7 +171,7 @@ const RoleDashboard = () => {
   }
 
   if (user.role === 'reviewer') {
-    return <ReviewerDashboard />;
+    return <Navigate to="/reviewer" replace />;
   }
 
   return <AdminDashboard />;
@@ -207,9 +208,12 @@ function App() {
               <Route path="annotator/rules" element={<Rules />} />
               <Route path="annotator/tasks" element={<AnnotatorDashboard />} />
               <Route path="annotator/tasks/:id" element={<AnnotatorTask />} />
+
+              <Route path="reviewer" element={<ReviewerOverview />} />
               <Route path="reviewer/tasks" element={<ReviewerDashboard />} />
               <Route path="reviewer/dashboard" element={<ReviewerDashboard />} />
               <Route path="reviewer/tasks/:id" element={<ReviewerTask />} />
+
               <Route path="admin/users" element={<AdminUsers />} />
               <Route path="admin/activity-logs" element={<AdminActivityLogs />} />
               <Route path="admin/datasets" element={<AdminDatasets />} />

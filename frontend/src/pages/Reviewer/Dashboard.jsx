@@ -378,18 +378,6 @@ const ReviewerDashboard = () => {
     }
   };
 
-  const stats = useMemo(() => {
-    const submitted = allTasks.filter((t) => t.status === 'submitted').length;
-    const inReview = allTasks.filter((t) => t.status === 'approved' || t.status === 'rejected').length;
-    const notSubmitted = allTasks.filter((t) => notSubmittedStatuses.includes(t.status)).length;
-
-    return {
-      total: allTasks.length,
-      submitted,
-      inReview,
-      notSubmitted,
-    };
-  }, [allTasks]);
 
   if (loading) {
     return (
@@ -404,7 +392,7 @@ const ReviewerDashboard = () => {
       <div className="max-w-7xl mx-auto space-y-6">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h1 className="text-3xl font-semibold text-white">Reviewer Dashboard</h1>
+            <h1 className="text-3xl font-semibold text-white">Review Tasks</h1>
             <p className="text-slate-400 mt-1">Hiển thị project/dataset được giao và trạng thái nộp của từng annotator.</p>
           </div>
           <button
@@ -415,24 +403,6 @@ const ReviewerDashboard = () => {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="rounded-xl border border-slate-700 bg-[#1e293b] p-4">
-            <p className="text-xs uppercase text-slate-400">Total assigned items</p>
-            <p className="text-2xl font-bold text-white">{stats.total}</p>
-          </div>
-          <div className="rounded-xl border border-slate-700 bg-[#1e293b] p-4">
-            <p className="text-xs uppercase text-slate-400">Submitted to reviewer</p>
-            <p className="text-2xl font-bold text-emerald-300">{stats.submitted}</p>
-          </div>
-          <div className="rounded-xl border border-slate-700 bg-[#1e293b] p-4">
-            <p className="text-xs uppercase text-slate-400">Not submitted yet</p>
-            <p className="text-2xl font-bold text-amber-300">{stats.notSubmitted}</p>
-          </div>
-          <div className="rounded-xl border border-slate-700 bg-[#1e293b] p-4">
-            <p className="text-xs uppercase text-slate-400">Already reviewed</p>
-            <p className="text-2xl font-bold text-blue-300">{stats.inReview}</p>
-          </div>
-        </div>
 
         <div className="flex gap-2 flex-wrap">
           {['all', 'image', 'audio', 'text'].map((t) => (
