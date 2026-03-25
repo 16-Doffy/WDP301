@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { Box, Button, Chip, Divider, Stack, Typography, Switch, FormControlLabel, CircularProgress } from '@mui/material';
+import { Box, Button, Chip, Divider, Stack, Typography, CircularProgress } from '@mui/material';
 import { ArrowBack as ArrowBackIcon } from '@mui/icons-material';
 import axios from 'axios';
 import ImageViewer from '../../components/ImageViewer';
@@ -35,6 +35,14 @@ const normalizeLabelSet = (labelSet) => {
   });
 };
 
+const hasColorInfo = (labelSet) => Array.isArray(labelSet) && labelSet.some((l) => l && typeof l === 'object' && Boolean(l.color));
+
+const pickBestLabelSet = (...candidates) => {
+  const valid = candidates.filter((c) => Array.isArray(c) && c.length > 0);
+  if (!valid.length) return [];
+  return valid.find((c) => hasColorInfo(c)) || valid[0];
+};
+
 const isTextItem = (it) => {
   const mime = (it?.mimeType || it?.dataItem?.mimeType || '').toLowerCase();
   const fileName = (it?.filename || it?.dataItem?.filename || it?.path || it?.dataItem?.path || '').toLowerCase();
@@ -63,8 +71,12 @@ const getAnnotatorColor = (annotatorName) => {
   return annotatorColors[annotatorName];
 };
 
+const normalizeLabelName = (value = '') => value.toString().trim().toLowerCase();
+
 const getLabelColor = (labelSet = [], label, fallback = '#3b82f6') => {
-  const found = Array.isArray(labelSet) ? labelSet.find((l) => l?.name === label) : null;
+  if (!Array.isArray(labelSet) || !labelSet.length) return fallback;
+  const target = normalizeLabelName(label);
+  const found = labelSet.find((l) => normalizeLabelName(l?.name) === target);
   return found?.color || fallback;
 };
 
@@ -91,7 +103,16 @@ const DatasetItemDetail = () => {
 
   const [resolvedItem, setResolvedItem] = useState(state.item || null);
   const [resolvedDatasetName, setResolvedDatasetName] = useState(state.datasetName || 'Dataset');
-  const [resolvedLabelSet, setResolvedLabelSet] = useState(normalizeLabelSet(state.labelSet || []));
+  const [resolvedLabelSet, setResolvedLabelSet] = useState(
+    normalizeLabelSet(
+      pickBestLabelSet(
+        state.labelSet,
+        state.item?.labelSet,
+        state.item?.projectId?.labelSet,
+        state.item?.datasetId?.projectId?.labelSet,
+      )
+    )
+  );
   const [loading, setLoading] = useState(false);
 
   const item = resolvedItem;
@@ -313,7 +334,21 @@ const DatasetItemDetail = () => {
         if (found) {
           setResolvedItem(found);
           setResolvedDatasetName(resp.data?.datasetName || resolvedDatasetName);
-          setResolvedLabelSet(normalizeLabelSet(found.labelSet || resolvedLabelSet));
+
+          const resolvedLabels = pickBestLabelSet(
+            // ưu tiên nguồn có color trước
+            found?.projectId?.labelSet,
+            resp.data?.projectId?.labelSet,
+            resp.data?.dataset?.projectId?.labelSet,
+            found?.datasetId?.projectId?.labelSet,
+            // sau đó mới fallback về labelSet item/dataset
+            found?.labelSet,
+            resp.data?.labelSet,
+            resp.data?.dataset?.labelSet,
+            resolvedLabelSet,
+          );
+
+          setResolvedLabelSet(normalizeLabelSet(resolvedLabels));
         }
       } catch (err) {
         console.error('Error fetching item detail:', err);
@@ -417,6 +452,8 @@ const DatasetItemDetail = () => {
                           start: Number(seg.start || 0),
                           end: Number(seg.end || 0),
                           label: seg.label,
+                          color: getLabelColor(labelSet, seg.label, '#3b82f6'),
+                          annotator: seg.sourceAnnotator,
                         }))}
                         readOnly
                       />

@@ -193,6 +193,8 @@ const ManagerProjectDetail = () => {
   const [selectedApprovedItemKey, setSelectedApprovedItemKey] = useState('');
   const [showAnnotatorLabels, setShowAnnotatorLabels] = useState(false);
   const [showAnnotatorLabelMap, setShowAnnotatorLabelMap] = useState({});
+  const [textContentMap, setTextContentMap] = useState({});
+  const [textContentLoadingMap, setTextContentLoadingMap] = useState({});
 
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [selectedAnnotators, setSelectedAnnotators] = useState([]);
@@ -401,6 +403,67 @@ const ManagerProjectDetail = () => {
     if (!selectedApprovedItemKey) return null;
     return approvedItems.find((item) => item.key?.toString?.() === selectedApprovedItemKey.toString()) || null;
   }, [approvedItems, selectedApprovedItemKey]);
+
+  useEffect(() => {
+    const item = selectedApprovedItem;
+    if (!item || item.mediaType !== 'text') return;
+
+    const existingText = item.textContent || item.content || item.preview || textContentMap[item.key];
+    if (existingText) return;
+    if (!item.fileUrl) return;
+    if (textContentLoadingMap[item.key]) return;
+
+    let cancelled = false;
+
+    const fetchTextContent = async () => {
+      try {
+        setTextContentLoadingMap((prev) => ({ ...prev, [item.key]: true }));
+        const resp = await axios.get(item.fileUrl, { responseType: 'text' });
+        const loadedText = typeof resp.data === 'string' ? resp.data : '';
+        if (!cancelled && loadedText) {
+          setTextContentMap((prev) => ({ ...prev, [item.key]: loadedText }));
+        }
+      } catch (err) {
+        console.error('Error loading text content for approved item:', err);
+      } finally {
+        if (!cancelled) {
+          setTextContentLoadingMap((prev) => ({ ...prev, [item.key]: false }));
+        }
+      }
+    };
+
+    fetchTextContent();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedApprovedItem]);
+
+  useEffect(() => {
+    const textItems = approvedItemPreview.filter((it) => it.mediaType === 'text');
+    if (!textItems.length) return;
+
+    textItems.forEach((item) => {
+      const existingText = item.textContent || item.content || item.preview || textContentMap[item.key];
+      if (existingText || !item.fileUrl || textContentLoadingMap[item.key]) return;
+
+      setTextContentLoadingMap((prev) => ({ ...prev, [item.key]: true }));
+      axios
+        .get(item.fileUrl, { responseType: 'text' })
+        .then((resp) => {
+          const loadedText = typeof resp.data === 'string' ? resp.data : '';
+          if (loadedText) {
+            setTextContentMap((prev) => ({ ...prev, [item.key]: loadedText }));
+          }
+        })
+        .catch((err) => {
+          console.error('Error loading text content for approved preview item:', err);
+        })
+        .finally(() => {
+          setTextContentLoadingMap((prev) => ({ ...prev, [item.key]: false }));
+        });
+    });
+  }, [approvedItemPreview, textContentMap, textContentLoadingMap]);
 
   const groupedByAnnotator = useMemo(() => {
     const groupsMap = new Map();
@@ -904,7 +967,7 @@ const ManagerProjectDetail = () => {
                       </Box>
                       <Box sx={{ flex: 1, overflow: 'hidden', px: 1.5, py: 1 }}>
                         <Typography sx={{ color: '#94a3b8', fontSize: 8, display: '-webkit-box', WebkitLineClamp: 6, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: 1.4 }}>
-                          {item.textContent || item.content || item.preview || item.fileName}
+                          {textContentMap[item.key] || item.textContent || item.content || item.preview || item.fileName}
                         </Typography>
                       </Box>
                       {(() => { const chips = item.annotatorLabels?.flatMap(al => al.labels || []).filter((l, i, arr) => arr.indexOf(l) === i); const hasLabels = chips?.length > 0; return hasLabels ? (
@@ -1189,14 +1252,17 @@ const ManagerProjectDetail = () => {
                           audioUrl={selectedApprovedItem.fileUrl}
                           labelSet={project?.labelSet || []}
                           initialSegments={(selectedApprovedItem.annotatorLabels || []).flatMap((ann) => {
-                            return (ann.labels?.segments || []).map((seg) => ({
-                              id: `${ann.name}-${seg.start}-${seg.end}`,
+                            const shouldShow = showAnnotatorLabels ? (showAnnotatorLabelMap[ann.name] ?? true) : false;
+                            if (!shouldShow) return [];
+                            return (ann.annotations || []).filter((seg) => seg?.start !== undefined && seg?.end !== undefined).map((seg) => ({
+                              id: `${ann.name}-${seg.start}-${seg.end}-${seg.label || 'unknown'}`,
                               start: Number(seg.start ?? seg.startTime ?? 0),
                               end: Number(seg.end ?? seg.endTime ?? 0),
                               label: seg.label || 'unknown',
                             }));
                           })}
                           readOnly
+                          showLabelLegend={showAnnotatorLabels}
                         />
                       </Box>
                       <Box component="audio" controls src={selectedApprovedItem.fileUrl} sx={{ width: '100%' }} />
@@ -1208,16 +1274,18 @@ const ManagerProjectDetail = () => {
                     <Box sx={{ p: 2, height: 280, overflow: 'auto' }}>
                       <Typography sx={{ color: '#34d399', fontWeight: 700, fontSize: 12, mb: 1 }}>TEXT CONTENT</Typography>
                       {(() => {
-                        const rawText = selectedApprovedItem.textContent || selectedApprovedItem.content || selectedApprovedItem.preview || '';
+                        const rawText = textContentMap[selectedApprovedItem.key] || selectedApprovedItem.textContent || selectedApprovedItem.content || selectedApprovedItem.preview || '';
                         if (!rawText) {
                           return (
                             <Box sx={{ p: 2, borderRadius: 2, bgcolor: '#0f172a', border: '1px solid #334155', color: '#94a3b8', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                              Không có nội dung text.
+                              {textContentLoadingMap[selectedApprovedItem.key] ? 'Đang tải nội dung text...' : 'Không có nội dung text.'}
                             </Box>
                           );
                         }
                         const spans = (selectedApprovedItem.annotatorLabels || []).flatMap((ann) => {
-                          return (ann.labels?.spans || ann.labels?.sentences || []).map((s) => ({
+                          const shouldShow = showAnnotatorLabels ? (showAnnotatorLabelMap[ann.name] ?? true) : false;
+                          if (!shouldShow) return [];
+                          return (ann.annotations || []).filter((s) => s?.start !== undefined && s?.end !== undefined).map((s) => ({
                             ...s,
                             sourceAnnotator: ann.name,
                           }));
@@ -1248,17 +1316,45 @@ const ManagerProjectDetail = () => {
                           <Box sx={{ p: 2, borderRadius: 2, bgcolor: '#0f172a', border: '1px solid #334155', whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '0.8rem', color: '#e2e8f0', lineHeight: 1.8, maxHeight: 220, overflow: 'auto' }}>
                             {chunks.map((chunk) => {
                               if (!chunk.active.length) return <span key={chunk.key}>{chunk.text}</span>;
+
                               const top = chunk.active[0];
                               const colors = ['#3b82f6','#22c55e','#f59e0b','#ef4444','#8b5cf6'];
-                              const labelColor = colors[Math.abs(top.label?.split('').reduce((a,c)=>a+c.charCodeAt(0),0)) % colors.length];
-                              const annColors = ['#60a5fa','#34d399','#fbbf24','#f87171','#c084fc'];
-                              const annColor = annColors[Math.abs(top.sourceAnnotator?.split('').reduce((a,c)=>a+c.charCodeAt(0),0)) % annColors.length];
+                              const labelColor = colors[Math.abs((top.label || '').split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % colors.length];
+
+                              const activeAnnotators = Array.from(new Set(chunk.active.map((a) => a.sourceAnnotator).filter(Boolean)));
+                              const activeLabels = Array.from(new Set(chunk.active.map((a) => a.label).filter(Boolean)));
+                              const isMultiAnnotatorView = activeAnnotators.length > 1;
+
                               return (
-                                <mark key={chunk.key} title={`${top.label} - ${top.sourceAnnotator}`} style={{ backgroundColor: `${labelColor}40`, color: '#e2e8f0', borderBottom: `1px solid ${labelColor}`, padding: '0 2px', borderRadius: '2px' }}>
+                                <mark
+                                  key={chunk.key}
+                                  title={`${activeLabels.join(', ')} • ${activeAnnotators.join(', ')}`}
+                                  style={{
+                                    backgroundColor: isMultiAnnotatorView ? `${labelColor}55` : `${labelColor}88`,
+                                    color: '#e2e8f0',
+                                    borderBottom: `1px solid ${labelColor}`,
+                                    padding: '0 2px',
+                                    borderRadius: '2px',
+                                  }}
+                                >
                                   {chunk.text}
-                                  <span style={{ marginLeft: 4, padding: '0 3px', borderRadius: 3, fontSize: '0.7em', fontWeight: 700, backgroundColor: `${annColor}30`, color: annColor, border: `1px solid ${annColor}80`, whiteSpace: 'nowrap' }}>
-                                    [{top.label} - {top.sourceAnnotator}]
-                                  </span>
+                                  {!isMultiAnnotatorView && (
+                                    <span
+                                      style={{
+                                        marginLeft: 4,
+                                        padding: '0 3px',
+                                        borderRadius: 3,
+                                        fontSize: '0.7em',
+                                        fontWeight: 700,
+                                        backgroundColor: `${labelColor}66`,
+                                        color: labelColor,
+                                        border: `1px solid ${labelColor}80`,
+                                        whiteSpace: 'nowrap',
+                                      }}
+                                    >
+                                      [{top.label}]
+                                    </span>
+                                  )}
                                 </mark>
                               );
                             })}

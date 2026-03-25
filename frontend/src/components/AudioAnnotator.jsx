@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import RegionsPlugin from 'wavesurfer.js/dist/plugin/wavesurfer.regions.min.js';
 
@@ -8,11 +8,11 @@ import RegionsPlugin from 'wavesurfer.js/dist/plugin/wavesurfer.regions.min.js';
  * Props:
  *  - audioUrl: string
  *  - labelSet: [{name,color}]
- *  - initialSegments: [{id,start,end,label}]
+ *  - initialSegments: [{id,start,end,label,annotator?}]
  *  - readOnly: boolean
  *  - onChange: function(segments)
  */
-const AudioAnnotator = ({ audioUrl, labelSet = [], initialSegments = [], readOnly = false, onChange }) => {
+const AudioAnnotator = ({ audioUrl, labelSet = [], initialSegments = [], readOnly = false, onChange, showLabelLegend = true }) => {
   const waveformRef = useRef(null);
   const wavesurferRef = useRef(null);
   const [segments, setSegments] = useState(initialSegments);
@@ -27,16 +27,26 @@ const AudioAnnotator = ({ audioUrl, labelSet = [], initialSegments = [], readOnl
   const [, forceRender] = useState({}); // để cập nhật tiến độ thời gian
 
   // util: màu label
-  const getLabelColor = (label, opacity = 0.3) => {
-    const info = labelSet.find((l) => l.name === label);
-    if (!info) return `rgba(59,130,246,${opacity})`;
-    const hex = info.color.replace('#', '');
+  const hexToRgba = (hexColor = '#3b82f6', opacity = 0.3) => {
+    const hex = (hexColor || '').toString().replace('#', '').trim();
+    if (!/^[0-9a-fA-F]{6}$/.test(hex)) return `rgba(59,130,246,${opacity})`;
     const bigint = parseInt(hex, 16);
     const r = (bigint >> 16) & 255;
     const g = (bigint >> 8) & 255;
     const b = bigint & 255;
     return `rgba(${r},${g},${b},${opacity})`;
   };
+
+  const normalizeLabelName = (value = '') => value.toString().trim().toLowerCase();
+
+  const getLabelHexColor = (label, segmentColor) => {
+    if (segmentColor) return segmentColor;
+    const target = normalizeLabelName(label);
+    const info = labelSet.find((l) => normalizeLabelName(l?.name) === target);
+    return info?.color || '#3b82f6';
+  };
+
+  const getLabelColor = (label, opacity = 0.45) => hexToRgba(getLabelHexColor(label), opacity);
 
   // init wavesurfer
   useEffect(() => {
@@ -68,7 +78,7 @@ const AudioAnnotator = ({ audioUrl, labelSet = [], initialSegments = [], readOnl
           color: getLabelColor(seg.label),
           drag: !readOnly,
           resize: !readOnly,
-          data: { label: seg.label },
+          data: { label: seg.label, annotator: seg.annotator || '' },
         });
       });
     });
@@ -133,6 +143,30 @@ const AudioAnnotator = ({ audioUrl, labelSet = [], initialSegments = [], readOnl
   const current = wavesurferRef.current?.getCurrentTime() || 0;
   const dur = wavesurferRef.current?.getDuration() || 0;
 
+  useEffect(() => {
+    setSegments(initialSegments || []);
+  }, [initialSegments]);
+
+  const overlaySegments = useMemo(() => {
+    if (!dur || !Array.isArray(segments)) return [];
+    return segments
+      .map((seg) => {
+        const start = Number(seg.start || 0);
+        const end = Number(seg.end || 0);
+        const safeStart = Math.max(0, Math.min(start, dur));
+        const safeEnd = Math.max(safeStart, Math.min(end, dur));
+        const leftPct = (safeStart / dur) * 100;
+        const widthPct = Math.max(2, ((safeEnd - safeStart) / dur) * 100);
+        return {
+          ...seg,
+          leftPct,
+          widthPct,
+          labelHex: getLabelHexColor(seg.label, seg.color),
+        };
+      })
+      .sort((a, b) => a.start - b.start);
+  }, [segments, dur]);
+
   const handleDelete = (id) => {
     const reg = wavesurferRef.current?.regions.list[id];
     reg?.remove();
@@ -164,15 +198,60 @@ const AudioAnnotator = ({ audioUrl, labelSet = [], initialSegments = [], readOnl
       </div>
 
       {/* waveform */}
-      <div
-        ref={waveformRef}
-        className={`w-full rounded ${!isReady && 'animate-pulse h-24'}`}
-        style={{ cursor: readOnly ? 'default' : 'crosshair', backgroundColor: '#1e293b' }}
-      />
+      <div className="relative">
+        <div
+          ref={waveformRef}
+          className={`w-full rounded ${!isReady && 'animate-pulse h-24'}`}
+          style={{ cursor: readOnly ? 'default' : 'crosshair', backgroundColor: '#1e293b' }}
+        />
+
+        {readOnly && overlaySegments.length > 0 && (
+          <>
+            {/* lớp màu phủ trực tiếp trên sóng âm theo từng segment */}
+            <div className="pointer-events-none absolute inset-0 rounded overflow-hidden">
+              {overlaySegments.map((seg) => (
+                <div
+                  key={`overlay-fill-${seg.id}`}
+                  className="absolute top-0 bottom-0"
+                  style={{
+                    left: `${seg.leftPct}%`,
+                    width: `${seg.widthPct}%`,
+                    backgroundColor: hexToRgba(seg.labelHex, 0.42),
+                    borderLeft: `1px solid ${hexToRgba(seg.labelHex, 0.95)}`,
+                    borderRight: `1px solid ${hexToRgba(seg.labelHex, 0.95)}`,
+                  }}
+                  title={`${seg.label}${seg.annotator ? ` • ${seg.annotator}` : ''}`}
+                />
+              ))}
+            </div>
+
+            {/* nhãn label/annotator nằm ngay trên waveform */}
+            <div className="pointer-events-none absolute top-1 left-0 right-0 h-7">
+              {overlaySegments.map((seg) => (
+                <div
+                  key={`overlay-tag-${seg.id}`}
+                  className="absolute truncate px-1.5 py-0.5 rounded text-[10px] font-bold border"
+                  style={{
+                    left: `${seg.leftPct}%`,
+                    width: `${seg.widthPct}%`,
+                    minWidth: 42,
+                    color: seg.labelHex,
+                    borderColor: hexToRgba(seg.labelHex, 1),
+                    backgroundColor: hexToRgba(seg.labelHex, 0.58),
+                  }}
+                  title={`${seg.label}${seg.annotator ? ` • ${seg.annotator}` : ''}`}
+                >
+                  {seg.label}{seg.annotator ? ` • ${seg.annotator}` : ''}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
 
       {/* Label info bar */}
       <div className="flex items-center gap-3 flex-wrap">
-        {labelSet.length > 0 && (
+        {showLabelLegend && labelSet.length > 0 && (
           <div className="flex items-center gap-2">
             <span className="text-xs font-medium text-slate-400">Labels:</span>
             <div className="flex gap-1 flex-wrap">
@@ -208,42 +287,42 @@ const AudioAnnotator = ({ audioUrl, labelSet = [], initialSegments = [], readOnl
       </div>
 
       {/* list */}
-      <div className="space-y-2 max-h-48 overflow-auto pr-1">
-        {segments.length === 0 && (
-          <div className="text-center py-4">
-            <p className="text-sm text-slate-500">Chưa có đoạn nào. Kéo chuột trên waveform để tạo đoạn.</p>
-          </div>
-        )}
-        {segments.map((seg) => (
-          <div key={seg.id} className="flex items-center justify-between p-3 bg-slate-800 border border-slate-700 rounded-lg hover:border-slate-600 transition-colors">
-            <div className="flex items-center gap-3">
-              <div className="w-4 h-4 rounded" style={{ backgroundColor: getLabelColor(seg.label, 1) }} />
-              <span className="text-sm font-bold tabular-nums" style={{ color: getLabelColor(seg.label, 1) }}>
-                {fmt(seg.start)} - {fmt(seg.end)}
-              </span>
-              <span className="px-2 py-0.5 rounded text-xs font-bold" style={{ backgroundColor: getLabelColor(seg.label, 0.25), color: getLabelColor(seg.label, 1) }}>
-                {seg.label}
-              </span>
+      {!readOnly && (
+        <div className="space-y-2 max-h-48 overflow-auto pr-1">
+          {segments.length === 0 && (
+            <div className="text-center py-4">
+              <p className="text-sm text-slate-500">Chưa có đoạn nào. Kéo chuột trên waveform để tạo đoạn.</p>
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                className="text-indigo-400 hover:text-indigo-300 text-sm px-2 py-0.5 rounded hover:bg-indigo-900/30 transition-colors"
-                onClick={() => wavesurferRef.current?.play(seg.start, seg.end)}
-              >
-                ▶ Nghe
-              </button>
-              {!readOnly && (
+          )}
+          {segments.map((seg) => (
+            <div key={seg.id} className="flex items-center justify-between p-3 bg-slate-800 border border-slate-700 rounded-lg hover:border-slate-600 transition-colors">
+              <div className="flex items-center gap-3">
+                <div className="w-4 h-4 rounded" style={{ backgroundColor: getLabelColor(seg.label, 1) }} />
+                <span className="text-sm font-bold tabular-nums" style={{ color: getLabelColor(seg.label, 1) }}>
+                  {fmt(seg.start)} - {fmt(seg.end)}
+                </span>
+                <span className="px-2 py-0.5 rounded text-xs font-bold" style={{ backgroundColor: getLabelColor(seg.label, 0.25), color: getLabelColor(seg.label, 1) }}>
+                  {seg.label}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  className="text-indigo-400 hover:text-indigo-300 text-sm px-2 py-0.5 rounded hover:bg-indigo-900/30 transition-colors"
+                  onClick={() => wavesurferRef.current?.play(seg.start, seg.end)}
+                >
+                  ▶ Nghe
+                </button>
                 <button
                   className="text-red-400 hover:text-red-300 text-sm px-2 py-0.5 rounded hover:bg-red-900/30 transition-colors"
                   onClick={() => handleDelete(seg.id)}
                 >
                   ✕ Xóa
                 </button>
-              )}
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
