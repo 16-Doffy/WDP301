@@ -647,7 +647,7 @@ router.get('/:id/status', auth, authorize('manager', 'admin'), async (req, res) 
 // Get all items in dataset with their annotation status (manager/admin)
 router.get('/:id/items', auth, authorize('manager', 'admin'), async (req, res) => {
   try {
-    const dataset = await Dataset.findById(req.params.id);
+    const dataset = await Dataset.findById(req.params.id).lean();
     if (!dataset) {
       return res.status(404).json({ message: 'Dataset not found' });
     }
@@ -657,20 +657,21 @@ router.get('/:id/items', auth, authorize('manager', 'admin'), async (req, res) =
       return res.status(403).json({ message: 'Not authorized' });
     }
 
+    // Get labelSet from the project's dataset link
+    let labelSet = [];
+    if (dataset.projectId) {
+      const project = await Project.findById(dataset.projectId).select('labelSet').lean();
+      if (project?.labelSet) {
+        labelSet = project.labelSet;
+      }
+    }
+
     // Get all tasks for this dataset
     const tasks = await Task.find({ datasetId: dataset._id })
       .select('status dataItem labels annotatorId reviewedAt primaryForItem reviewerId reviewers reviewComments errorCategory reviewIssues')
       .populate('annotatorId', 'username fullName')
       .populate('reviewerId', 'username fullName')
       .populate('reviewers.reviewerId', 'username fullName')
-      .populate({
-        path: 'datasetId',
-        select: 'projectId',
-        populate: {
-          path: 'projectId',
-          select: 'labelSet'
-        }
-      })
       .lean();
 
     // Group tasks by dataItem to get status for each raw item

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+﻿import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import {
@@ -42,11 +42,13 @@ import {
   Download as DownloadIcon,
   Assessment as AssessmentIcon,
   ArrowBack as ArrowBackIcon,
+  Image as ImageIcon,
+  AudioFile as AudioIcon,
+  Description as TextIcon,
 } from '@mui/icons-material';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
 import ImageViewer from '../../components/ImageViewer';
-import AudioAnnotator from '../../components/AudioAnnotator';
 
 const pageSx = { minHeight: '100vh', background: '#0f172a', color: '#e2e8f0' };
 
@@ -869,41 +871,18 @@ const ManagerProjectDetail = () => {
                   {item.mediaType === 'image' && item.fileUrl ? (
                     <Box component="img" src={item.fileUrl} alt="approved item" sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
                   ) : item.mediaType === 'audio' ? (
-                    <Box sx={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', bgcolor: '#1e293b', overflow: 'hidden' }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 1, py: 0.5, borderBottom: '1px solid #334155', flexShrink: 0 }}>
-                        <Typography sx={{ color: '#f472b6', fontSize: 9, fontWeight: 700 }}>AUDIO</Typography>
-                      </Box>
-                      <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', px: 0.5, gap: 0.3 }}>
-                        {[3, 5, 7, 4, 9, 6, 8, 5, 3, 7, 4, 6, 8, 3, 5, 9, 4, 7, 6, 3, 5, 8, 4, 7, 9, 3, 6, 5, 8, 4].map((h, bi) => (
-                          <Box key={bi} sx={{ flex: 1, height: `${h * 3}%`, bgcolor: '#f472b6', borderRadius: 0.5, opacity: 0.4 + (bi % 4) * 0.15, minWidth: 2, maxWidth: 4 }} />
-                        ))}
-                      </Box>
-                      {(() => { const chips = item.annotatorLabels?.flatMap(al => al.labels || []).filter((l, i, arr) => arr.indexOf(l) === i); const hasLabels = chips?.length > 0; return hasLabels ? (
-                        <Box sx={{ background: 'linear-gradient(transparent, rgba(0,0,0,0.85))', px: 0.5, py: 0.3, display: 'flex', flexWrap: 'wrap', gap: 0.2, flexShrink: 0 }}>
-                          {chips.slice(0, 3).map((chip, ci) => (
-                            <Chip key={ci} label={chip} size="small" sx={{ height: 14, fontSize: '0.55rem', fontWeight: 700, bgcolor: 'rgba(244,114,182,0.8)', color: '#fff', '& .MuiChip-label': { px: 0.5 } }} />
-                          ))}
-                          {chips.length > 3 && <Typography sx={{ color: '#fff', fontSize: '0.55rem', fontWeight: 700 }}>+{chips.length - 3}</Typography>}
-                        </Box>
-                      ) : null; })()}
+                    <Box sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
+                      <Typography sx={{ color: '#f472b6', fontSize: 32 }}>🎧</Typography>
+                      <Typography sx={{ color: '#94a3b8', fontSize: 12, px: 1, textAlign: 'center' }}>
+                        {item.fileName}
+                      </Typography>
                     </Box>
                   ) : item.mediaType === 'text' ? (
-                    <Box sx={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', bgcolor: '#1e293b', overflow: 'hidden' }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 1, py: 0.5, borderBottom: '1px solid #334155', flexShrink: 0 }}>
-                        <Typography sx={{ color: '#34d399', fontSize: 9, fontWeight: 700 }}>TEXT</Typography>
-                      </Box>
-                      <Box sx={{ flex: 1, overflow: 'hidden', px: 1, py: 0.5 }}>
-                        <Typography sx={{ color: '#94a3b8', fontSize: 7.5, display: '-webkit-box', WebkitLineClamp: 6, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: 1.3 }}>
-                          {item.textContent || item.content || item.preview || item.fileName}
-                        </Typography>
-                      </Box>
-                      {(() => { const chips = item.annotatorLabels?.flatMap(al => al.labels || []).filter((l, i, arr) => arr.indexOf(l) === i); const hasLabels = chips?.length > 0; return hasLabels ? (
-                        <Box sx={{ background: 'linear-gradient(transparent, rgba(0,0,0,0.85))', px: 0.5, py: 0.3, display: 'flex', flexWrap: 'wrap', gap: 0.2, flexShrink: 0 }}>
-                          {chips.slice(0, 2).map((chip, ci) => (
-                            <Chip key={ci} label={chip} size="small" sx={{ height: 14, fontSize: '0.55rem', fontWeight: 700, bgcolor: 'rgba(52,211,153,0.8)', color: '#fff', '& .MuiChip-label': { px: 0.5 } }} />
-                          ))}
-                        </Box>
-                      ) : null; })()}
+                    <Box sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
+                      <Typography sx={{ color: '#60a5fa', fontSize: 32 }}>📝</Typography>
+                      <Typography sx={{ color: '#94a3b8', fontSize: 12, px: 1, textAlign: 'center' }}>
+                        {item.fileName}
+                      </Typography>
                     </Box>
                   ) : (
                     <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -1167,88 +1146,28 @@ const ManagerProjectDetail = () => {
                     )
                   ) : selectedApprovedItem.mediaType === 'audio' && selectedApprovedItem.fileUrl ? (
                     <Box sx={{ height: 280, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, px: 2 }}>
-                      <Typography sx={{ color: '#f472b6', fontWeight: 700, fontSize: 12 }}>AUDIO WAVEFORM</Typography>
-                      <Box sx={{ bgcolor: '#f8fafc', borderRadius: 2, p: 2, width: '100%' }}>
-                        <AudioAnnotator
-                          audioUrl={selectedApprovedItem.fileUrl}
-                          labelSet={project?.labelSet || []}
-                          initialSegments={(selectedApprovedItem.annotatorLabels || []).flatMap((ann) => {
-                            return (ann.labels?.segments || []).map((seg) => ({
-                              id: `${ann.name}-${seg.start}-${seg.end}`,
-                              start: Number(seg.start ?? seg.startTime ?? 0),
-                              end: Number(seg.end ?? seg.endTime ?? 0),
-                              label: seg.label || 'unknown',
-                            }));
-                          })}
-                          readOnly
-                        />
-                      </Box>
-                      <Box component="audio" controls src={selectedApprovedItem.fileUrl} sx={{ width: '100%' }} />
-                      <Typography sx={{ color: '#94a3b8', fontSize: 12 }}>
+                      <Typography sx={{ color: '#f472b6', fontSize: 36 }}>🎧</Typography>
+                      <Typography sx={{ color: '#94a3b8', fontSize: 14, textAlign: 'center' }}>
                         {selectedApprovedItem.fileName}
                       </Typography>
+                      <Box component="audio" controls src={selectedApprovedItem.fileUrl} sx={{ width: '100%' }} />
                     </Box>
                   ) : selectedApprovedItem.mediaType === 'text' ? (
-                    <Box sx={{ p: 2, height: 280, overflow: 'auto' }}>
-                      <Typography sx={{ color: '#34d399', fontWeight: 700, fontSize: 12, mb: 1 }}>TEXT CONTENT</Typography>
-                      {(() => {
-                        const rawText = selectedApprovedItem.textContent || selectedApprovedItem.content || selectedApprovedItem.preview || '';
-                        if (!rawText) {
-                          return (
-                            <Box sx={{ p: 2, borderRadius: 2, bgcolor: '#0f172a', border: '1px solid #334155', color: '#94a3b8', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                              Không có nội dung text.
-                            </Box>
-                          );
-                        }
-                        const spans = (selectedApprovedItem.annotatorLabels || []).flatMap((ann) => {
-                          return (ann.labels?.spans || ann.labels?.sentences || []).map((s) => ({
-                            ...s,
-                            sourceAnnotator: ann.name,
-                          }));
-                        }).filter((s) => Number.isFinite(Number(s.start)) && Number.isFinite(Number(s.end))).map((s) => {
-                          const start = Math.max(0, Math.min(rawText.length, Number(s.start) || 0));
-                          const end = Math.max(start, Math.min(rawText.length, Number(s.end) || 0));
-                          return { ...s, start, end };
-                        }).filter((s) => s.end > s.start);
-                        if (!spans.length) {
-                          return (
-                            <Box sx={{ p: 2, borderRadius: 2, bgcolor: '#0f172a', border: '1px solid #334155', whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '0.8rem', color: '#e2e8f0', lineHeight: 1.8 }}>
-                              {rawText}
-                            </Box>
-                          );
-                        }
-                        const boundaries = new Set([0, rawText.length]);
-                        spans.forEach((s) => { boundaries.add(s.start); boundaries.add(s.end); });
-                        const points = Array.from(boundaries).sort((a, b) => a - b);
-                        const chunks = [];
-                        for (let i = 0; i < points.length - 1; i++) {
-                          const start = points[i];
-                          const end = points[i + 1];
-                          if (end <= start) continue;
-                          const active = spans.filter((s) => s.start <= start && s.end >= end);
-                          chunks.push({ key: `c-${i}-${start}-${end}`, text: rawText.slice(start, end), active });
-                        }
-                        return (
-                          <Box sx={{ p: 2, borderRadius: 2, bgcolor: '#0f172a', border: '1px solid #334155', whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '0.8rem', color: '#e2e8f0', lineHeight: 1.8, maxHeight: 220, overflow: 'auto' }}>
-                            {chunks.map((chunk) => {
-                              if (!chunk.active.length) return <span key={chunk.key}>{chunk.text}</span>;
-                              const top = chunk.active[0];
-                              const colors = ['#3b82f6','#22c55e','#f59e0b','#ef4444','#8b5cf6'];
-                              const labelColor = colors[Math.abs(top.label?.split('').reduce((a,c)=>a+c.charCodeAt(0),0)) % colors.length];
-                              const annColors = ['#60a5fa','#34d399','#fbbf24','#f87171','#c084fc'];
-                              const annColor = annColors[Math.abs(top.sourceAnnotator?.split('').reduce((a,c)=>a+c.charCodeAt(0),0)) % annColors.length];
-                              return (
-                                <mark key={chunk.key} title={`${top.label} - ${top.sourceAnnotator}`} style={{ backgroundColor: `${labelColor}40`, color: '#e2e8f0', borderBottom: `1px solid ${labelColor}`, padding: '0 2px', borderRadius: '2px' }}>
-                                  {chunk.text}
-                                  <span style={{ marginLeft: 4, padding: '0 3px', borderRadius: 3, fontSize: '0.7em', fontWeight: 700, backgroundColor: `${annColor}30`, color: annColor, border: `1px solid ${annColor}80`, whiteSpace: 'nowrap' }}>
-                                    [{top.label} - {top.sourceAnnotator}]
-                                  </span>
-                                </mark>
-                              );
-                            })}
-                          </Box>
-                        );
-                      })()}
+                    <Box sx={{ height: 280, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, px: 2 }}>
+                      <Typography sx={{ color: '#60a5fa', fontSize: 36 }}>📝</Typography>
+                      <Typography sx={{ color: '#94a3b8', fontSize: 14, textAlign: 'center' }}>
+                        {selectedApprovedItem.fileName}
+                      </Typography>
+                      {selectedApprovedItem.fileUrl && (
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={() => window.open(selectedApprovedItem.fileUrl, '_blank')}
+                          sx={{ mt: 1, borderColor: '#3b82f6', color: '#60a5fa', textTransform: 'none' }}
+                        >
+                          Mở file text
+                        </Button>
+                      )}
                     </Box>
                   ) : (
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 280 }}>
@@ -1363,3 +1282,4 @@ const ManagerProjectDetail = () => {
 };
 
 export default ManagerProjectDetail;
+

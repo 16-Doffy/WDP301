@@ -149,7 +149,7 @@ const AudioAnnotator = ({ audioUrl, labelSet = [], initialSegments = [], readOnl
         >
           {isPlaying ? '⏸ Pause' : '▶ Play'}
         </button>
-        <span className="text-sm tabular-nums text-gray-700 font-medium">
+        <span className="text-sm tabular-nums font-bold px-2 py-0.5 rounded" style={{ color: '#60a5fa', backgroundColor: 'rgba(59,130,246,0.15)' }}>
           {fmt(current)} / {fmt(dur)}
         </span>
         <input
@@ -166,46 +166,78 @@ const AudioAnnotator = ({ audioUrl, labelSet = [], initialSegments = [], readOnl
       {/* waveform */}
       <div
         ref={waveformRef}
-        className={`w-full bg-gray-100 rounded ${!isReady && 'animate-pulse h-24'}`}
-        style={{ cursor: readOnly ? 'default' : 'crosshair' }}
+        className={`w-full rounded ${!isReady && 'animate-pulse h-24'}`}
+        style={{ cursor: readOnly ? 'default' : 'crosshair', backgroundColor: '#1e293b' }}
       />
 
-      {!readOnly && labelSet.length > 0 && (
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-medium text-gray-700">Nhãn đang chọn:</span>
-          <select value={selectedLabel} onChange={(e) => setSelectedLabel(e.target.value)} className="border border-gray-300 rounded px-3 py-1 text-sm text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
-            {labelSet.map((l) => (
-              <option key={l.name} value={l.name}>
-                {l.name}
-              </option>
-            ))}
-          </select>
-          <span className="text-xs text-gray-500">(Kéo chuột trên waveform để tạo đoạn)</span>
-        </div>
-      )}
+      {/* Label info bar */}
+      <div className="flex items-center gap-3 flex-wrap">
+        {labelSet.length > 0 && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-slate-400">Labels:</span>
+            <div className="flex gap-1 flex-wrap">
+              {labelSet.map((l) => (
+                <span
+                  key={l.name}
+                  className="px-2 py-0.5 rounded text-xs font-bold"
+                  style={{ backgroundColor: getLabelColor(l.name, 0.3), color: getLabelColor(l.name, 1) }}
+                >
+                  {l.name}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+        {!readOnly && labelSet.length > 0 && (
+          <div className="flex items-center gap-2 ml-auto">
+            <span className="text-xs text-slate-400">Chọn:</span>
+            <select
+              value={selectedLabel}
+              onChange={(e) => setSelectedLabel(e.target.value)}
+              className="border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 bg-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            >
+              {labelSet.map((l) => (
+                <option key={l.name} value={l.name}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+            <span className="text-xs text-slate-500">(Kéo waveform để tạo đoạn)</span>
+          </div>
+        )}
+      </div>
 
       {/* list */}
       <div className="space-y-2 max-h-48 overflow-auto pr-1">
-        {segments.length === 0 && <p className="text-sm text-gray-400">Chưa có đoạn nào.</p>}
+        {segments.length === 0 && (
+          <div className="text-center py-4">
+            <p className="text-sm text-slate-500">Chưa có đoạn nào. Kéo chuột trên waveform để tạo đoạn.</p>
+          </div>
+        )}
         {segments.map((seg) => (
-          <div key={seg.id} className="flex items-center justify-between p-2 bg-gray-50 border rounded">
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded" style={{ backgroundColor: getLabelColor(seg.label, 1) }} />
-              <span className="text-sm font-medium tabular-nums">
-                {fmt(seg.start)}-{fmt(seg.end)}
+          <div key={seg.id} className="flex items-center justify-between p-3 bg-slate-800 border border-slate-700 rounded-lg hover:border-slate-600 transition-colors">
+            <div className="flex items-center gap-3">
+              <div className="w-4 h-4 rounded" style={{ backgroundColor: getLabelColor(seg.label, 1) }} />
+              <span className="text-sm font-bold tabular-nums" style={{ color: getLabelColor(seg.label, 1) }}>
+                {fmt(seg.start)} - {fmt(seg.end)}
               </span>
-              <span className="text-sm text-gray-600">{seg.label}</span>
+              <span className="px-2 py-0.5 rounded text-xs font-bold" style={{ backgroundColor: getLabelColor(seg.label, 0.25), color: getLabelColor(seg.label, 1) }}>
+                {seg.label}
+              </span>
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-2">
               <button
-                className="text-indigo-600 hover:text-indigo-800 text-sm"
+                className="text-indigo-400 hover:text-indigo-300 text-sm px-2 py-0.5 rounded hover:bg-indigo-900/30 transition-colors"
                 onClick={() => wavesurferRef.current?.play(seg.start, seg.end)}
               >
-                ▶
+                ▶ Nghe
               </button>
               {!readOnly && (
-                <button className="text-red-500 hover:text-red-700 text-sm" onClick={() => handleDelete(seg.id)}>
-                  ×
+                <button
+                  className="text-red-400 hover:text-red-300 text-sm px-2 py-0.5 rounded hover:bg-red-900/30 transition-colors"
+                  onClick={() => handleDelete(seg.id)}
+                >
+                  ✕ Xóa
                 </button>
               )}
             </div>

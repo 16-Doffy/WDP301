@@ -681,6 +681,12 @@ const ReviewerTask = () => {
           };
         });
 
+        // Validate: bắt buộc comment khi reject
+        if (!reviewComments.trim()) {
+          alert('Bạn phải nhập comment khi từ chối task.');
+          return;
+        }
+
         // Determine backend error category based on first issue
         const firstIssue = selectedIssues[0]?.toLowerCase?.() || '';
         const backendErrorCategory = firstIssue.includes('class') || firstIssue.includes('wrong_category') || firstIssue.includes('incorrect_classification')
@@ -692,7 +698,7 @@ const ReviewerTask = () => {
               : 'does_not_follow_guidelines';
 
         await axios.post(`${API_URL}/api/reviews/${targetTaskId}/reject`, {
-          reviewComments: reviewComments.trim() || undefined,
+          reviewComments: reviewComments.trim(),
           errorCategory: backendErrorCategory,
           reviewNotes: [],
           review: {
@@ -1686,7 +1692,7 @@ const ReviewerTask = () => {
                 <h3 className="text-xl font-semibold text-white mb-3">Review Overview</h3>
                 <div className="rounded-xl border border-slate-700 bg-[#0f172a] p-4 text-sm text-slate-300 space-y-3">
                   <p className="text-slate-200 font-medium">Assigned → Submitted → In Review → Approved / Rejected</p>
-                  <p>Reject phải có ít nhất 1 lỗi và comment tổng quan.</p>
+                  <p>Reject bắt buộc comment. Approve không bắt buộc.</p>
                   <p>Sau khi review, task sẽ bị khóa.</p>
 
                   {datasetType === 'image' && (
