@@ -651,46 +651,18 @@ const Datasets = () => {
                                     }}
                                   />
                                 ) : isText ? (
-                                  <Box
-                                    sx={{
-                                      position: 'absolute',
-                                      top: 0,
-                                      left: 0,
-                                      width: '100%',
-                                      height: '100%',
-                                      display: 'flex',
-                                      flexDirection: 'column',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
-                                      bgcolor: '#1e293b',
-                                      px: 1,
-                                    }}
-                                  >
-                                    <Typography sx={{ color: '#60a5fa', fontSize: 24, mb: 1 }}>📝</Typography>
-                                    <Typography sx={{ color: '#94a3b8', fontSize: 10, textAlign: 'center' }}>Text</Typography>
-                                    <Typography sx={{ color: '#64748b', fontSize: 9, mt: 0.5, textAlign: 'center', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                  <Box sx={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', bgcolor: '#1e293b', px: 1 }}>
+                                    <Typography sx={{ color: '#60a5fa', fontSize: 24, fontWeight: 700 }}>T</Typography>
+                                    <Typography sx={{ color: '#94a3b8', fontSize: 10, textAlign: 'center', mt: 0.5 }}>Text</Typography>
+                                    <Typography sx={{ color: '#64748b', fontSize: 9, mt: 0.3, textAlign: 'center', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                                       {fileName}
                                     </Typography>
                                   </Box>
                                 ) : isAudio ? (
-                                  <Box
-                                    sx={{
-                                      position: 'absolute',
-                                      top: 0,
-                                      left: 0,
-                                      width: '100%',
-                                      height: '100%',
-                                      display: 'flex',
-                                      flexDirection: 'column',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
-                                      bgcolor: '#1e293b',
-                                      px: 1,
-                                    }}
-                                  >
-                                    <Typography sx={{ color: '#f472b6', fontSize: 24, mb: 1 }}>🎧</Typography>
-                                    <Typography sx={{ color: '#94a3b8', fontSize: 10, textAlign: 'center' }}>Audio</Typography>
-                                    <Typography sx={{ color: '#64748b', fontSize: 9, mt: 0.5, textAlign: 'center', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                  <Box sx={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', bgcolor: '#1e293b', px: 1 }}>
+                                    <Typography sx={{ color: '#f472b6', fontSize: 24, fontWeight: 700 }}>♪</Typography>
+                                    <Typography sx={{ color: '#94a3b8', fontSize: 10, textAlign: 'center', mt: 0.5 }}>Audio</Typography>
+                                    <Typography sx={{ color: '#64748b', fontSize: 9, mt: 0.3, textAlign: 'center', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                                       {fileName}
                                     </Typography>
                                   </Box>

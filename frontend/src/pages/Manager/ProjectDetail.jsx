@@ -42,6 +42,9 @@ import {
   Download as DownloadIcon,
   Assessment as AssessmentIcon,
   ArrowBack as ArrowBackIcon,
+  Image as ImageIcon,
+  AudioFile as AudioIcon,
+  Description as TextIcon,
 } from '@mui/icons-material';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
@@ -769,7 +772,11 @@ const ManagerProjectDetail = () => {
             Datasets đã duyệt ({approvedDatasetsWithLabels.length})
           </Typography>
           <Grid container spacing={2}>
-            {approvedDatasetsWithLabels.map((ds) => (
+            {approvedDatasetsWithLabels.map((ds) => {
+              const isAudioDs = ds.type === 'audio';
+              const isTextDs = ds.type === 'text';
+              const isImageDs = ds.type === 'image';
+              return (
               <Grid item xs={12} sm={6} md={3} key={ds._id}>
                 <Card sx={{
                   ...cardSx,
@@ -782,12 +789,12 @@ const ManagerProjectDetail = () => {
                         width: 48,
                         height: 48,
                         borderRadius: 2,
-                        bgcolor: 'rgba(34,197,94,0.2)',
+                        bgcolor: isAudioDs ? 'rgba(244,114,182,0.2)' : isTextDs ? 'rgba(52,211,153,0.2)' : 'rgba(245,158,11,0.2)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center'
                       }}>
-                        <Typography sx={{ color: '#22c55e', fontWeight: 700 }}>DS</Typography>
+                        {isAudioDs ? <AudioIcon sx={{ fontSize: 24, color: '#f472b6' }} /> : isTextDs ? <TextIcon sx={{ fontSize: 24, color: '#34d399' }} /> : <ImageIcon sx={{ fontSize: 24, color: '#f59e0b' }} />}
                       </Box>
                       <Box sx={{ flex: 1 }}>
                         <Typography variant="subtitle1" fontWeight={700} color="#e2e8f0">
@@ -831,7 +838,8 @@ const ManagerProjectDetail = () => {
                   </CardContent>
                 </Card>
               </Grid>
-            ))}
+            );
+            })}
           </Grid>
         </Box>
       )}
@@ -870,8 +878,9 @@ const ManagerProjectDetail = () => {
                     <Box component="img" src={item.fileUrl} alt="approved item" sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
                   ) : item.mediaType === 'audio' ? (
                     <Box sx={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', bgcolor: '#1e293b', overflow: 'hidden' }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 1, py: 0.5, borderBottom: '1px solid #334155', flexShrink: 0 }}>
-                        <Typography sx={{ color: '#f472b6', fontSize: 9, fontWeight: 700 }}>AUDIO</Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.5, py: 1, borderBottom: '1px solid #334155', flexShrink: 0 }}>
+                        <AudioIcon sx={{ fontSize: 18, color: '#f472b6' }} />
+                        <Typography sx={{ color: '#f472b6', fontSize: 11, fontWeight: 700 }}>AUDIO</Typography>
                       </Box>
                       <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', px: 0.5, gap: 0.3 }}>
                         {[3, 5, 7, 4, 9, 6, 8, 5, 3, 7, 4, 6, 8, 3, 5, 9, 4, 7, 6, 3, 5, 8, 4, 7, 9, 3, 6, 5, 8, 4].map((h, bi) => (
@@ -889,11 +898,12 @@ const ManagerProjectDetail = () => {
                     </Box>
                   ) : item.mediaType === 'text' ? (
                     <Box sx={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', bgcolor: '#1e293b', overflow: 'hidden' }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 1, py: 0.5, borderBottom: '1px solid #334155', flexShrink: 0 }}>
-                        <Typography sx={{ color: '#34d399', fontSize: 9, fontWeight: 700 }}>TEXT</Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.5, py: 1, borderBottom: '1px solid #334155', flexShrink: 0 }}>
+                        <TextIcon sx={{ fontSize: 18, color: '#34d399' }} />
+                        <Typography sx={{ color: '#34d399', fontSize: 11, fontWeight: 700 }}>TEXT</Typography>
                       </Box>
-                      <Box sx={{ flex: 1, overflow: 'hidden', px: 1, py: 0.5 }}>
-                        <Typography sx={{ color: '#94a3b8', fontSize: 7.5, display: '-webkit-box', WebkitLineClamp: 6, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: 1.3 }}>
+                      <Box sx={{ flex: 1, overflow: 'hidden', px: 1.5, py: 1 }}>
+                        <Typography sx={{ color: '#94a3b8', fontSize: 8, display: '-webkit-box', WebkitLineClamp: 6, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: 1.4 }}>
                           {item.textContent || item.content || item.preview || item.fileName}
                         </Typography>
                       </Box>
@@ -906,15 +916,21 @@ const ManagerProjectDetail = () => {
                       ) : null; })()}
                     </Box>
                   ) : (
-                    <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <Typography sx={{ color: '#64748b' }}>No Preview</Typography>
+                    <Box sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                      <ImageIcon sx={{ fontSize: 32, color: '#475569' }} />
+                      <Typography sx={{ color: '#64748b', fontSize: 10, mt: 0.5 }}>No Preview</Typography>
                     </Box>
                   )}
                 </Box>
                 <CardContent sx={{ py: 1.5 }}>
-                  <Typography variant="body2" sx={{ color: '#94a3b8' }}>
-                    {item.annotators.length} annotator đã approve
-                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    {item.mediaType === 'audio' && <AudioIcon sx={{ fontSize: 16, color: '#f472b6' }} />}
+                    {item.mediaType === 'text' && <TextIcon sx={{ fontSize: 16, color: '#34d399' }} />}
+                    {item.mediaType === 'image' && item.fileUrl && <ImageIcon sx={{ fontSize: 16, color: '#f59e0b' }} />}
+                    <Typography variant="body2" sx={{ color: '#94a3b8' }}>
+                      {item.annotators.length} annotator đã approve
+                    </Typography>
+                  </Box>
                 </CardContent>
               </Card>
             </Grid>

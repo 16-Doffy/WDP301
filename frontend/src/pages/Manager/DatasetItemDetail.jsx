@@ -510,7 +510,7 @@ const DatasetItemDetail = () => {
                   </Typography>
 
                   {(() => {
-                    const rawText = item?.dataItem?.text || item?.text || '';
+                    const rawText = item?.dataItem?.text || item?.text || item?.content || item?.preview || '';
                     if (!rawText) {
                       return (
                         <Box sx={{ p: 2, borderRadius: 2, bgcolor: '#0f172a', border: '1px solid #334155', color: '#94a3b8' }}>
