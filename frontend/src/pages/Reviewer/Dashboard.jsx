@@ -33,6 +33,7 @@ const buildFileUrl = (dataItem) => {
 
 const PROJECT_APPROVE_THRESHOLD = 0.7;
 const PROJECT_REJECT_THRESHOLD = 0.3;
+const NEAR_DEADLINE_HOURS = 48;
 
 const getProjectTimelineStatus = ({ deadline, reviewStatus }) => {
   const normalizedReview = (reviewStatus || 'pending').toLowerCase();
@@ -54,12 +55,24 @@ const getProjectTimelineStatus = ({ deadline, reviewStatus }) => {
   }
 
   if (deadline) {
-    const isOverdue = new Date(deadline) < new Date();
-    if (isOverdue) {
+    const now = new Date();
+    const deadlineDate = new Date(deadline);
+    const diffMs = deadlineDate.getTime() - now.getTime();
+
+    if (diffMs < 0) {
       return {
         key: 'overdue',
         label: 'QUÁ HẠN',
         tone: 'bg-orange-500/20 text-orange-300 border-orange-500/30',
+      };
+    }
+
+    const nearDeadlineMs = NEAR_DEADLINE_HOURS * 60 * 60 * 1000;
+    if (diffMs <= nearDeadlineMs) {
+      return {
+        key: 'near_deadline',
+        label: 'CẬN DEADLINE',
+        tone: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
       };
     }
   }
@@ -186,6 +199,11 @@ const ReviewerDashboard = () => {
           .map((t) => t?.projectId?.projectReview?.status)
           .find((s) => s === 'approved' || s === 'rejected') || 'pending';
 
+        const timelineStatus = getProjectTimelineStatus({
+          deadline: projectDeadline,
+          reviewStatus: projectDecisionStatus,
+        });
+
         return {
           ...group,
           annotatorRows,
@@ -196,9 +214,29 @@ const ReviewerDashboard = () => {
           firstActionableTaskId,
           projectDeadline,
           projectDecisionStatus,
+          timelineStatus,
         };
       })
       .sort((a, b) => {
+        const statusPriority = {
+          near_deadline: 0,
+          on_time: 1,
+          approved: 2,
+          rejected: 2,
+          overdue: 3,
+        };
+
+        const aPriority = statusPriority[a.timelineStatus?.key] ?? 99;
+        const bPriority = statusPriority[b.timelineStatus?.key] ?? 99;
+        if (aPriority !== bPriority) return aPriority - bPriority;
+
+        // Nhóm còn hạn/cận deadline/quá hạn: ưu tiên deadline gần nhất trước
+        if (['near_deadline', 'on_time', 'overdue'].includes(a.timelineStatus?.key) && ['near_deadline', 'on_time', 'overdue'].includes(b.timelineStatus?.key)) {
+          const aDeadline = a.projectDeadline ? new Date(a.projectDeadline).getTime() : Number.POSITIVE_INFINITY;
+          const bDeadline = b.projectDeadline ? new Date(b.projectDeadline).getTime() : Number.POSITIVE_INFINITY;
+          if (aDeadline !== bDeadline) return aDeadline - bDeadline;
+        }
+
         if (b.submittedAnnotators !== a.submittedAnnotators) return b.submittedAnnotators - a.submittedAnnotators;
         return a.projectName.localeCompare(b.projectName);
       });
