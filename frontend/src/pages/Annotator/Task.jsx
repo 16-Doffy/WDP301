@@ -600,8 +600,8 @@ const AnnotatorTask = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="flex items-center justify-center min-h-screen bg-slate-900">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
       </div>
     );
   }
@@ -620,29 +620,29 @@ const AnnotatorTask = () => {
     const status = task.status;
     if (status === 'approved') {
       return (
-        <div className="px-4 py-2 bg-green-100 border-2 border-green-400 rounded-lg">
+        <div className="px-4 py-2 bg-green-900/50 border-2 border-green-500 rounded-lg">
           <div className="flex items-center gap-2">
-            <span className="text-green-800 font-bold">✓ APPROVED</span>
+            <span className="text-green-300 font-bold">✓ APPROVED</span>
             {task.reviewedAt && (
-              <span className="text-green-600 text-sm">
+              <span className="text-green-400 text-sm">
                 by {task.reviewerId?.fullName || task.reviewerId?.username || 'Reviewer'} on{' '}
                 {new Date(task.reviewedAt).toLocaleString()}
               </span>
             )}
           </div>
           {task.reviewComments && (
-            <p className="text-green-700 text-sm mt-2 italic">"{task.reviewComments}"</p>
+            <p className="text-green-300 text-sm mt-2 italic">"{task.reviewComments}"</p>
           )}
         </div>
       );
     }
     if (status === 'rejected') {
       return (
-        <div className="px-4 py-2 bg-red-100 border-2 border-red-400 rounded-lg">
+        <div className="px-4 py-2 bg-red-900/50 border-2 border-red-500 rounded-lg">
           <div className="flex items-center gap-2">
-            <span className="text-red-800 font-bold">✗ REJECTED</span>
+            <span className="text-red-300 font-bold">✗ REJECTED</span>
             {task.reviewedAt && (
-              <span className="text-red-600 text-sm">
+              <span className="text-red-400 text-sm">
                 by {task.reviewerId?.fullName || task.reviewerId?.username || 'Reviewer'} on{' '}
                 {new Date(task.reviewedAt).toLocaleString()}
               </span>
@@ -650,8 +650,8 @@ const AnnotatorTask = () => {
           </div>
           {task.reviewComments && (
             <>
-              <p className="text-red-700 text-sm mt-2 font-semibold">Reviewer Comments:</p>
-              <p className="text-red-700 text-sm mt-1 italic">"{task.reviewComments}"</p>
+              <p className="text-red-300 text-sm mt-2 font-semibold">Reviewer Comments:</p>
+              <p className="text-red-300 text-sm mt-1 italic">"{task.reviewComments}"</p>
             </>
           )}
         </div>
@@ -659,9 +659,9 @@ const AnnotatorTask = () => {
     }
     if (status === 'submitted') {
       return (
-        <div className="px-4 py-2 bg-yellow-100 border-2 border-yellow-400 rounded-lg">
-          <span className="text-yellow-800 font-bold">⏳ PENDING REVIEW</span>
-          <span className="text-yellow-600 text-sm ml-2">Waiting for reviewer...</span>
+        <div className="px-4 py-2 bg-yellow-900/50 border-2 border-yellow-500 rounded-lg">
+          <span className="text-yellow-300 font-bold">⏳ PENDING REVIEW</span>
+          <span className="text-yellow-400 text-sm ml-2">Waiting for reviewer...</span>
         </div>
       );
     }
@@ -669,39 +669,39 @@ const AnnotatorTask = () => {
   };
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden overflow-x-hidden bg-gray-50 h-screen">
+    <div className="flex-1 flex flex-col overflow-hidden overflow-x-hidden bg-slate-900 h-screen">
       {getStatusBadge() && <div className="px-6 pt-4">{getStatusBadge()}</div>}
 
       <div className="px-6 pt-3">
-        <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
+        <div className="rounded-lg border border-slate-600 bg-slate-800 px-4 py-3">
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
-              <h2 className="text-base font-semibold text-blue-900">{task?.projectId?.name || 'Project Detail'}</h2>
-              <p className="text-xs text-blue-600 mt-0.5">
+              <h2 className="text-base font-semibold text-white">{task?.projectId?.name || 'Project Detail'}</h2>
+              <p className="text-xs text-slate-400 mt-0.5">
                 Task hiện tại: {Math.max(1, currentTaskIndex + 1)} / {Math.max(1, batchTasks.length)}
                 {' '}• Đã hoàn thành: {completedInBatch}/{Math.max(1, batchTasks.length)}
               </p>
               {task?.projectId?.deadline && (
-                <p className="text-xs font-medium text-rose-600 mt-0.5">
+                <p className="text-xs font-medium text-rose-400 mt-0.5">
                   Deadline: {new Date(task.projectId.deadline).toLocaleString('vi-VN')}
                 </p>
               )}
-              <p className="text-xs text-blue-700 mt-0.5">Dataset: {task?.datasetId?.name || 'N/A'}</p>
+              <p className="text-xs text-slate-400 mt-0.5">Dataset: {task?.datasetId?.name || 'N/A'}</p>
             </div>
 
             <div className="flex items-center gap-2">
               <button
                 onClick={() => navigate('/annotator/tasks')}
-                className="rounded-md bg-white px-2.5 py-1.5 text-xs font-medium text-blue-700 border border-blue-300 hover:bg-blue-100"
+                className="rounded-md bg-slate-700 px-2.5 py-1.5 text-xs font-medium text-slate-200 border border-slate-600 hover:bg-slate-600 hover:text-white"
               >
                 Quay lại danh sách project
               </button>
             </div>
           </div>
 
-          <div className="mt-2 h-2 w-full rounded-full bg-blue-100">
+          <div className="mt-2 h-2 w-full rounded-full bg-slate-700">
             <div
-              className="h-2 rounded-full bg-blue-600 transition-all"
+              className="h-2 rounded-full bg-blue-500 transition-all"
               style={{ width: `${Math.min(100, Math.round(batchProgress || 0))}%` }}
             />
           </div>
@@ -709,14 +709,13 @@ const AnnotatorTask = () => {
       </div>
 
       <div className="flex-1 flex overflow-hidden">
-        <div className="flex-1 flex flex-col overflow-hidden bg-gray-100" ref={canvasRef}>
-          {/* NOTE: UI phần dưới giữ nguyên như file hiện tại (không đụng vào để tránh sửa lớn). */}
-          <div className="flex-1 overflow-auto bg-gray-50 p-4 md:p-6">
+        <div className="flex-1 flex flex-col overflow-hidden bg-slate-800" ref={canvasRef}>
+          <div className="flex-1 overflow-auto bg-slate-900 p-4 md:p-6">
             {getTaskKind(task) === 'image' ? (
-              <div className="mx-auto w-full max-w-6xl rounded-xl border border-slate-200 bg-white shadow-sm p-4 md:p-5">
+              <div className="mx-auto w-full max-w-6xl rounded-xl border border-slate-600 bg-slate-800 shadow-sm p-4 md:p-5">
                 <div className="mb-3 flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-slate-800">Image Annotation</h3>
-                  <span className="text-xs text-slate-500">{task?.dataItem?.filename || 'Image file'}</span>
+                  <h3 className="text-lg font-semibold text-white">Image Annotation</h3>
+                  <span className="text-xs text-slate-400">{task?.dataItem?.filename || 'Image file'}</span>
                 </div>
 
                 <ImageAnnotator
@@ -728,11 +727,12 @@ const AnnotatorTask = () => {
                   readOnly={task?.status === 'submitted' || task?.status === 'approved'}
                 />
 
-                <div className="mt-4 border-t border-slate-200 pt-4 flex flex-wrap gap-3 justify-between">
+                <div className="mt-4 border-t border-slate-600 pt-4 flex flex-wrap gap-3 justify-between">
                   <div className="flex flex-wrap gap-2">
                     <Button
                       size="small"
                       variant="outlined"
+                      sx={{ color: 'text.primary', borderColor: 'divider', '& .MuiButton-outlined': { color: '#94a3b8' } }}
                       onClick={navigateToPrevious}
                       disabled={saving || currentTaskIndex <= 0}
                     >
@@ -741,6 +741,7 @@ const AnnotatorTask = () => {
                     <Button
                       size="small"
                       variant="outlined"
+                      sx={{ color: 'text.primary', borderColor: 'divider', '& .MuiButton-outlined': { color: '#94a3b8' } }}
                       onClick={navigateToNext}
                       disabled={saving || currentTaskIndex >= batchTasks.length - 1}
                     >
@@ -771,30 +772,30 @@ const AnnotatorTask = () => {
                 </div>
               </div>
             ) : getTaskKind(task) === 'text' ? (
-              <div className="mx-auto w-full max-w-5xl space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm relative">
+              <div className="mx-auto w-full max-w-5xl space-y-4 rounded-xl border border-slate-600 bg-slate-800 p-4 shadow-sm relative">
                 <div className="mb-1 flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-slate-800">Text Annotation</h3>
-                  <span className="text-xs font-medium text-slate-500">{task?.dataItem?.mimeType}</span>
+                  <h3 className="text-lg font-semibold text-white">Text Annotation</h3>
+                  <span className="text-xs font-medium text-slate-400">{task?.dataItem?.mimeType}</span>
                 </div>
 
                 <div className="flex justify-between items-center">
                   <div>
-                    <p className="text-sm text-gray-500">Text File</p>
-                    <p className="text-base font-semibold text-slate-900">
+                    <p className="text-sm text-slate-400">Text File</p>
+                    <p className="text-base font-semibold text-slate-200">
                       {task?.dataItem?.filename || 'Unnamed file'}
                     </p>
                   </div>
-                  <span className="text-xs text-slate-600 font-medium">{task?.dataItem?.mimeType}</span>
+                  <span className="text-xs text-slate-500 font-medium">{task?.dataItem?.mimeType}</span>
                 </div>
 
-                <div className="bg-blue-50 border border-blue-200 rounded-md p-3 text-sm text-blue-800">
+                <div className="bg-slate-700 border border-slate-600 rounded-md p-3 text-sm text-slate-300">
                   <strong>Hướng dẫn:</strong> Bôi đen phần văn bản bạn muốn gán nhãn, sau đó chọn nhãn từ dropdown.
                 </div>
 
                 <div className="relative">
                   <div
                     ref={textContainerRef}
-                    className="border border-slate-300 rounded-md bg-white p-4 max-h-96 overflow-auto text-base text-slate-900 whitespace-pre-wrap relative select-text leading-relaxed"
+                    className="border border-slate-600 rounded-md bg-slate-900 p-4 max-h-96 overflow-auto text-base text-slate-200 whitespace-pre-wrap relative select-text leading-relaxed"
                     onMouseUp={() => {
                       if (task?.status === 'submitted' || task?.status === 'approved') return;
 
@@ -849,14 +850,14 @@ const AnnotatorTask = () => {
                   {showLabelDropdown && selectedTextRange && task?.projectId?.labelSet?.length > 0 && (
                     <div
                       ref={dropdownRef}
-                      className="absolute z-50 bg-white border border-slate-300 rounded-lg shadow-xl p-2 min-w-[220px]"
+                      className="absolute z-50 bg-slate-800 border border-slate-600 rounded-lg shadow-xl p-2 min-w-[220px]"
                       style={{
                         left: `${dropdownPosition.x}px`,
                         top: `${dropdownPosition.y}px`,
                         transform: 'translateX(-50%) translateY(-100%)',
                       }}
                     >
-                      <div className="text-sm font-semibold text-slate-800 mb-2">Chọn nhãn:</div>
+                      <div className="text-sm font-semibold text-slate-200 mb-2">Chọn nhãn:</div>
                       <div className="space-y-1">
                         {task.projectId.labelSet.map((lbl) => (
                           <button
@@ -875,7 +876,7 @@ const AnnotatorTask = () => {
                               setShowLabelDropdown(false);
                               window.getSelection()?.removeAllRanges();
                             }}
-                            className="w-full bg-white text-slate-800 text-left px-3 py-2 text-sm rounded hover:bg-blue-50 hover:text-slate-900 border border-transparent hover:border-blue-200 transition-colors"
+                            className="w-full bg-slate-800 text-slate-200 text-left px-3 py-2 text-sm rounded hover:bg-slate-700 border border-transparent hover:border-slate-500 transition-colors"
                             style={{ borderLeftColor: lbl.color || '#3b82f6', borderLeftWidth: '30px' }}
                           >
                             {lbl.name}
@@ -888,7 +889,7 @@ const AnnotatorTask = () => {
                           setShowLabelDropdown(false);
                           window.getSelection()?.removeAllRanges();
                         }}
-                        className="mt-2 w-full text-xs text-gray-500 hover:text-gray-700 text-center"
+                        className="mt-2 w-full text-xs text-slate-400 hover:text-slate-300 text-center"
                       >
                         Hủy
                       </button>
@@ -898,16 +899,16 @@ const AnnotatorTask = () => {
 
                 {textSpans.length > 0 && (
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-700">
+                    <label className="text-sm font-medium text-slate-300">
                       Các phần đã gán nhãn ({textSpans.length}):
                     </label>
-                    <div className="border rounded-md p-3 max-h-48 overflow-auto space-y-2">
+                    <div className="border border-slate-600 rounded-md p-3 max-h-48 overflow-auto space-y-2 bg-slate-900">
                       {textSpans.map((span) => {
                         const labelInfo = task?.projectId?.labelSet?.find((l) => l.name === span.label);
                         return (
                           <div
                             key={span.id}
-                            className="flex items-start gap-2 p-2 bg-gray-50 rounded border border-gray-200"
+                            className="flex items-start gap-2 p-2 bg-slate-800 rounded border border-slate-700"
                           >
                             <div
                               className="w-4 h-4 rounded mt-1 flex-shrink-0"
@@ -915,10 +916,10 @@ const AnnotatorTask = () => {
                             />
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-1">
-                                <span className="text-xs font-semibold text-gray-700">{span.label}</span>
-                                <span className="text-xs text-gray-500">({span.start}-{span.end})</span>
+                                <span className="text-xs font-semibold text-slate-300">{span.label}</span>
+                                <span className="text-xs text-slate-500">({span.start}-{span.end})</span>
                               </div>
-                              <div className="text-xs text-gray-600 bg-white p-1 rounded border border-gray-200 truncate">
+                              <div className="text-xs text-slate-400 bg-slate-700 p-1 rounded border border-slate-600 truncate">
                                 "{span.text}"
                               </div>
                             </div>
@@ -927,7 +928,7 @@ const AnnotatorTask = () => {
                                 onClick={() => {
                                   setTextSpans(textSpans.filter((s) => s.id !== span.id));
                                 }}
-                                className="text-red-500 hover:text-red-700 text-sm font-bold px-2"
+                                className="text-red-400 hover:text-red-300 text-sm font-bold px-2"
                                 title="Xóa nhãn này"
                               >
                                 ×
@@ -940,25 +941,14 @@ const AnnotatorTask = () => {
                   </div>
                 )}
 
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-700">Ghi chú tổng thể (tùy chọn)</label>
-                  <textarea
-                    className="w-full border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 rounded-md p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    rows={3}
-                    placeholder="Nhập ghi chú tổng thể cho toàn bộ văn bản..."
-                    value={annotationNote}
-                    onChange={(e) => setAnnotationNote(e.target.value)}
-                    disabled={task?.status === 'submitted' || task?.status === 'approved'}
-                  />
-                </div>
-
-                <div className="mt-4 border-t border-slate-200 pt-4 flex flex-wrap gap-3 justify-between">
+                <div className="mt-4 border-t border-slate-600 pt-4 flex flex-wrap gap-3 justify-between">
                   <div className="flex flex-wrap gap-2">
                     <Button
                       size="small"
                       variant="outlined"
                       onClick={navigateToPrevious}
                       disabled={saving || currentTaskIndex <= 0}
+                      sx={{ borderColor: 'slate.600', color: 'slate.300' }}
                     >
                       Sau
                     </Button>
@@ -967,6 +957,7 @@ const AnnotatorTask = () => {
                       variant="outlined"
                       onClick={navigateToNext}
                       disabled={saving || currentTaskIndex >= batchTasks.length - 1}
+                      sx={{ borderColor: 'slate.600', color: 'slate.300' }}
                     >
                       Tiếp
                     </Button>
@@ -978,6 +969,7 @@ const AnnotatorTask = () => {
                       variant="outlined"
                       onClick={handleSave}
                       disabled={saving || task?.status === 'submitted' || task?.status === 'approved'}
+                      sx={{ borderColor: 'slate.600', color: 'slate.300' }}
                     >
                       Lưu
                     </Button>
@@ -1003,20 +995,20 @@ const AnnotatorTask = () => {
                 </div>
               </div>
             ) : getTaskKind(task) === 'audio' ? (
-              <div className="mx-auto w-full max-w-5xl space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="mx-auto w-full max-w-5xl space-y-4 rounded-xl border border-slate-600 bg-slate-800 p-4 shadow-sm">
                 <div className="mb-1 flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-slate-800">Audio Annotation</h3>
-                  <span className="text-xs font-medium text-slate-500">{task?.dataItem?.mimeType}</span>
+                  <h3 className="text-lg font-semibold text-white">Audio Annotation</h3>
+                  <span className="text-xs font-medium text-slate-400">{task?.dataItem?.mimeType}</span>
                 </div>
 
                 <div className="flex justify-between items-center">
                   <div>
-                    <p className="text-sm text-gray-500">Audio File</p>
-                    <p className="text-base font-semibold text-gray-800">
+                    <p className="text-sm text-slate-400">Audio File</p>
+                    <p className="text-base font-semibold text-slate-200">
                       {task?.dataItem?.filename || 'Unnamed audio'}
                     </p>
                   </div>
-                  <span className="text-xs text-gray-400">{task?.dataItem?.mimeType}</span>
+                  <span className="text-xs text-slate-500">{task?.dataItem?.mimeType}</span>
                 </div>
                 <AudioAnnotator
                   audioUrl={buildFileUrl(task?.dataItem)}
@@ -1028,25 +1020,14 @@ const AnnotatorTask = () => {
                   }}
                 />
 
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-700">Ghi chú / Nhãn cho audio</label>
-                  <textarea
-                    className="w-full border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 rounded-md p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    rows={4}
-                    placeholder="Nhập nhận xét hoặc nhãn..."
-                    value={annotationNote}
-                    onChange={(e) => setAnnotationNote(e.target.value)}
-                    disabled={task?.status === 'submitted' || task?.status === 'approved'}
-                  />
-                </div>
-
-                <div className="mt-4 border-t border-slate-200 pt-4 flex flex-wrap gap-3 justify-between">
+                <div className="mt-4 border-t border-slate-600 pt-4 flex flex-wrap gap-3 justify-between">
                   <div className="flex flex-wrap gap-2">
                     <Button
                       size="small"
                       variant="outlined"
                       onClick={navigateToPrevious}
                       disabled={saving || currentTaskIndex <= 0}
+                      sx={{ borderColor: 'slate.600', color: 'slate.300' }}
                     >
                       Trước
                     </Button>
@@ -1055,6 +1036,7 @@ const AnnotatorTask = () => {
                       variant="outlined"
                       onClick={navigateToNext}
                       disabled={saving || currentTaskIndex >= batchTasks.length - 1}
+                      sx={{ borderColor: 'slate.600', color: 'slate.300' }}
                     >
                       Tiếp
                     </Button>
@@ -1066,6 +1048,7 @@ const AnnotatorTask = () => {
                       variant="outlined"
                       onClick={handleSave}
                       disabled={saving || task?.status === 'submitted' || task?.status === 'approved'}
+                      sx={{ borderColor: 'slate.600', color: 'slate.300' }}
                     >
                       Lưu
                     </Button>
@@ -1096,7 +1079,7 @@ const AnnotatorTask = () => {
           </div>
         </div>
 
-        <Dialog open={showSubmitConfirm} onClose={() => setShowSubmitConfirm(false)} maxWidth="sm" fullWidth>
+        <Dialog open={showSubmitConfirm} onClose={() => setShowSubmitConfirm(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { bgcolor: 'slate.800', color: 'slate.200' } }}>
           <DialogTitle>Xác nhận nộp bài</DialogTitle>
           <DialogContent>
             <Typography variant="body1" gutterBottom>
