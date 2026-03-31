@@ -31,13 +31,10 @@ import {
   InputLabel,
   Select,
   MenuItem,
-  Checkbox,
-  ListItemText,
   Tabs,
   Tab,
 } from '@mui/material';
 import {
-  Assignment as AssignmentIcon,
   Settings as SettingsIcon,
   Download as DownloadIcon,
   Assessment as AssessmentIcon,
@@ -124,7 +121,6 @@ const getItemMediaInfo = (dataItem = {}) => {
   const rawPath = dataItem?.imageUrl || dataItem?.url || dataItem?.path || dataItem?.filename || '';
   const fileUrl = rawPath ? getFullImageUrl(rawPath) : '';
 
-  // Ưu tiên nhận diện theo đuôi file để tránh mimeType bị sai từ backend.
   let mediaType = 'other';
   if (/\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(fileName)) mediaType = 'audio';
   else if (/\.(txt|csv|json|xml)$/i.test(fileName)) mediaType = 'text';
@@ -138,42 +134,16 @@ const getItemMediaInfo = (dataItem = {}) => {
 
 const getLabelColor = (labelName) => {
   const label = labelName?.toLowerCase() || '';
-  
-  // Predefined colors for common labels
   const predefinedColors = {
-    'chó': '#3b82f6',
-    'dog': '#3b82f6',
-    'mèo': '#22c55e',
-    'cat': '#22c55e',
-    'other': '#8b5cf6',
-    'car': '#f59e0b',
-    'xe': '#f59e0b',
+    'chó': '#3b82f6', 'dog': '#3b82f6',
+    'mèo': '#22c55e', 'cat': '#22c55e',
+    'other': '#8b5cf6', 'car': '#f59e0b', 'xe': '#f59e0b',
   };
-  
-  // Return predefined color if exists
-  if (predefinedColors[label]) {
-    return predefinedColors[label];
-  }
-  
-  // Generate color dynamically based on label name hash
-  const colors = [
-    '#3b82f6', // blue
-    '#22c55e', // green
-    '#f59e0b', // amber
-    '#ef4444', // red
-    '#8b5cf6', // purple
-    '#ec4899', // pink
-    '#06b6d4', // cyan
-    '#f97316', // orange
-    '#14b8a6', // teal
-    '#6366f1', // indigo
-  ];
-  
+  if (predefinedColors[label]) return predefinedColors[label];
+
+  const colors = ['#3b82f6','#22c55e','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06b6d4','#f97316','#14b8a6','#6366f1'];
   let hash = 0;
-  for (let i = 0; i < label.length; i++) {
-    hash = label.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  
+  for (let i = 0; i < label.length; i++) hash = label.charCodeAt(i) + ((hash << 5) - hash);
   return colors[Math.abs(hash) % colors.length];
 };
 
@@ -188,7 +158,6 @@ const ManagerProjectDetail = () => {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentTab, setCurrentTab] = useState(0);
-  const [showLabelsDialogOpen, setShowLabelsDialogOpen] = useState(false);
   const [approvedItemDialogOpen, setApprovedItemDialogOpen] = useState(false);
   const [selectedApprovedItemKey, setSelectedApprovedItemKey] = useState('');
   const [showAnnotatorLabels, setShowAnnotatorLabels] = useState(false);
@@ -196,22 +165,9 @@ const ManagerProjectDetail = () => {
   const [textContentMap, setTextContentMap] = useState({});
   const [textContentLoadingMap, setTextContentLoadingMap] = useState({});
 
-  const [assignDialogOpen, setAssignDialogOpen] = useState(false);
-  const [selectedAnnotators, setSelectedAnnotators] = useState([]);
-  const [annotators, setAnnotators] = useState([]);
-  const [reviewers, setReviewers] = useState([]);
-  const [selectedReviewers, setSelectedReviewers] = useState([]);
-  const [selectedDataset, setSelectedDataset] = useState('');
-  const [selectedDatasetType, setSelectedDatasetType] = useState('all');
-
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editFormData, setEditFormData] = useState({
-    name: '',
-    description: '',
-    guidelines: '',
-    status: 'draft',
-    deadline: '',
-    exportFormat: 'JSON',
+    name: '', description: '', guidelines: '', status: 'draft', deadline: '', exportFormat: 'JSON',
   });
 
   const [currentAnnotators, setCurrentAnnotators] = useState([]);
@@ -220,18 +176,11 @@ const ManagerProjectDetail = () => {
   const [qualityDialogOpen, setQualityDialogOpen] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
 
-  useEffect(() => {
-    fetchData();
-    fetchUsers();
-    fetchQualityStats();
-  }, [id]);
-
+  useEffect(() => { fetchData(); fetchQualityStats(); }, [id]);
   useEffect(() => {
     if (project) {
       setEditFormData({
-        name: project.name || '',
-        description: project.description || '',
-        guidelines: project.guidelines || '',
+        name: project.name || '', description: project.description || '', guidelines: project.guidelines || '',
         status: project.status || 'draft',
         deadline: project.deadline ? new Date(project.deadline).toISOString().slice(0, 16) : '',
         exportFormat: project.exportFormat || 'JSON',
@@ -242,142 +191,72 @@ const ManagerProjectDetail = () => {
   useEffect(() => {
     if (tasks.length > 0) {
       const annotatorIds = [...new Set(tasks.map((t) => t.annotatorId?._id || t.annotatorId).filter(Boolean))];
-      const reviewerIds = [
-        ...new Set(
-          tasks.flatMap((t) =>
-            (t.reviewers || []).map((r) => r.reviewerId?._id || r.reviewerId).filter(Boolean)
-          )
-        ),
-      ];
+      const reviewerIds = [...new Set(tasks.flatMap((t) => (t.reviewers || []).map((r) => r.reviewerId?._id || r.reviewerId).filter(Boolean)))];
       setCurrentAnnotators(annotatorIds);
       setCurrentReviewers(reviewerIds);
     } else {
-      setCurrentAnnotators([]);
-      setCurrentReviewers([]);
+      setCurrentAnnotators([]); setCurrentReviewers([]);
     }
   }, [tasks]);
 
-  // Extract unique labels from APPROVED tasks (tasks approved by reviewer)
   const approvedLabels = useMemo(() => {
     const labelSet = new Set();
     const approvedTasksData = tasks.filter(t => t.status === 'approved');
-    
-    console.log('Total tasks:', tasks.length);
-    console.log('Approved tasks:', approvedTasksData.length);
-    
-    approvedTasksData.forEach((t, idx) => {
-      console.log(`Task ${idx}:`, t);
-      
+    approvedTasksData.forEach((t) => {
       let labels = [];
-      
-      // Try different possible structures
-      // Structure 1: t.labels.objects
-      if (t.labels?.objects && Array.isArray(t.labels.objects)) {
-        labels = t.labels.objects;
-      }
-      // Structure 2: t.labels as array
-      else if (Array.isArray(t.labels)) {
-        labels = t.labels;
-      }
-      // Structure 3: t.annotations with approved status
+      if (t.labels?.objects && Array.isArray(t.labels.objects)) labels = t.labels.objects;
+      else if (Array.isArray(t.labels)) labels = t.labels;
       else if (t.annotations) {
         const approvedAnn = t.annotations.find(a => a.status === 'approved');
-        if (approvedAnn?.labels?.objects) {
-          labels = approvedAnn.labels.objects;
-        } else if (Array.isArray(approvedAnn?.labels)) {
-          labels = approvedAnn.labels;
-        }
+        if (approvedAnn?.labels?.objects) labels = approvedAnn.labels.objects;
+        else if (Array.isArray(approvedAnn?.labels)) labels = approvedAnn.labels;
       }
-      
-      console.log(`Task ${idx} labels:`, labels);
-      
       labels.forEach((obj) => {
-        if (obj.label) {
-          labelSet.add(obj.label);
-        } else if (typeof obj === 'string') {
-          labelSet.add(obj);
-        }
+        if (obj.label) labelSet.add(obj.label);
+        else if (typeof obj === 'string') labelSet.add(obj);
       });
     });
-    
-    console.log('Approved Labels found:', Array.from(labelSet));
     return Array.from(labelSet);
   }, [tasks]);
 
-  // Get approved tasks with their labels
-  const approvedTasks = useMemo(() => {
-    const filtered = tasks.filter((t) => t.status === 'approved');
-    console.log('Filtered approved tasks:', filtered);
-    return filtered;
-  }, [tasks]);
+  const approvedTasks = useMemo(() => tasks.filter((t) => t.status === 'approved'), [tasks]);
 
   const approvedItems = useMemo(() => {
     const map = new Map();
     approvedTasks.forEach((task) => {
       const dataItem = task.dataItem || task.datasetItemId || task.itemId || {};
-      const key = dataItem?._id
-        || dataItem?.imageUrl
-        || dataItem?.path
-        || dataItem?.filename
-        || task?._id;
+      const key = dataItem?._id || dataItem?.imageUrl || dataItem?.path || dataItem?.filename || task?._id;
       if (!key) return;
 
-      const imageUrl =
-        dataItem?.imageUrl ||
-        dataItem?.url ||
-        dataItem?.path ||
-        dataItem?.filename ||
-        task.datasetItemId?.imageUrl ||
-        task.datasetItemId?.url ||
-        task.datasetItemId?.path ||
-        task.dataItem?.imageUrl ||
-        task.dataItem?.url ||
-        task.dataItem?.path ||
-        task.itemId?.imageUrl ||
-        task.itemId?.url ||
-        task.itemId?.path ||
-        '';
+      const imageUrl = dataItem?.imageUrl || dataItem?.url || dataItem?.path || dataItem?.filename ||
+        task.datasetItemId?.imageUrl || task.datasetItemId?.url || task.datasetItemId?.path ||
+        task.dataItem?.imageUrl || task.dataItem?.url || task.dataItem?.path ||
+        task.itemId?.imageUrl || task.itemId?.url || task.itemId?.path || '';
 
       const annotatorName = task.annotatorId?.fullName || task.annotatorId?.username || 'Annotator';
+      const rawLabels = task.labels?.objects || task.labels?.spans || task.labels?.sentences || task.labels?.segments || task.labels?.label || [];
+      const labelsArray = Array.isArray(rawLabels) ? rawLabels : [rawLabels];
 
       const labels = [];
-      // Handle different data types: image (objects), text (spans/sentences), audio (segments)
-      const rawLabels = task.labels?.objects || task.labels?.spans || task.labels?.sentences || task.labels?.segments || task.labels?.label || [];
-      // Ensure rawLabels is always an array
-      const labelsArray = Array.isArray(rawLabels) ? rawLabels : [rawLabels];
-      
       labelsArray.forEach((obj) => {
         const labelName = obj?.label || obj;
         if (labelName) labels.push(labelName);
       });
 
       const annotations = [];
-      // For image: get bbox, for text/audio: get spans/segments
       labelsArray.forEach((obj) => {
         if (!obj) return;
-        if (obj.bbox || obj.box) {
-          annotations.push({ bbox: obj.bbox || obj.box, label: obj.label || obj });
-        } else if (obj.text || obj.sentence) {
-          // Text entity
-          annotations.push({ text: obj.text || obj.sentence, label: obj.label, start: obj.start, end: obj.end });
-        } else if (obj.start !== undefined && obj.end !== undefined) {
-          // Audio segment
-          annotations.push({ start: obj.start, end: obj.end, label: obj.label, note: obj.note });
-        }
+        if (obj.bbox || obj.box) annotations.push({ bbox: obj.bbox || obj.box, label: obj.label || obj });
+        else if (obj.text || obj.sentence) annotations.push({ text: obj.text || obj.sentence, label: obj.label, start: obj.start, end: obj.end });
+        else if (obj.start !== undefined && obj.end !== undefined) annotations.push({ start: obj.start, end: obj.end, label: obj.label, note: obj.note });
       });
 
       const isPrimary = Boolean(task?.primaryForItem);
-
       const mediaInfo = getItemMediaInfo(dataItem);
 
       if (!map.has(key)) {
         map.set(key, {
-          key,
-          dataItem,
-          imageUrl,
-          mediaType: mediaInfo.mediaType,
-          fileName: mediaInfo.fileName,
-          fileUrl: mediaInfo.fileUrl,
+          key, dataItem, imageUrl, mediaType: mediaInfo.mediaType, fileName: mediaInfo.fileName, fileUrl: mediaInfo.fileUrl,
           annotators: annotatorName ? [annotatorName] : [],
           annotatorLabels: annotatorName ? [{ name: annotatorName, labels, annotations, isPrimary }] : [],
           datasetId: task.datasetId?._id || task.datasetId,
@@ -385,15 +264,10 @@ const ManagerProjectDetail = () => {
         });
       } else {
         const entry = map.get(key);
-        if (annotatorName && !entry.annotators.includes(annotatorName)) {
-          entry.annotators.push(annotatorName);
-        }
-        if (annotatorName) {
-          entry.annotatorLabels.push({ name: annotatorName, labels, annotations, isPrimary });
-        }
+        if (annotatorName && !entry.annotators.includes(annotatorName)) entry.annotators.push(annotatorName);
+        if (annotatorName) entry.annotatorLabels.push({ name: annotatorName, labels, annotations, isPrimary });
       }
     });
-
     return Array.from(map.values());
   }, [approvedTasks]);
 
@@ -407,61 +281,35 @@ const ManagerProjectDetail = () => {
   useEffect(() => {
     const item = selectedApprovedItem;
     if (!item || item.mediaType !== 'text') return;
-
     const existingText = item.textContent || item.content || item.preview || textContentMap[item.key];
     if (existingText) return;
     if (!item.fileUrl) return;
     if (textContentLoadingMap[item.key]) return;
-
     let cancelled = false;
-
     const fetchTextContent = async () => {
       try {
         setTextContentLoadingMap((prev) => ({ ...prev, [item.key]: true }));
         const resp = await axios.get(item.fileUrl, { responseType: 'text' });
         const loadedText = typeof resp.data === 'string' ? resp.data : '';
-        if (!cancelled && loadedText) {
-          setTextContentMap((prev) => ({ ...prev, [item.key]: loadedText }));
-        }
-      } catch (err) {
-        console.error('Error loading text content for approved item:', err);
-      } finally {
-        if (!cancelled) {
-          setTextContentLoadingMap((prev) => ({ ...prev, [item.key]: false }));
-        }
-      }
+        if (!cancelled && loadedText) setTextContentMap((prev) => ({ ...prev, [item.key]: loadedText }));
+      } catch (err) { console.error('Error loading text content:', err); }
+      finally { if (!cancelled) setTextContentLoadingMap((prev) => ({ ...prev, [item.key]: false })); }
     };
-
     fetchTextContent();
-
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [selectedApprovedItem]);
 
   useEffect(() => {
     const textItems = approvedItemPreview.filter((it) => it.mediaType === 'text');
     if (!textItems.length) return;
-
     textItems.forEach((item) => {
       const existingText = item.textContent || item.content || item.preview || textContentMap[item.key];
       if (existingText || !item.fileUrl || textContentLoadingMap[item.key]) return;
-
       setTextContentLoadingMap((prev) => ({ ...prev, [item.key]: true }));
-      axios
-        .get(item.fileUrl, { responseType: 'text' })
-        .then((resp) => {
-          const loadedText = typeof resp.data === 'string' ? resp.data : '';
-          if (loadedText) {
-            setTextContentMap((prev) => ({ ...prev, [item.key]: loadedText }));
-          }
-        })
-        .catch((err) => {
-          console.error('Error loading text content for approved preview item:', err);
-        })
-        .finally(() => {
-          setTextContentLoadingMap((prev) => ({ ...prev, [item.key]: false }));
-        });
+      axios.get(item.fileUrl, { responseType: 'text' })
+        .then((resp) => { const loadedText = typeof resp.data === 'string' ? resp.data : ''; if (loadedText) setTextContentMap((prev) => ({ ...prev, [item.key]: loadedText })); })
+        .catch((err) => { console.error('Error loading text content for preview:', err); })
+        .finally(() => { setTextContentLoadingMap((prev) => ({ ...prev, [item.key]: false })); });
     });
   }, [approvedItemPreview, textContentMap, textContentLoadingMap]);
 
@@ -469,16 +317,7 @@ const ManagerProjectDetail = () => {
     const groupsMap = new Map();
     tasks.forEach((t) => {
       const key = t.annotatorId?._id || 'unassigned';
-      if (!groupsMap.has(key)) {
-        groupsMap.set(key, {
-          id: key,
-          name: t.annotatorId?.fullName || t.annotatorId?.username || 'Unassigned',
-          tasks: [],
-          done: 0,
-          approved: 0,
-          rejected: 0,
-        });
-      }
+      if (!groupsMap.has(key)) groupsMap.set(key, { id: key, name: t.annotatorId?.fullName || t.annotatorId?.username || 'Unassigned', tasks: [], done: 0, approved: 0, rejected: 0 });
       const g = groupsMap.get(key);
       g.tasks.push(t);
       if (['submitted', 'approved'].includes(t.status)) g.done += 1;
@@ -495,16 +334,7 @@ const ManagerProjectDetail = () => {
         const rid = rv.reviewerId?._id || rv.reviewerId;
         if (!rid) return;
         const key = rid.toString();
-        if (!groupsMap.has(key)) {
-          groupsMap.set(key, {
-            id: key,
-            name: rv.reviewerId?.fullName || rv.reviewerId?.username || 'Reviewer',
-            assigned: 0,
-            approved: 0,
-            rejected: 0,
-            pending: 0,
-          });
-        }
+        if (!groupsMap.has(key)) groupsMap.set(key, { id: key, name: rv.reviewerId?.fullName || rv.reviewerId?.username || 'Reviewer', assigned: 0, approved: 0, rejected: 0, pending: 0 });
         const g = groupsMap.get(key);
         g.assigned += 1;
         if (rv.status === 'approved') g.approved += 1;
@@ -515,73 +345,41 @@ const ManagerProjectDetail = () => {
     return Array.from(groupsMap.values());
   }, [tasks]);
 
-  const filteredDatasets = useMemo(() => {
-    if (selectedDatasetType === 'all') return datasets;
-    return datasets.filter((ds) => ds.type === selectedDatasetType);
-  }, [datasets, selectedDatasetType]);
-
-  // Get approved datasets (datasets that have approved tasks)
   const approvedDatasets = useMemo(() => {
     const datasetIds = new Set();
     tasks.forEach((t) => {
       if (t.status === 'approved') {
-        // Check multiple possible paths for datasetId
         let dsId = null;
-        if (t.datasetItemId?.datasetId) {
-          dsId = t.datasetItemId.datasetId._id || t.datasetItemId.datasetId;
-        } else if (t.datasetId?._id) {
-          dsId = t.datasetId._id;
-        } else if (t.datasetId) {
-          dsId = t.datasetId;
-        }
+        if (t.datasetItemId?.datasetId) dsId = t.datasetItemId.datasetId._id || t.datasetItemId.datasetId;
+        else if (t.datasetId?._id) dsId = t.datasetId._id;
+        else if (t.datasetId) dsId = t.datasetId;
         if (dsId) datasetIds.add(dsId);
       }
     });
     return datasets.filter((ds) => datasetIds.has(ds._id));
   }, [datasets, tasks]);
 
-  // Get approved datasets with their labels
   const approvedDatasetsWithLabels = useMemo(() => {
     return approvedDatasets.map(ds => {
       const dsId = ds._id;
       const approvedTasksInDs = tasks.filter(t => {
         if (t.status !== 'approved') return false;
-        
-        // Check multiple possible paths for datasetId
         let taskDsId = null;
-        if (t.datasetItemId?.datasetId) {
-          taskDsId = t.datasetItemId.datasetId._id || t.datasetItemId.datasetId;
-        } else if (t.datasetId?._id) {
-          taskDsId = t.datasetId._id;
-        } else if (t.datasetId) {
-          taskDsId = t.datasetId;
-        }
+        if (t.datasetItemId?.datasetId) taskDsId = t.datasetItemId.datasetId._id || t.datasetItemId.datasetId;
+        else if (t.datasetId?._id) taskDsId = t.datasetId._id;
+        else if (t.datasetId) taskDsId = t.datasetId;
         return taskDsId === dsId;
       });
-      
       const labelSet = new Set();
       approvedTasksInDs.forEach(t => {
         let labels = [];
-        if (t.labels?.objects && Array.isArray(t.labels.objects)) {
-          labels = t.labels.objects;
-        } else if (Array.isArray(t.labels)) {
-          labels = t.labels;
-        } else if (t.dataItem?.labels?.objects) {
-          labels = t.dataItem.labels.objects;
-        } else if (Array.isArray(t.dataItem?.labels)) {
-          labels = t.dataItem.labels;
-        }
-        labels.forEach(obj => {
-          if (obj.label) labelSet.add(obj.label);
-          else if (typeof obj === 'string') labelSet.add(obj);
-        });
+        if (t.labels?.objects && Array.isArray(t.labels.objects)) labels = t.labels.objects;
+        else if (Array.isArray(t.labels)) labels = t.labels;
+        else if (t.dataItem?.labels?.objects) labels = t.dataItem.labels.objects;
+        else if (Array.isArray(t.dataItem?.labels)) labels = t.dataItem.labels;
+        labels.forEach(obj => { if (obj.label) labelSet.add(obj.label); else if (typeof obj === 'string') labelSet.add(obj); });
       });
-      
-      return {
-        ...ds,
-        approvedCount: approvedTasksInDs.length,
-        labels: Array.from(labelSet)
-      };
+      return { ...ds, approvedCount: approvedTasksInDs.length, labels: Array.from(labelSet) };
     });
   }, [approvedDatasets, tasks]);
 
@@ -595,84 +393,23 @@ const ManagerProjectDetail = () => {
       setProject(projectRes.data.project || projectRes.data);
       setDatasets(datasetsRes.data || []);
       setTasks((tasksRes.data || []).filter((t) => (t.projectId?._id || t.projectId) === id));
-    } catch (error) {
-      console.error('Error fetching data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchUsers = async () => {
-    try {
-      const response = await axios.get(`${API_URL}/api/users`);
-      const userList = Array.isArray(response.data) ? response.data : [];
-      setAnnotators(userList.filter((u) => u.role === 'annotator' && u.isActive));
-      setReviewers(
-        userList
-          .filter((u) => u.role === 'reviewer' && u.isActive)
-          .map((u) => ({ ...u, specialty: u.specialty || 'general' }))
-      );
-    } catch (error) {
-      console.error('Error fetching users:', error);
-    }
+    } catch (error) { console.error('Error fetching data:', error); }
+    finally { setLoading(false); }
   };
 
   const fetchQualityStats = async () => {
     try {
       const response = await axios.get(`${API_URL}/api/projects/${id}/quality`);
       setQualityStats(response.data);
-    } catch (error) {
-      console.error('Error fetching quality stats:', error);
-    }
-  };
-
-  const handleAssign = async () => {
-    if (!selectedDataset) return alert('Vui lòng chọn dataset');
-    if (!selectedAnnotators.length) return alert('Vui lòng chọn ít nhất một annotator');
-    if (!selectedReviewers.length) return alert('Vui lòng chọn ít nhất một reviewer');
-
-    try {
-      await axios.post(
-        `${API_URL}/api/tasks/assign`,
-        {
-          projectId: id,
-          datasetId: selectedDataset,
-          annotatorIds: selectedAnnotators,
-          reviewerIds: selectedReviewers,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${(sessionStorage.getItem('token') || localStorage.getItem('token'))}`,
-          },
-        }
-      );
-      alert('Phân công thành công!');
-      setAssignDialogOpen(false);
-      setSelectedDataset('');
-      setSelectedAnnotators([]);
-      setSelectedReviewers([]);
-      fetchData();
-      fetchQualityStats();
-    } catch (error) {
-      console.error('Error assigning tasks:', error);
-      alert(`Lỗi: ${error.response?.data?.message || error.message}`);
-    }
+    } catch (error) { console.error('Error fetching quality stats:', error); }
   };
 
   const handleUpdateProject = async () => {
     try {
-      await axios.put(
-        `${API_URL}/api/projects/${id}`,
-        {
-          ...editFormData,
-          deadline: editFormData.deadline || undefined,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem('token')}`,
-          },
-        }
-      );
+      await axios.put(`${API_URL}/api/projects/${id}`, {
+        ...editFormData,
+        deadline: editFormData.deadline || undefined,
+      }, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
       alert('Cập nhật project thành công!');
       setEditDialogOpen(false);
       fetchData();
@@ -685,33 +422,16 @@ const ManagerProjectDetail = () => {
   const handleExport = async (format = 'json') => {
     try {
       const approvedTasksList = tasks.filter((t) => t.status === 'approved');
-      if (approvedTasksList.length === 0) {
-        alert('Không có task nào đã được phê duyệt để export.');
-        return;
-      }
-
-      const response = await axios.get(`${API_URL}/api/projects/${id}/export`, {
-        params: { format },
-        responseType: 'blob',
-      });
-
+      if (approvedTasksList.length === 0) { alert('Không có task nào đã được phê duyệt để export.'); return; }
+      const response = await axios.get(`${API_URL}/api/projects/${id}/export`, { params: { format }, responseType: 'blob' });
       const contentType = response.headers['content-type'] || 'application/octet-stream';
-      const extensionMap = {
-        'application/json': 'json',
-        'text/plain': 'txt',
-        'application/xml': 'xml',
-        'text/csv': 'csv',
-      };
+      const extensionMap = { 'application/json': 'json', 'text/plain': 'txt', 'application/xml': 'xml', 'text/csv': 'csv' };
       const fileExtension = extensionMap[contentType] || format.toLowerCase();
       const blob = new Blob([response.data], { type: contentType });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `project_export_${Date.now()}.${fileExtension}`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-
+      link.href = url; link.setAttribute('download', `project_export_${Date.now()}.${fileExtension}`);
+      document.body.appendChild(link); link.click(); link.remove();
       alert(`Đã xuất ${approvedTasksList.length} tasks thành công!`);
     } catch (error) {
       console.error('Error exporting data:', error);
@@ -727,14 +447,12 @@ const ManagerProjectDetail = () => {
     );
   }
 
-  const overallProgress =
-    tasks.length > 0
-      ? Math.round((tasks.filter((t) => ['submitted', 'approved'].includes(t.status)).length / tasks.length) * 100)
-      : 0;
+  const overallProgress = tasks.length > 0
+    ? Math.round((tasks.filter((t) => ['submitted', 'approved'].includes(t.status)).length / tasks.length) * 100) : 0;
 
   const renderOverview = () => (
     <>
-          <Grid container spacing={3} sx={{ mb: 4 }}>
+      <Grid container spacing={3} sx={{ mb: 4 }}>
         <Grid item xs={12} sm={6} md={3}>
           <Card sx={cardSx}>
             <CardContent>
@@ -772,148 +490,102 @@ const ManagerProjectDetail = () => {
             </CardContent>
           </Card>
         </Grid>
-          </Grid>
+      </Grid>
 
-          <Box>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-              <Typography variant="h6" fontWeight={700} color="#e2e8f0">Team Performance</Typography>
-              {!isAdmin && (
-                <Button variant="contained" startIcon={<AssignmentIcon />} onClick={() => setAssignDialogOpen(true)} sx={primaryBtnSx}>Phân công task từ dataset</Button>
-              )}
-            </Box>
+      <Box>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Typography variant="h6" fontWeight={700} color="#e2e8f0">Team Performance</Typography>
+          {/* Cơ chế phân công task đã được xóa */}
+        </Box>
 
-            <Box sx={{ mb: 2, display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
-              <Chip label={`Annotators assigned: ${groupedByAnnotator.length}`} sx={{ bgcolor: 'rgba(59,130,246,0.2)', color: '#93c5fd', fontWeight: 700 }} />
-              <Chip label={`Reviewers assigned: ${groupedByReviewer.length}`} sx={{ bgcolor: 'rgba(16,185,129,0.2)', color: '#6ee7b7', fontWeight: 700 }} />
-            </Box>
+        <Box sx={{ mb: 2, display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
+          <Chip label={`Annotators assigned: ${groupedByAnnotator.length}`} sx={{ bgcolor: 'rgba(59,130,246,0.2)', color: '#93c5fd', fontWeight: 700 }} />
+          <Chip label={`Reviewers assigned: ${groupedByReviewer.length}`} sx={{ bgcolor: 'rgba(16,185,129,0.2)', color: '#6ee7b7', fontWeight: 700 }} />
+        </Box>
 
-            <TableContainer component={Paper} sx={{ ...cardSx, '& .MuiTableCell-root': { borderColor: '#334155' } }}>
-              <Table>
-                <TableHead>
-                  <TableRow sx={{ background: '#0f172a' }}>
-                    <TableCell sx={{ color: '#94a3b8', fontWeight: 700 }}>Annotator</TableCell>
-                    <TableCell sx={{ color: '#94a3b8', fontWeight: 700 }}>Workload</TableCell>
-                    <TableCell sx={{ color: '#94a3b8', fontWeight: 700 }}>Progress</TableCell>
-                    <TableCell sx={{ color: '#94a3b8', fontWeight: 700 }}>Quality</TableCell>
-                    <TableCell align="right" sx={{ color: '#94a3b8', fontWeight: 700 }}>Action</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {groupedByAnnotator.map((g, idx) => {
+        <TableContainer component={Paper} sx={{ ...cardSx, '& .MuiTableCell-root': { borderColor: '#334155' } }}>
+          <Table>
+            <TableHead>
+              <TableRow sx={{ background: '#0f172a' }}>
+                <TableCell sx={{ color: '#94a3b8', fontWeight: 700 }}>Annotator</TableCell>
+                <TableCell sx={{ color: '#94a3b8', fontWeight: 700 }}>Workload</TableCell>
+                <TableCell sx={{ color: '#94a3b8', fontWeight: 700 }}>Progress</TableCell>
+                <TableCell sx={{ color: '#94a3b8', fontWeight: 700 }}>Quality</TableCell>
+                <TableCell align="right" sx={{ color: '#94a3b8', fontWeight: 700 }}>Action</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {groupedByAnnotator.map((g, idx) => {
                 const progress = Math.min(Math.round((g.done / g.tasks.length) * 100), 100);
-                    const reviewed = g.approved + g.rejected;
-                    const quality = reviewed > 0 ? Math.round((g.approved / reviewed) * 100) : 0;
-
-                    return (
-                      <TableRow key={idx} hover sx={{ '&:hover': { bgcolor: '#0f172a' } }}>
-                        <TableCell><Typography variant="body2" fontWeight={700} color="#e2e8f0">{g.name}</Typography></TableCell>
-                        <TableCell sx={{ color: '#94a3b8' }}>{g.tasks.length} tasks</TableCell>
-                        <TableCell>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <LinearProgress variant="determinate" value={progress} sx={{ width: 80, height: 5, borderRadius: 2, bgcolor: '#334155', '& .MuiLinearProgress-bar': { bgcolor: '#3b82f6' } }} />
-                            <Typography variant="caption" sx={{ color: '#e2e8f0' }}>{progress}%</Typography>
-                          </Box>
-                        </TableCell>
-                        <TableCell><Chip label={`${quality}%`} size="small" sx={{ bgcolor: quality >= 80 ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)', color: quality >= 80 ? '#34d399' : '#f87171', fontWeight: 800 }} /></TableCell>
-                        <TableCell align="right"><Button size="small" sx={{ color: '#60a5fa', fontWeight: 700 }} onClick={() => navigate(`/manager/projects/${id}/annotator/${g.tasks[0]?.annotatorId?._id}`)}>DETAILS</Button></TableCell>
-                      </TableRow>
+                const reviewed = g.approved + g.rejected;
+                const quality = reviewed > 0 ? Math.round((g.approved / reviewed) * 100) : 0;
+                return (
+                  <TableRow key={idx} hover sx={{ '&:hover': { bgcolor: '#0f172a' } }}>
+                    <TableCell><Typography variant="body2" fontWeight={700} color="#e2e8f0">{g.name}</Typography></TableCell>
+                    <TableCell sx={{ color: '#94a3b8' }}>{g.tasks.length} tasks</TableCell>
+                    <TableCell>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <LinearProgress variant="determinate" value={progress} sx={{ width: 80, height: 5, borderRadius: 2, bgcolor: '#334155', '& .MuiLinearProgress-bar': { bgcolor: '#3b82f6' } }} />
+                        <Typography variant="caption" sx={{ color: '#e2e8f0' }}>{progress}%</Typography>
+                      </Box>
+                    </TableCell>
+                    <TableCell><Chip label={`${quality}%`} size="small" sx={{ bgcolor: quality >= 80 ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)', color: quality >= 80 ? '#34d399' : '#f87171', fontWeight: 800 }} /></TableCell>
+                    <TableCell align="right"><Button size="small" sx={{ color: '#60a5fa', fontWeight: 700 }} onClick={() => navigate(`/manager/projects/${id}/annotator/${g.tasks[0]?.annotatorId?._id}`)}>DETAILS</Button></TableCell>
+                  </TableRow>
                 );
               })}
-                </TableBody>
-              </Table>
-            </TableContainer>
+            </TableBody>
+          </Table>
+        </TableContainer>
       </Box>
     </>
   );
 
   const renderItems = () => (
     <Box>
-      {/* Hiển thị datasets đã được duyệt với labels */}
       {approvedDatasetsWithLabels.length > 0 && (
         <Box sx={{ mb: 4 }}>
-          <Typography variant="h6" fontWeight={700} color="#e2e8f0" sx={{ mb: 2 }}>
-            Datasets đã duyệt ({approvedDatasetsWithLabels.length})
-          </Typography>
+          <Typography variant="h6" fontWeight={700} color="#e2e8f0" sx={{ mb: 2 }}>Datasets đã duyệt ({approvedDatasetsWithLabels.length})</Typography>
           <Grid container spacing={2}>
             {approvedDatasetsWithLabels.map((ds) => {
               const isAudioDs = ds.type === 'audio';
               const isTextDs = ds.type === 'text';
-              const isImageDs = ds.type === 'image';
               return (
-              <Grid item xs={12} sm={6} md={3} key={ds._id}>
-                <Card sx={{
-                  ...cardSx,
-                  border: '2px solid #22c55e',
-                  '&:hover': { borderColor: '#34d399' }
-                }}>
-                  <CardContent>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-                      <Box sx={{
-                        width: 48,
-                        height: 48,
-                        borderRadius: 2,
-                        bgcolor: isAudioDs ? 'rgba(244,114,182,0.2)' : isTextDs ? 'rgba(52,211,153,0.2)' : 'rgba(245,158,11,0.2)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                      }}>
-                        {isAudioDs ? <AudioIcon sx={{ fontSize: 24, color: '#f472b6' }} /> : isTextDs ? <TextIcon sx={{ fontSize: 24, color: '#34d399' }} /> : <ImageIcon sx={{ fontSize: 24, color: '#f59e0b' }} />}
-                      </Box>
-                      <Box sx={{ flex: 1 }}>
-                        <Typography variant="subtitle1" fontWeight={700} color="#e2e8f0">
-                          {ds.name}
-                        </Typography>
-                        <Typography variant="body2" sx={{ color: '#94a3b8' }}>
-                          {ds.approvedCount} items đã duyệt
-                        </Typography>
-                      </Box>
-                      <Chip 
-                        label="Approved" 
-                        size="small"
-                        sx={{ bgcolor: 'rgba(34,197,94,0.2)', color: '#22c55e', fontWeight: 700 }} 
-                      />
-                    </Box>
-                    
-                    {/* Hiển thị các nhãn đã duyệt của dataset */}
-                    {ds.labels.length > 0 && (
-                      <Box sx={{ mt: 1 }}>
-                        <Typography variant="caption" sx={{ color: '#94a3b8', mb: 1, display: 'block' }}>
-                          Nhãn đã duyệt:
-                        </Typography>
-                        <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                          {ds.labels.map((label, idx) => (
-                            <Chip
-                              key={idx}
-                              label={label}
-                              size="small"
-                              sx={{
-                                bgcolor: getLabelColor(label),
-                                color: 'white',
-                                fontWeight: 700,
-                                fontSize: '0.75rem',
-                                height: 24,
-                              }}
-                            />
-                          ))}
+                <Grid item xs={12} sm={6} md={3} key={ds._id}>
+                  <Card sx={{ ...cardSx, border: '2px solid #22c55e', '&:hover': { borderColor: '#34d399' } }}>
+                    <CardContent>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+                        <Box sx={{ width: 48, height: 48, borderRadius: 2, bgcolor: isAudioDs ? 'rgba(244,114,182,0.2)' : isTextDs ? 'rgba(52,211,153,0.2)' : 'rgba(245,158,11,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {isAudioDs ? <AudioIcon sx={{ fontSize: 24, color: '#f472b6' }} /> : isTextDs ? <TextIcon sx={{ fontSize: 24, color: '#34d399' }} /> : <ImageIcon sx={{ fontSize: 24, color: '#f59e0b' }} />}
                         </Box>
+                        <Box sx={{ flex: 1 }}>
+                          <Typography variant="subtitle1" fontWeight={700} color="#e2e8f0">{ds.name}</Typography>
+                          <Typography variant="body2" sx={{ color: '#94a3b8' }}>{ds.approvedCount} items đã duyệt</Typography>
+                        </Box>
+                        <Chip label="Approved" size="small" sx={{ bgcolor: 'rgba(34,197,94,0.2)', color: '#22c55e', fontWeight: 700 }} />
                       </Box>
-                    )}
-                  </CardContent>
-                </Card>
-              </Grid>
-            );
+                      {ds.labels.length > 0 && (
+                        <Box sx={{ mt: 1 }}>
+                          <Typography variant="caption" sx={{ color: '#94a3b8', mb: 1, display: 'block' }}>Nhãn đã duyệt:</Typography>
+                          <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                            {ds.labels.map((label, idx) => (
+                              <Chip key={idx} label={label} size="small" sx={{ bgcolor: getLabelColor(label), color: 'white', fontWeight: 700, fontSize: '0.75rem', height: 24 }} />
+                            ))}
+                          </Box>
+                        </Box>
+                      )}
+                    </CardContent>
+                  </Card>
+                </Grid>
+              );
             })}
           </Grid>
         </Box>
       )}
 
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 2 }}>
-        <Typography variant="h6" fontWeight={700} color="#e2e8f0">
-          Items đã duyệt ({approvedItems.length})
-        </Typography>
-        <Typography variant="body2" sx={{ color: '#94a3b8' }}>
-          Hiển thị 3 item mới nhất đã được duyệt.
-        </Typography>
+        <Typography variant="h6" fontWeight={700} color="#e2e8f0">Items đã duyệt ({approvedItems.length})</Typography>
+        <Typography variant="body2" sx={{ color: '#94a3b8' }}>Hiển thị 3 item mới nhất đã được duyệt.</Typography>
       </Box>
 
       {approvedItemPreview.length === 0 ? (
@@ -925,16 +597,8 @@ const ManagerProjectDetail = () => {
           {approvedItemPreview.map((item) => (
             <Grid item xs={12} sm={6} md={4} key={item.key}>
               <Card
-                onClick={() => {
-                  setSelectedApprovedItemKey(item.key?.toString?.() || '');
-                  setApprovedItemDialogOpen(true);
-                }}
-                sx={{
-                  ...cardSx,
-                  cursor: 'pointer',
-                  border: '2px solid #22c55e',
-                  '&:hover': { borderColor: '#34d399' }
-                }}
+                onClick={() => { setSelectedApprovedItemKey(item.key?.toString?.() || ''); setApprovedItemDialogOpen(true); }}
+                sx={{ ...cardSx, cursor: 'pointer', border: '2px solid #22c55e', '&:hover': { borderColor: '#34d399' } }}
               >
                 <Box sx={{ position: 'relative', paddingTop: '70%', bgcolor: '#0f172a', overflow: 'hidden' }}>
                   {item.mediaType === 'image' && item.fileUrl ? (
@@ -946,18 +610,10 @@ const ManagerProjectDetail = () => {
                         <Typography sx={{ color: '#f472b6', fontSize: 11, fontWeight: 700 }}>AUDIO</Typography>
                       </Box>
                       <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', px: 0.5, gap: 0.3 }}>
-                        {[3, 5, 7, 4, 9, 6, 8, 5, 3, 7, 4, 6, 8, 3, 5, 9, 4, 7, 6, 3, 5, 8, 4, 7, 9, 3, 6, 5, 8, 4].map((h, bi) => (
+                        {[3,5,7,4,9,6,8,5,3,7,4,6,8,3,5,9,4,7,6,3,5,8,4,7,9,3,6,5,8,4].map((h, bi) => (
                           <Box key={bi} sx={{ flex: 1, height: `${h * 3}%`, bgcolor: '#f472b6', borderRadius: 0.5, opacity: 0.4 + (bi % 4) * 0.15, minWidth: 2, maxWidth: 4 }} />
                         ))}
                       </Box>
-                      {(() => { const chips = item.annotatorLabels?.flatMap(al => al.labels || []).filter((l, i, arr) => arr.indexOf(l) === i); const hasLabels = chips?.length > 0; return hasLabels ? (
-                        <Box sx={{ background: 'linear-gradient(transparent, rgba(0,0,0,0.85))', px: 0.5, py: 0.3, display: 'flex', flexWrap: 'wrap', gap: 0.2, flexShrink: 0 }}>
-                          {chips.slice(0, 3).map((chip, ci) => (
-                            <Chip key={ci} label={chip} size="small" sx={{ height: 14, fontSize: '0.55rem', fontWeight: 700, bgcolor: 'rgba(244,114,182,0.8)', color: '#fff', '& .MuiChip-label': { px: 0.5 } }} />
-                          ))}
-                          {chips.length > 3 && <Typography sx={{ color: '#fff', fontSize: '0.55rem', fontWeight: 700 }}>+{chips.length - 3}</Typography>}
-                        </Box>
-                      ) : null; })()}
                     </Box>
                   ) : item.mediaType === 'text' ? (
                     <Box sx={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', bgcolor: '#1e293b', overflow: 'hidden' }}>
@@ -970,13 +626,6 @@ const ManagerProjectDetail = () => {
                           {textContentMap[item.key] || item.textContent || item.content || item.preview || item.fileName}
                         </Typography>
                       </Box>
-                      {(() => { const chips = item.annotatorLabels?.flatMap(al => al.labels || []).filter((l, i, arr) => arr.indexOf(l) === i); const hasLabels = chips?.length > 0; return hasLabels ? (
-                        <Box sx={{ background: 'linear-gradient(transparent, rgba(0,0,0,0.85))', px: 0.5, py: 0.3, display: 'flex', flexWrap: 'wrap', gap: 0.2, flexShrink: 0 }}>
-                          {chips.slice(0, 2).map((chip, ci) => (
-                            <Chip key={ci} label={chip} size="small" sx={{ height: 14, fontSize: '0.55rem', fontWeight: 700, bgcolor: 'rgba(52,211,153,0.8)', color: '#fff', '& .MuiChip-label': { px: 0.5 } }} />
-                          ))}
-                        </Box>
-                      ) : null; })()}
                     </Box>
                   ) : (
                     <Box sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
@@ -990,9 +639,7 @@ const ManagerProjectDetail = () => {
                     {item.mediaType === 'audio' && <AudioIcon sx={{ fontSize: 16, color: '#f472b6' }} />}
                     {item.mediaType === 'text' && <TextIcon sx={{ fontSize: 16, color: '#34d399' }} />}
                     {item.mediaType === 'image' && item.fileUrl && <ImageIcon sx={{ fontSize: 16, color: '#f59e0b' }} />}
-                    <Typography variant="body2" sx={{ color: '#94a3b8' }}>
-                      {item.annotators.length} annotator đã approve
-                    </Typography>
+                    <Typography variant="body2" sx={{ color: '#94a3b8' }}>{item.annotators.length} annotator đã approve</Typography>
                   </Box>
                 </CardContent>
               </Card>
@@ -1008,44 +655,24 @@ const ManagerProjectDetail = () => {
       <Box sx={panelSx}>
         <Box sx={{ p: { xs: 2, sm: 3 }, borderBottom: '1px solid #334155', background: 'linear-gradient(to right, #0f172a, #1e293b)' }}>
           <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
-            <IconButton onClick={() => navigate('/manager/projects')} sx={{ color: '#e2e8f0' }}>
-              <ArrowBackIcon />
-            </IconButton>
-            <Typography variant="body2" sx={{ color: '#94a3b8' }}>
-              Projects / {project?.name}
-            </Typography>
+            <IconButton onClick={() => navigate('/manager/projects')} sx={{ color: '#e2e8f0' }}><ArrowBackIcon /></IconButton>
+            <Typography variant="body2" sx={{ color: '#94a3b8' }}>Projects / {project?.name}</Typography>
           </Stack>
-
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 2 }}>
             <Box sx={{ flex: 1, minWidth: 300 }}>
-              <Typography variant="h4" fontWeight={700} sx={{ color: '#e2e8f0', mb: 1, letterSpacing: '-0.02em', lineHeight: 1.2 }}>
-                {project?.name}
-              </Typography>
-              <Typography variant="body1" sx={{ color: '#94a3b8', maxWidth: 800, lineHeight: '1.7' }}>
-                {project?.description || 'No description provided.'}
-              </Typography>
+              <Typography variant="h4" fontWeight={700} sx={{ color: '#e2e8f0', mb: 1, letterSpacing: '-0.02em', lineHeight: 1.2 }}>{project?.name}</Typography>
+              <Typography variant="body1" sx={{ color: '#94a3b8', maxWidth: 800, lineHeight: '1.7' }}>{project?.description || 'No description provided.'}</Typography>
             </Box>
-
             <Stack direction="row" spacing={1.5}>
               <Button variant="contained" startIcon={<AssessmentIcon />} onClick={() => setQualityDialogOpen(true)} sx={secondaryBtnSx}>Analytics</Button>
               <Button variant="contained" startIcon={<DownloadIcon />} onClick={() => setExportDialogOpen(true)} sx={secondaryBtnSx}>Export</Button>
-              {!isAdmin && (
-                <Button variant="contained" startIcon={<SettingsIcon />} onClick={() => setEditDialogOpen(true)} sx={primaryBtnSx}>Settings</Button>
-              )}
+              {!isAdmin && <Button variant="contained" startIcon={<SettingsIcon />} onClick={() => setEditDialogOpen(true)} sx={primaryBtnSx}>Settings</Button>}
             </Stack>
           </Box>
-          </Box>
+        </Box>
 
         <Box sx={{ borderBottom: 1, borderColor: '#334155' }}>
-          <Tabs
-            value={currentTab}
-            onChange={(_, newValue) => setCurrentTab(newValue)}
-            sx={{
-              '& .MuiTab-root': { color: '#94a3b8', textTransform: 'none', fontWeight: 600 },
-              '& .Mui-selected': { color: '#3b82f6' },
-              '& .MuiTabs-indicator': { bgcolor: '#3b82f6' },
-            }}
-          >
+          <Tabs value={currentTab} onChange={(_, newValue) => setCurrentTab(newValue)} sx={{ '& .MuiTab-root': { color: '#94a3b8', textTransform: 'none', fontWeight: 600 }, '& .Mui-selected': { color: '#3b82f6' }, '& .MuiTabs-indicator': { bgcolor: '#3b82f6' } }}>
             <Tab label="OVERVIEW" />
             <Tab label="ITEMS" />
           </Tabs>
@@ -1072,20 +699,16 @@ const ManagerProjectDetail = () => {
             </TableHead>
             <TableBody>
               {groupedByReviewer.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5} sx={{ color: '#94a3b8' }}>No reviewer assignments found.</TableCell>
+                <TableRow><TableCell colSpan={5} sx={{ color: '#94a3b8' }}>No reviewer assignments found.</TableCell></TableRow>
+              ) : groupedByReviewer.map((r) => (
+                <TableRow key={r.id} hover sx={{ '&:hover': { bgcolor: '#0f172a' } }}>
+                  <TableCell><Typography variant="body2" fontWeight={700} color="#e2e8f0">{r.name}</Typography></TableCell>
+                  <TableCell sx={{ color: '#94a3b8' }}>{r.assigned}</TableCell>
+                  <TableCell sx={{ color: '#34d399' }}>{r.approved}</TableCell>
+                  <TableCell sx={{ color: '#f87171' }}>{r.rejected}</TableCell>
+                  <TableCell sx={{ color: '#fbbf24' }}>{r.pending}</TableCell>
                 </TableRow>
-              ) : (
-                groupedByReviewer.map((r) => (
-                  <TableRow key={r.id} hover sx={{ '&:hover': { bgcolor: '#0f172a' } }}>
-                    <TableCell><Typography variant="body2" fontWeight={700} color="#e2e8f0">{r.name}</Typography></TableCell>
-                    <TableCell sx={{ color: '#94a3b8' }}>{r.assigned}</TableCell>
-                    <TableCell sx={{ color: '#34d399' }}>{r.approved}</TableCell>
-                    <TableCell sx={{ color: '#f87171' }}>{r.rejected}</TableCell>
-                    <TableCell sx={{ color: '#fbbf24' }}>{r.pending}</TableCell>
-                  </TableRow>
-                ))
-              )}
+              ))}
             </TableBody>
           </Table>
         </TableContainer>
@@ -1120,42 +743,6 @@ const ManagerProjectDetail = () => {
         <DialogActions><Button onClick={() => setExportDialogOpen(false)} sx={secondaryBtnSx}>Cancel</Button></DialogActions>
       </Dialog>
 
-      <Dialog open={assignDialogOpen} onClose={() => setAssignDialogOpen(false)} maxWidth="sm" fullWidth PaperProps={{ sx: modalPaperSx }} BackdropProps={{ sx: { backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' } }}>
-        <DialogTitle sx={{ fontWeight: 700 }}>Assign New Tasks</DialogTitle>
-        <DialogContent sx={{ pt: 1 }}>
-          <Stack spacing={2}>
-            <FormControl fullWidth sx={inputSx}>
-              <InputLabel>Dataset Type</InputLabel>
-              <Select value={selectedDatasetType} label="Dataset Type" onChange={(e) => { setSelectedDatasetType(e.target.value); setSelectedDataset(''); }}>
-                <MenuItem value="all">All</MenuItem>
-                <MenuItem value="image">Image</MenuItem>
-                <MenuItem value="audio">Audio</MenuItem>
-                <MenuItem value="text">Text</MenuItem>
-              </Select>
-            </FormControl>
-            <FormControl fullWidth sx={inputSx}>
-              <InputLabel>Dataset</InputLabel>
-              <Select value={selectedDataset} label="Dataset" onChange={(e) => setSelectedDataset(e.target.value)}>
-                {filteredDatasets.map((ds) => <MenuItem key={ds._id} value={ds._id}>{ds.name} ({ds.type || 'unknown'})</MenuItem>)}
-              </Select>
-            </FormControl>
-            <FormControl fullWidth sx={inputSx}>
-              <InputLabel>Annotators</InputLabel>
-              <Select multiple value={selectedAnnotators} label="Annotators" onChange={(e) => setSelectedAnnotators(e.target.value)} renderValue={(selected) => annotators.filter((a) => selected.includes(a._id)).map((a) => a.fullName || a.username).join(', ')}>
-                {annotators.map((a) => <MenuItem key={a._id} value={a._id}><Checkbox checked={selectedAnnotators.indexOf(a._id) > -1} /><ListItemText primary={a.fullName || a.username} secondary={a.email} /></MenuItem>)}
-              </Select>
-            </FormControl>
-            <FormControl fullWidth sx={inputSx}>
-              <InputLabel>Reviewers</InputLabel>
-              <Select multiple value={selectedReviewers} label="Reviewers" onChange={(e) => setSelectedReviewers(e.target.value)} renderValue={(selected) => reviewers.filter((r) => selected.includes(r._id)).map((r) => r.fullName || r.username).join(', ')}>
-                {reviewers.map((r) => <MenuItem key={r._id} value={r._id}><Checkbox checked={selectedReviewers.indexOf(r._id) > -1} /><ListItemText primary={r.fullName || r.username} secondary={r.email} /></MenuItem>)}
-              </Select>
-            </FormControl>
-          </Stack>
-        </DialogContent>
-        <DialogActions><Button onClick={() => setAssignDialogOpen(false)} sx={secondaryBtnSx}>Close</Button><Button variant="contained" onClick={handleAssign} sx={primaryBtnSx}>Assign</Button></DialogActions>
-      </Dialog>
-
       <Dialog open={editDialogOpen} onClose={() => setEditDialogOpen(false)} maxWidth="md" fullWidth PaperProps={{ sx: modalPaperSx }} BackdropProps={{ sx: { backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' } }}>
         <DialogTitle sx={{ fontWeight: 700 }}>Edit Project</DialogTitle>
         <DialogContent sx={{ pt: 1 }}>
@@ -1168,57 +755,19 @@ const ManagerProjectDetail = () => {
               <FormControl fullWidth sx={inputSx}>
                 <InputLabel>Status</InputLabel>
                 <Select label="Status" value={editFormData.status} onChange={(e) => setEditFormData((prev) => ({ ...prev, status: e.target.value }))}>
-                  <MenuItem value="draft">Draft</MenuItem>
-                  <MenuItem value="active">Active</MenuItem>
-                  <MenuItem value="completed">Completed</MenuItem>
-                  <MenuItem value="archived">Archived</MenuItem>
+                  <MenuItem value="draft">Draft</MenuItem><MenuItem value="active">Active</MenuItem><MenuItem value="completed">Completed</MenuItem><MenuItem value="archived">Archived</MenuItem>
                 </Select>
               </FormControl>
               <FormControl fullWidth sx={inputSx}>
                 <InputLabel>Export Format</InputLabel>
                 <Select label="Export Format" value={editFormData.exportFormat} onChange={(e) => setEditFormData((prev) => ({ ...prev, exportFormat: e.target.value }))}>
-                  <MenuItem value="JSON">JSON</MenuItem>
-                  <MenuItem value="YOLO">YOLO</MenuItem>
-                  <MenuItem value="VOC">VOC</MenuItem>
-                  <MenuItem value="COCO">COCO</MenuItem>
-                  <MenuItem value="CSV">CSV</MenuItem>
+                  <MenuItem value="JSON">JSON</MenuItem><MenuItem value="YOLO">YOLO</MenuItem><MenuItem value="VOC">VOC</MenuItem><MenuItem value="COCO">COCO</MenuItem><MenuItem value="CSV">CSV</MenuItem>
                 </Select>
               </FormControl>
             </Stack>
           </Stack>
         </DialogContent>
         <DialogActions><Button onClick={() => setEditDialogOpen(false)} sx={secondaryBtnSx}>Close</Button><Button variant="contained" onClick={handleUpdateProject} sx={primaryBtnSx}>Save</Button></DialogActions>
-      </Dialog>
-
-      <Dialog open={showLabelsDialogOpen} onClose={() => setShowLabelsDialogOpen(false)} maxWidth="sm" fullWidth PaperProps={{ sx: modalPaperSx }} BackdropProps={{ sx: { backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' } }}>
-        <DialogTitle sx={{ fontWeight: 700 }}>Các nhãn đã được duyệt</DialogTitle>
-        <DialogContent>
-          {approvedLabels.length === 0 ? (
-            <Typography variant="body2" sx={{ color: '#94a3b8', py: 2 }}>Chưa có nhãn nào được duyệt.</Typography>
-          ) : (
-            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', py: 2 }}>
-              {approvedLabels.map((label, idx) => {
-                const count = approvedTasks.filter((t) => {
-                  const labels = t.labels?.objects || [];
-                  return labels.some((obj) => obj.label === label);
-                }).length;
-                return (
-                  <Chip
-                    key={idx}
-                    label={`${label} (${count})`}
-                    sx={{
-                      bgcolor: getLabelColor(label),
-                      color: 'white',
-                      fontWeight: 700,
-                      fontSize: '0.85rem',
-                    }}
-                  />
-                );
-              })}
-            </Box>
-          )}
-        </DialogContent>
-        <DialogActions><Button onClick={() => setShowLabelsDialogOpen(false)} sx={secondaryBtnSx}>Đóng</Button></DialogActions>
       </Dialog>
 
       <Dialog open={approvedItemDialogOpen} onClose={() => setApprovedItemDialogOpen(false)} maxWidth="md" fullWidth PaperProps={{ sx: modalPaperSx }} BackdropProps={{ sx: { backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' } }}>
@@ -1232,15 +781,7 @@ const ManagerProjectDetail = () => {
                 <Box sx={{ width: '100%', bgcolor: '#0f172a', borderRadius: 2, border: '1px solid #334155', overflow: 'hidden', minHeight: 280 }}>
                   {selectedApprovedItem.mediaType === 'image' && selectedApprovedItem.fileUrl ? (
                     showAnnotatorLabels ? (
-                      <ImageViewer
-                        imageUrl={selectedApprovedItem.fileUrl}
-                        annotations={(selectedApprovedItem.annotatorLabels || []).flatMap((ann) => {
-                          const shouldShow = showAnnotatorLabelMap[ann.name] ?? true;
-                          return shouldShow ? (ann.annotations || []) : [];
-                        })}
-                        readOnly
-                        maxHeight="100%"
-                      />
+                      <ImageViewer imageUrl={selectedApprovedItem.fileUrl} annotations={(selectedApprovedItem.annotatorLabels || []).flatMap((ann) => { const shouldShow = showAnnotatorLabelMap[ann.name] ?? true; return shouldShow ? (ann.annotations || []) : []; })} readOnly maxHeight="100%" />
                     ) : (
                       <Box component="img" src={selectedApprovedItem.fileUrl} alt="approved item" sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     )
@@ -1248,124 +789,40 @@ const ManagerProjectDetail = () => {
                     <Box sx={{ height: 280, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 2, px: 2 }}>
                       <Typography sx={{ color: '#f472b6', fontWeight: 700, fontSize: 12 }}>AUDIO WAVEFORM</Typography>
                       <Box sx={{ bgcolor: '#f8fafc', borderRadius: 2, p: 2, width: '100%' }}>
-                        <AudioAnnotator
-                          audioUrl={selectedApprovedItem.fileUrl}
-                          labelSet={project?.labelSet || []}
-                          initialSegments={(selectedApprovedItem.annotatorLabels || []).flatMap((ann) => {
-                            const shouldShow = showAnnotatorLabels ? (showAnnotatorLabelMap[ann.name] ?? true) : false;
-                            if (!shouldShow) return [];
-                            return (ann.annotations || []).filter((seg) => seg?.start !== undefined && seg?.end !== undefined).map((seg) => ({
-                              id: `${ann.name}-${seg.start}-${seg.end}-${seg.label || 'unknown'}`,
-                              start: Number(seg.start ?? seg.startTime ?? 0),
-                              end: Number(seg.end ?? seg.endTime ?? 0),
-                              label: seg.label || 'unknown',
-                            }));
-                          })}
-                          readOnly
-                          showLabelLegend={showAnnotatorLabels}
-                        />
+                        <AudioAnnotator audioUrl={selectedApprovedItem.fileUrl} labelSet={project?.labelSet || []} initialSegments={(selectedApprovedItem.annotatorLabels || []).flatMap((ann) => { const shouldShow = showAnnotatorLabels ? (showAnnotatorLabelMap[ann.name] ?? true) : false; if (!shouldShow) return []; return (ann.annotations || []).filter((seg) => seg?.start !== undefined && seg?.end !== undefined).map((seg) => ({ id: `${ann.name}-${seg.start}-${seg.end}-${seg.label || 'unknown'}`, start: Number(seg.start ?? seg.startTime ?? 0), end: Number(seg.end ?? seg.endTime ?? 0), label: seg.label || 'unknown' })); })} readOnly showLabelLegend={showAnnotatorLabels} />
                       </Box>
                       <Box component="audio" controls src={selectedApprovedItem.fileUrl} sx={{ width: '100%' }} />
-                      <Typography sx={{ color: '#94a3b8', fontSize: 12 }}>
-                        {selectedApprovedItem.fileName}
-                      </Typography>
+                      <Typography sx={{ color: '#94a3b8', fontSize: 12 }}>{selectedApprovedItem.fileName}</Typography>
                     </Box>
                   ) : selectedApprovedItem.mediaType === 'text' ? (
                     <Box sx={{ p: 2, height: 280, overflow: 'auto' }}>
                       <Typography sx={{ color: '#34d399', fontWeight: 700, fontSize: 12, mb: 1 }}>TEXT CONTENT</Typography>
                       {(() => {
                         const rawText = textContentMap[selectedApprovedItem.key] || selectedApprovedItem.textContent || selectedApprovedItem.content || selectedApprovedItem.preview || '';
-                        if (!rawText) {
-                          return (
-                            <Box sx={{ p: 2, borderRadius: 2, bgcolor: '#0f172a', border: '1px solid #334155', color: '#94a3b8', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                              {textContentLoadingMap[selectedApprovedItem.key] ? 'Đang tải nội dung text...' : 'Không có nội dung text.'}
-                            </Box>
-                          );
-                        }
-                        const spans = (selectedApprovedItem.annotatorLabels || []).flatMap((ann) => {
-                          const shouldShow = showAnnotatorLabels ? (showAnnotatorLabelMap[ann.name] ?? true) : false;
-                          if (!shouldShow) return [];
-                          return (ann.annotations || []).filter((s) => s?.start !== undefined && s?.end !== undefined).map((s) => ({
-                            ...s,
-                            sourceAnnotator: ann.name,
-                          }));
-                        }).filter((s) => Number.isFinite(Number(s.start)) && Number.isFinite(Number(s.end))).map((s) => {
-                          const start = Math.max(0, Math.min(rawText.length, Number(s.start) || 0));
-                          const end = Math.max(start, Math.min(rawText.length, Number(s.end) || 0));
-                          return { ...s, start, end };
-                        }).filter((s) => s.end > s.start);
-                        if (!spans.length) {
-                          return (
-                            <Box sx={{ p: 2, borderRadius: 2, bgcolor: '#0f172a', border: '1px solid #334155', whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '0.8rem', color: '#e2e8f0', lineHeight: 1.8 }}>
-                              {rawText}
-                            </Box>
-                          );
-                        }
-                        const boundaries = new Set([0, rawText.length]);
-                        spans.forEach((s) => { boundaries.add(s.start); boundaries.add(s.end); });
+                        if (!rawText) return <Box sx={{ p: 2, borderRadius: 2, bgcolor: '#0f172a', border: '1px solid #334155', color: '#94a3b8', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{textContentLoadingMap[selectedApprovedItem.key] ? 'Đang tải nội dung text...' : 'Không có nội dung text.'}</Box>;
+                        const spans = (selectedApprovedItem.annotatorLabels || []).flatMap((ann) => { const shouldShow = showAnnotatorLabels ? (showAnnotatorLabelMap[ann.name] ?? true) : false; if (!shouldShow) return []; return (ann.annotations || []).filter((s) => s?.start !== undefined && s?.end !== undefined).map((s) => ({ ...s, sourceAnnotator: ann.name })); }).filter((s) => Number.isFinite(Number(s.start)) && Number.isFinite(Number(s.end))).map((s) => { const start = Math.max(0, Math.min(rawText.length, Number(s.start) || 0)); const end = Math.max(start, Math.min(rawText.length, Number(s.end) || 0)); return { ...s, start, end }; }).filter((s) => s.end > s.start);
+                        if (!spans.length) return <Box sx={{ p: 2, borderRadius: 2, bgcolor: '#0f172a', border: '1px solid #334155', whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '0.8rem', color: '#e2e8f0', lineHeight: 1.8 }}>{rawText}</Box>;
+                        const boundaries = new Set([0, rawText.length]); spans.forEach((s) => { boundaries.add(s.start); boundaries.add(s.end); });
                         const points = Array.from(boundaries).sort((a, b) => a - b);
                         const chunks = [];
-                        for (let i = 0; i < points.length - 1; i++) {
-                          const start = points[i];
-                          const end = points[i + 1];
-                          if (end <= start) continue;
-                          const active = spans.filter((s) => s.start <= start && s.end >= end);
-                          chunks.push({ key: `c-${i}-${start}-${end}`, text: rawText.slice(start, end), active });
-                        }
+                        for (let i = 0; i < points.length - 1; i++) { const start = points[i]; const end = points[i + 1]; if (end <= start) continue; const active = spans.filter((s) => s.start <= start && s.end >= end); chunks.push({ key: `c-${i}-${start}-${end}`, text: rawText.slice(start, end), active }); }
                         return (
                           <Box sx={{ p: 2, borderRadius: 2, bgcolor: '#0f172a', border: '1px solid #334155', whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '0.8rem', color: '#e2e8f0', lineHeight: 1.8, maxHeight: 220, overflow: 'auto' }}>
                             {chunks.map((chunk) => {
                               if (!chunk.active.length) return <span key={chunk.key}>{chunk.text}</span>;
-
                               const top = chunk.active[0];
                               const colors = ['#3b82f6','#22c55e','#f59e0b','#ef4444','#8b5cf6'];
                               const labelColor = colors[Math.abs((top.label || '').split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % colors.length];
-
                               const activeAnnotators = Array.from(new Set(chunk.active.map((a) => a.sourceAnnotator).filter(Boolean)));
-                              const activeLabels = Array.from(new Set(chunk.active.map((a) => a.label).filter(Boolean)));
                               const isMultiAnnotatorView = activeAnnotators.length > 1;
-
-                              return (
-                                <mark
-                                  key={chunk.key}
-                                  title={`${activeLabels.join(', ')} • ${activeAnnotators.join(', ')}`}
-                                  style={{
-                                    backgroundColor: isMultiAnnotatorView ? `${labelColor}55` : `${labelColor}88`,
-                                    color: '#e2e8f0',
-                                    borderBottom: `1px solid ${labelColor}`,
-                                    padding: '0 2px',
-                                    borderRadius: '2px',
-                                  }}
-                                >
-                                  {chunk.text}
-                                  {!isMultiAnnotatorView && (
-                                    <span
-                                      style={{
-                                        marginLeft: 4,
-                                        padding: '0 3px',
-                                        borderRadius: 3,
-                                        fontSize: '0.7em',
-                                        fontWeight: 700,
-                                        backgroundColor: `${labelColor}66`,
-                                        color: labelColor,
-                                        border: `1px solid ${labelColor}80`,
-                                        whiteSpace: 'nowrap',
-                                      }}
-                                    >
-                                      [{top.label}]
-                                    </span>
-                                  )}
-                                </mark>
-                              );
+                              return <mark key={chunk.key} title={`${chunk.active.map((a) => a.label).join(', ')} • ${activeAnnotators.join(', ')}`} style={{ backgroundColor: isMultiAnnotatorView ? `${labelColor}55` : `${labelColor}88`, color: '#e2e8f0', borderBottom: `1px solid ${labelColor}`, padding: '0 2px', borderRadius: '2px' }}>{chunk.text}{!isMultiAnnotatorView && <span style={{ marginLeft: 4, padding: '0 3px', borderRadius: 3, fontSize: '0.7em', fontWeight: 700, backgroundColor: `${labelColor}66`, color: labelColor, border: `1px solid ${labelColor}80`, whiteSpace: 'nowrap' }}>[{top.label}]</span>}</mark>;
                             })}
                           </Box>
                         );
                       })()}
                     </Box>
                   ) : (
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 280 }}>
-                      <Typography sx={{ color: '#64748b' }}>No Preview</Typography>
-                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 280 }}><Typography sx={{ color: '#64748b' }}>No Preview</Typography></Box>
                   )}
                 </Box>
               </Grid>
@@ -1384,27 +841,7 @@ const ManagerProjectDetail = () => {
                   <Box>
                     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
                       <Typography variant="subtitle2" sx={{ color: '#94a3b8' }}>Annotators approved</Typography>
-                      <FormControlLabel
-                        control={(
-                          <Switch
-                            checked={showAnnotatorLabels}
-                            onChange={(e) => {
-                              const checked = e.target.checked;
-                              setShowAnnotatorLabels(checked);
-                              if (checked && selectedApprovedItem?.annotatorLabels) {
-                                const nextMap = {};
-                                selectedApprovedItem.annotatorLabels.forEach((ann) => {
-                                  nextMap[ann.name] = true;
-                                });
-                                setShowAnnotatorLabelMap(nextMap);
-                              }
-                            }}
-                            size="small"
-                          />
-                        )}
-                        label="Hiện label"
-                        sx={{ color: '#94a3b8' }}
-                      />
+                      <FormControlLabel control={<Switch checked={showAnnotatorLabels} onChange={(e) => { const checked = e.target.checked; setShowAnnotatorLabels(checked); if (checked && selectedApprovedItem?.annotatorLabels) { const nextMap = {}; selectedApprovedItem.annotatorLabels.forEach((ann) => { nextMap[ann.name] = true; }); setShowAnnotatorLabelMap(nextMap); } }} size="small" />} label="Hiện label" sx={{ color: '#94a3b8' }} />
                     </Box>
                     {selectedApprovedItem.annotators.length === 0 ? (
                       <Typography variant="body2" sx={{ color: '#94a3b8' }}>Chưa có annotator.</Typography>
@@ -1413,47 +850,14 @@ const ManagerProjectDetail = () => {
                         {selectedApprovedItem.annotatorLabels?.map((ann, idx) => (
                           <Box key={`${ann.name}-${idx}`} sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
-                              <Chip
-                                label={ann.isPrimary ? `${ann.name} • PRIMARY` : ann.name}
-                                sx={{
-                                  bgcolor: ann.isPrimary ? 'rgba(245,158,11,0.25)' : 'rgba(34,197,94,0.2)',
-                                  color: ann.isPrimary ? '#fbbf24' : '#22c55e',
-                                  fontWeight: 700,
-                                  width: 'fit-content',
-                                  border: ann.isPrimary ? '1px solid rgba(245,158,11,0.6)' : '1px solid transparent',
-                                }}
-                              />
+                              <Chip label={ann.isPrimary ? `${ann.name} • PRIMARY` : ann.name} sx={{ bgcolor: ann.isPrimary ? 'rgba(245,158,11,0.25)' : 'rgba(34,197,94,0.2)', color: ann.isPrimary ? '#fbbf24' : '#22c55e', fontWeight: 700, width: 'fit-content', border: ann.isPrimary ? '1px solid rgba(245,158,11,0.6)' : '1px solid transparent' }} />
                               {showAnnotatorLabels && (
-                                <FormControlLabel
-                                  control={(
-                                    <Switch
-                                      checked={showAnnotatorLabelMap[ann.name] ?? true}
-                                      onChange={(e) => {
-                                        const checked = e.target.checked;
-                                        setShowAnnotatorLabelMap((prev) => ({ ...prev, [ann.name]: checked }));
-                                      }}
-                                      size="small"
-                                    />
-                                  )}
-                                  label="Hiện label"
-                                  sx={{ color: '#94a3b8' }}
-                                />
+                                <FormControlLabel control={<Switch checked={showAnnotatorLabelMap[ann.name] ?? true} onChange={(e) => { const checked = e.target.checked; setShowAnnotatorLabelMap((prev) => ({ ...prev, [ann.name]: checked })); }} size="small" />} label="Hiện label" sx={{ color: '#94a3b8' }} />
                               )}
                             </Box>
                             {showAnnotatorLabels && (
                               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                                {(ann.labels || []).length === 0 ? (
-                                  <Typography variant="caption" sx={{ color: '#94a3b8' }}>Không có label.</Typography>
-                                ) : (
-                                  ann.labels.map((label, labelIdx) => (
-                                    <Chip
-                                      key={`${ann.name}-${labelIdx}`}
-                                      label={label}
-                                      size="small"
-                                      sx={{ bgcolor: getLabelColor(label), color: 'white', fontWeight: 700, fontSize: '0.7rem' }}
-                                    />
-                                  ))
-                                )}
+                                {(ann.labels || []).length === 0 ? <Typography variant="caption" sx={{ color: '#94a3b8' }}>Không có label.</Typography> : ann.labels.map((label, labelIdx) => <Chip key={`${ann.name}-${labelIdx}`} label={label} size="small" sx={{ bgcolor: getLabelColor(label), color: 'white', fontWeight: 700, fontSize: '0.7rem' }} />)}
                               </Box>
                             )}
                           </Box>
@@ -1466,9 +870,7 @@ const ManagerProjectDetail = () => {
             </Grid>
           )}
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setApprovedItemDialogOpen(false)} sx={secondaryBtnSx}>Đóng</Button>
-        </DialogActions>
+        <DialogActions><Button onClick={() => setApprovedItemDialogOpen(false)} sx={secondaryBtnSx}>Đóng</Button></DialogActions>
       </Dialog>
     </Box>
   );

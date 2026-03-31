@@ -180,6 +180,25 @@ const Datasets = () => {
   const handleFileUpload = (e) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
+
+    // Validate file types match dataset type
+    const datasetType = formData.type;
+    const allowedExtensions = {
+      image: /\.(jpg|jpeg|png|gif|bmp|webp|svg)$/i,
+      text:  /\.(txt|csv|json|xml|md)$/i,
+      audio: /\.(mp3|wav|ogg|m4a|aac|flac)$/i,
+    };
+    const zipRe = /\.(zip|rar)$/i;
+
+    const allowed = allowedExtensions[datasetType] || allowedExtensions.image;
+    const invalid = files.filter(f => !allowed.test(f.name) && !zipRe.test(f.name));
+
+    if (invalid.length > 0) {
+      setError(`Sai loai file! Dataset "${datasetType}" chi chap nhan file ${datasetType} hoac zip/rar. File sai: ${invalid.map(f => f.name).join(', ')}`);
+      e.target.value = '';
+      return;
+    }
+
     setUploadedFiles((prev) => [...prev, ...files]);
     setError(null);
   };
@@ -729,7 +748,7 @@ const Datasets = () => {
             <CloudUploadIcon sx={{ fontSize: 44, color: '#60a5fa', mb: 1 }} />
             <Typography variant="h6" fontWeight={700} gutterBottom>Upload files / zip</Typography>
             <Typography variant="body2" sx={{ color: '#94a3b8' }}>ZIP files will be auto-extracted</Typography>
-            <input id="file-upload-dataset" type="file" multiple style={{ display: 'none' }} onChange={handleFileUpload} accept="image/*,.zip,.rar" />
+            <input id="file-upload-dataset" type="file" multiple style={{ display: 'none' }} onChange={handleFileUpload} accept="image/*,.zip,.rar,.txt,.csv,.json,.xml,.md,.mp3,.wav,.ogg,.m4a,.aac,.flac" />
           </Box>
 
           {uploadedFiles.length > 0 && (

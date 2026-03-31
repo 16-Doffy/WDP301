@@ -99,18 +99,14 @@ const ImageViewer = ({
   return (
     <div
       ref={containerRef}
-      className="relative inline-block max-w-full"
+      className="relative flex items-center justify-center w-full h-full"
+      style={{ minHeight: '200px' }}
     >
       <img
         ref={imageRef}
         src={imageUrl}
         alt="Annotation target"
-        className="block max-w-full"
-        style={{
-          maxHeight: maxHeight,
-          width: 'auto',
-          height: 'auto',
-        }}
+        className="max-w-full max-h-full object-contain"
         onLoad={() => {
           if (imageRef.current) {
             const rect = imageRef.current.getBoundingClientRect();

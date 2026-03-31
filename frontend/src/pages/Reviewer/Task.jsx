@@ -161,6 +161,9 @@ const ReviewerTask = () => {
       const res = await axios.get(`${API_URL}/api/tasks/${id}/related${qs ? `?${qs}` : ''}`);
       let tasks = (res.data || []).filter((t) => {
         const hasAnnotator = Boolean(t?.annotatorId?._id || t?.annotatorId);
+        if (reviewOnly) {
+          return hasAnnotator && (t?.status === 'approved' || t?.status === 'rejected');
+        }
         return t?.status === 'submitted' && hasAnnotator;
       });
 
@@ -1484,7 +1487,7 @@ const ReviewerTask = () => {
       </div>
 
       {/* Floating Action Dock */}
-      {!isLockedForReview && (
+      {!isLockedForReview && !reviewOnly && (
         <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-4 px-6 py-4 rounded-2xl shadow-2xl ${darkMode
           ? 'bg-gray-800/95 backdrop-blur-xl border border-gray-700'
           : 'bg-white/95 backdrop-blur-xl border border-gray-200/50'
