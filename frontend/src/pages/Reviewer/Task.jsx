@@ -22,9 +22,7 @@ const ReviewerTask = () => {
   const [reviewedTasks, setReviewedTasks] = useState([]);
   const [darkMode, setDarkMode] = useState(true);
   const [hoveredObjectIndex, setHoveredObjectIndex] = useState(null);
-  const [selectedIssues, setSelectedIssues] = useState([]);
-  const [issueTargets, setIssueTargets] = useState({});
-  const [issueComments, setIssueComments] = useState({});
+
   const carouselRef = useRef(null);
   const [carouselScroll, setCarouselScroll] = useState(0);
   const [sentenceFeedbacks, setSentenceFeedbacks] = useState({});
@@ -47,9 +45,6 @@ const ReviewerTask = () => {
   const reviewOnly = searchParams.get('reviewOnly') === '1';
 
   useEffect(() => {
-    setSelectedIssues([]);
-    setIssueTargets({});
-    setIssueComments({});
     setReviewComments('');
     setReviewNotes([]);
     setSentenceFeedbacks({});
@@ -75,53 +70,6 @@ const ReviewerTask = () => {
     }
   }, [task]);
 
-  // Map frontend error types to backend error categories
-  const mapErrorCategoryToBackend = (frontendCategory) => {
-    const mapping = {
-      'tightness': 'poor_quality',      // Tightness issue = poor quality
-      'missed': 'missing_label',         // Missed object = missing label
-      'wrong_class': 'incorrect_label',  // Wrong class = incorrect label
-      'occlusion': 'does_not_follow_guidelines', // Occlusion error = doesn't follow guidelines
-      'other': 'other'
-    };
-    return mapping[frontendCategory] || 'other';
-  };
-
-  const errorTypes = [
-    {
-      id: 'tightness',
-      name: 'Tightness Issue',
-      description: "Bounding box doesn't fit object",
-      icon: '📐',
-      color: 'from-yellow-400 to-orange-500',
-      backendCategory: 'poor_quality'
-    },
-    {
-      id: 'missed',
-      name: 'Missed Object',
-      description: 'Visible object not labeled',
-      icon: '👁️',
-      color: 'from-blue-400 to-cyan-500',
-      backendCategory: 'missing_label'
-    },
-    {
-      id: 'wrong_class',
-      name: 'Wrong Class',
-      description: 'Categorization error',
-      icon: '🏷️',
-      color: 'from-purple-400 to-pink-500',
-      backendCategory: 'incorrect_label'
-    },
-    {
-      id: 'occlusion',
-      name: 'Occlusion Error',
-      description: 'Improper handling of overlap',
-      icon: '🔀',
-      color: 'from-red-400 to-rose-500',
-      backendCategory: 'does_not_follow_guidelines'
-    }
-  ];
-
   const datasetType = (task?.dataItem?.mimeType || '').startsWith('image/')
     ? 'image'
     : (task?.dataItem?.mimeType || '').startsWith('audio/')
@@ -130,66 +78,6 @@ const ReviewerTask = () => {
         ? 'text'
         : 'image';
   const canSetPrimary = datasetType === 'image';
-
-  // Issue catalog by dataset type - unified for all types
-  const issueCatalogByType = {
-    image: [
-      { id: 'missing_object', label: 'Missed Object', needsTarget: false, description: 'Object exists but not labeled' },
-      { id: 'wrong_class', label: 'Wrong Class', needsTarget: true, targetLabel: 'Object ID', description: 'Object classified incorrectly' },
-      { id: 'bbox_loose', label: 'Bounding Box Too Loose', needsTarget: true, targetLabel: 'Object ID', description: 'Box includes too much background' },
-      { id: 'bbox_tight', label: 'Bounding Box Too Tight', needsTarget: true, targetLabel: 'Object ID', description: 'Box cuts off part of object' },
-      { id: 'wrong_overlap', label: 'Wrong Overlap Handling', needsTarget: true, targetLabel: 'Object ID', description: 'Overlapping objects handled incorrectly' },
-    ],
-    audio: [
-      { id: 'wrong_label', label: 'Wrong Label', needsTarget: true, targetLabel: 'Segment #', description: 'Audio segment labeled incorrectly' },
-      { id: 'incorrect_timestamp', label: 'Incorrect Timestamp', needsTarget: true, targetLabel: 'Segment #', description: 'Start/end time is wrong' },
-      { id: 'overlapping_segments', label: 'Overlapping Segments', needsTarget: true, targetLabel: 'Segment #', description: 'Segments should not overlap' },
-      { id: 'missing_segment', label: 'Missing Segment', needsTarget: false, description: 'Expected segment not found' },
-      { id: 'noise_misclassified', label: 'Background Noise Misclassified', needsTarget: true, targetLabel: 'Segment #', description: 'Noise labeled as speech or vice versa' },
-    ],
-    text: [
-      { id: 'wrong_category', label: 'Wrong Category', needsTarget: true, targetLabel: 'Entity #', description: 'Entity category is incorrect' },
-      { id: 'missing_entity', label: 'Missing Entity', needsTarget: false, description: 'Expected entity not found in text' },
-      { id: 'wrong_span', label: 'Wrong Span', needsTarget: true, targetLabel: 'Entity #', description: 'Text span does not match entity' },
-      { id: 'overlapping_entity', label: 'Overlapping Entity', needsTarget: true, targetLabel: 'Entity #', description: 'Entities should not overlap' },
-      { id: 'incorrect_classification', label: 'Incorrect Classification', needsTarget: true, targetLabel: 'Entity #', description: 'Classification is wrong' },
-    ],
-  };
-
-  const issueOptions = issueCatalogByType[datasetType] || issueCatalogByType.image;
-
-  // Target options based on dataset type
-  const targetOptions = useMemo(() => {
-    if (datasetType === 'image') {
-      return (task?.labels?.objects || []).map((obj, idx) => ({
-        id: `object_${idx + 1}`,
-        label: `Object #${idx + 1} (${obj.label || 'Unknown'})`,
-        index: idx
-      }));
-    } else if (datasetType === 'audio') {
-      const segments = task?.labels?.segments || [];
-      if (segments.length > 0) {
-        return segments.map((seg, idx) => ({
-          id: `segment_${idx + 1}`,
-          label: `Segment #${idx + 1} (${seg.label || 'unknown'})`,
-          index: idx
-        }));
-      }
-      return [{ id: 'segment_1', label: 'Segment #1 (no segments)', index: 0 }];
-    } else {
-      // Text - spans or sentences
-      const items = task?.labels?.spans || task?.labels?.sentences || [];
-      return items.map((item, idx) => ({
-        id: `entity_${idx + 1}`,
-        label: `Entity #${idx + 1} (${item.label || 'text'})`,
-        index: idx
-      }));
-    }
-  }, [datasetType, task?.labels]);
-
-  const selectedIssueDetails = selectedIssues
-    .map((issueId) => issueOptions.find((i) => i.id === issueId))
-    .filter(Boolean);
 
   const hexToRgba = (hex, alpha = 1) => {
     if (!hex || typeof hex !== 'string') return `rgba(59,130,246,${alpha})`;
@@ -208,19 +96,6 @@ const ReviewerTask = () => {
     const b = intVal & 255;
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
   };
-
-  const imageClassSummary = (() => {
-    const objects = task?.labels?.objects || [];
-    const map = {};
-    objects.forEach((o) => {
-      const key = o?.label || 'Unknown';
-      map[key] = (map[key] || 0) + 1;
-    });
-    return Object.entries(map);
-  })();
-
-  const audioSegments = task?.labels?.segments || [];
-  const textEntities = task?.labels?.spans || task?.labels?.sentences || [];
 
   const fetchAllTasks = async () => {
     try {
@@ -625,21 +500,6 @@ const ReviewerTask = () => {
       return;
     }
 
-    // Validation: Must select at least 1 issue for rejection
-    if (selectedIssues.length === 0) {
-      alert('Vui lòng chọn ít nhất 1 lỗi (issue) trước khi từ chối task.');
-      return;
-    }
-
-    // Validate that issues requiring targets have targets selected
-    for (const issueId of selectedIssues) {
-      const issueInfo = issueOptions.find(i => i.id === issueId);
-      if (issueInfo?.needsTarget && !issueTargets[issueId]) {
-        alert(`Vui lòng chọn ${issueInfo.targetLabel} cho lỗi "${issueInfo.label}"`);
-        return;
-      }
-    }
-
     const targetTaskId = selectedTaskForReview?._id;
     if (!targetTaskId) {
       alert('Không tìm thấy task pending của annotator này để chấm.');
@@ -649,65 +509,16 @@ const ReviewerTask = () => {
     if (window.confirm('Bạn có chắc muốn từ chối task này? Annotator sẽ nhận được phản hồi và cần chỉnh sửa lại. Lưu ý: Mỗi task chỉ có thể được đánh giá 1 lần.')) {
       setProcessing(true);
       try {
-        // Build issues array with full details
-        const issues = selectedIssues.map((issueId) => {
-          const issueMeta = issueOptions.find((i) => i.id === issueId);
-          const targetId = issueTargets[issueId];
-          
-          // Get target details for display
-          let targetDetails = null;
-          if (targetId) {
-            if (datasetType === 'image') {
-              const idx = parseInt(targetId.replace('object_', '')) - 1;
-              const obj = task?.labels?.objects?.[idx];
-              targetDetails = { id: targetId, label: obj?.label || 'Unknown', index: idx };
-            } else if (datasetType === 'audio') {
-              const idx = parseInt(targetId.replace('segment_', '')) - 1;
-              const seg = task?.labels?.segments?.[idx];
-              targetDetails = { id: targetId, label: seg?.label || 'unknown', index: idx };
-            } else {
-              const idx = parseInt(targetId.replace('entity_', '')) - 1;
-              const entity = task?.labels?.spans?.[idx] || task?.labels?.sentences?.[idx];
-              targetDetails = { id: targetId, label: entity?.label || 'text', index: idx };
-            }
-          }
-
-          return {
-            type: issueMeta?.label || issueId,
-            typeId: issueId,
-            targetId: targetId || null,
-            targetDetails: targetDetails,
-            comment: issueComments[issueId]?.trim() || null,
-          };
-        });
-
         // Validate: bắt buộc comment khi reject
         if (!reviewComments.trim()) {
           alert('Bạn phải nhập comment khi từ chối task.');
+          setProcessing(false);
           return;
         }
 
-        // Determine backend error category based on first issue
-        const firstIssue = selectedIssues[0]?.toLowerCase?.() || '';
-        const backendErrorCategory = firstIssue.includes('class') || firstIssue.includes('wrong_category') || firstIssue.includes('incorrect_classification')
-          ? 'incorrect_label'
-          : firstIssue.includes('miss') || firstIssue.includes('missing')
-            ? 'missing_label'
-            : firstIssue.includes('box') || firstIssue.includes('tight') || firstIssue.includes('loose') || firstIssue.includes('span') || firstIssue.includes('timestamp')
-              ? 'poor_quality'
-              : 'does_not_follow_guidelines';
-
         await axios.post(`${API_URL}/api/reviews/${targetTaskId}/reject`, {
           reviewComments: reviewComments.trim(),
-          errorCategory: backendErrorCategory,
           reviewNotes: [],
-          review: {
-            taskId: targetTaskId,
-            datasetType,
-            status: 'rejected',
-            issues,
-            overallComment: reviewComments.trim(),
-          },
         });
         alert('Đã từ chối task thành công!');
         await fetchAllTasks();
@@ -737,7 +548,7 @@ const ReviewerTask = () => {
         setProcessing(false);
       }
     }
-  }, [id, task, reviewComments, reviewNotes, selectedIssues, issueOptions, issueTargets, issueComments, datasetType, autoNext, fetchAllTasks, fetchTask, fetchRelatedTasks, goToNextPendingTask, processing, isLockedForReview, isOverdue, activeAnnotatorId, selectedTaskForReview, selectedAnnotatorCount]);
+  }, [id, reviewComments, reviewNotes, autoNext, fetchAllTasks, fetchTask, fetchRelatedTasks, goToNextPendingTask, processing, isLockedForReview, isOverdue, activeAnnotatorId, selectedTaskForReview, selectedAnnotatorCount]);
 
   const handleSkip = () => {
     goToNextPendingTask();
@@ -1131,9 +942,9 @@ const ReviewerTask = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-12 gap-4">
-              {/* Annotator Output - Made bigger */}
-              <div className={`col-span-9 ${darkMode ? 'bg-gray-800/80 border-gray-700' : 'bg-white/60 backdrop-blur-lg border-gray-200/50'} rounded-2xl border p-6 shadow-xl`}>
+            <div className="grid grid-cols-1 xl:grid-cols-[1fr_24rem] gap-4">
+              {/* Annotator Output - Expanded to fill space */}
+              <div className={`min-h-[600px] ${darkMode ? 'bg-gray-800/80 border-gray-700' : 'bg-white/60 backdrop-blur-lg border-gray-200/50'} rounded-2xl border p-6 shadow-xl`}>
                 <h3 className={`font-bold mb-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>
                   ANNOTATOR OUTPUT
                 </h3>
@@ -1598,235 +1409,73 @@ const ReviewerTask = () => {
             </div>
           </div>
 
-          {!reviewOnly && (
-            <div className={`mt-4 ${darkMode ? 'bg-[#1e293b] border-slate-700' : 'bg-[#1e293b] border-slate-700'} rounded-2xl border p-4 shadow-2xl`}>
-              <div className="flex items-center justify-between mb-4">
-                <h3 className={`font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                  REVIEW QUEUE
-                </h3>
-                <span className={`px-3 py-1 rounded-full text-xs font-semibold ${darkMode ? 'bg-emerald-900/50 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}>
-                  {groupedQueueTasks.length} ACTIONABLE
-                </span>
-              </div>
-              <div className="space-y-3">
-                {groupedQueueTasks.length === 0 ? (
-                  <div className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                    Không có task nào bạn có thể chấm lúc này.
-                  </div>
-                ) : (
-                  groupedQueueTasks.map((group) => {
-                    const pendingTask = group.representative;
-                    const isActive = group.tasks.some((t) => t._id === id);
-                    const timeAgo = group.latestSubmittedAt ? getTimeAgo(group.latestSubmittedAt) : '';
-                    return (
-                      <button
-                        key={group.key}
-                        onClick={() => {
-                          const scopeQuery = new URLSearchParams();
-                          if (scopedProjectId) scopeQuery.set('projectId', scopedProjectId);
-                          if (scopedDatasetId) scopeQuery.set('datasetId', scopedDatasetId);
-                          if (scopedAnnotatorId) scopeQuery.set('annotatorId', scopedAnnotatorId);
-                          if (scopedAnnotatorIds) scopeQuery.set('annotatorIds', scopedAnnotatorIds);
-                          const query = scopeQuery.toString();
-                          navigate(`/reviewer/tasks/${pendingTask._id}${query ? `?${query}` : ''}`);
-                        }}
-                        className={`w-full text-left rounded-xl p-3 transition-all duration-200 ${isActive
-                          ? darkMode
-                            ? 'bg-emerald-600/30 border-2 border-emerald-400'
-                            : 'bg-emerald-100 border-2 border-emerald-400'
-                          : darkMode
-                            ? 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
-                            : 'bg-white/40 border border-gray-300/50 hover:bg-white/60'
-                          }`}
-                      >
-                        <div className="flex items-center gap-3">
-                          {pendingTask.dataItem?.mimeType?.startsWith('image/') && (
-                            <div className="w-20 h-14 rounded-lg overflow-hidden bg-gray-200 flex-shrink-0">
-                              {(() => {
-                                const thumbUrl = buildFileUrl(pendingTask.dataItem);
-                                if (!thumbUrl) {
-                                  return (
-                                    <div className="w-full h-full flex items-center justify-center text-[10px] text-gray-500">
-                                      No image
-                                    </div>
-                                  );
-                                }
-                                return (
-                                  <img
-                                    src={thumbUrl}
-                                    alt="Task thumbnail"
-                                    className="w-full h-full object-cover"
-                                    onError={(e) => { e.target.style.display = 'none'; }}
-                                  />
-                                );
-                              })()}
-                            </div>
-                          )}
-                          <div className="min-w-0">
-                            <div className={`text-xs font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
-                              ITEM-{pendingTask._id?.substring(0, 8).toUpperCase()}-{pendingTask._id?.slice(-4).toUpperCase()}
-                            </div>
-                            <div className={`text-xs truncate ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                              {pendingTask.projectId?.name || 'Project'}
-                            </div>
-                            <div className={`text-xs truncate ${darkMode ? 'text-gray-500' : 'text-gray-600'}`}>
-                              {pendingTask.dataItem?.originalName || pendingTask.dataItem?.filename || pendingTask.dataItem?.path || 'Unknown item'}
-                            </div>
-                            <div className={`text-xs truncate ${darkMode ? 'text-gray-500' : 'text-gray-600'}`}>
-                              {group.tasks.length} annotator • nhấn để xem label từng annotator
-                            </div>
-                            {timeAgo && (
-                              <div className={`text-xs mt-1 ${darkMode ? 'text-gray-500' : 'text-gray-500'}`}>
-                                {timeAgo}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-          )}
         </div>
 
-        {/* Right Sidebar - Made smaller */}
+        {/* Right Sidebar - Expanded with instructions and comment */}
         {!reviewOnly && (
-          <div className={`w-72 ${darkMode ? 'bg-[#1e293b] border-slate-700' : 'bg-[#1e293b] border-slate-700'} border-l overflow-y-auto`}>
+          <div className={`w-96 ${darkMode ? 'bg-[#1e293b] border-slate-700' : 'bg-[#1e293b] border-slate-700'} border-l overflow-y-auto`}>
             <div className="p-6 space-y-6">
+              {/* Instructions */}
               <div>
-                <h3 className="text-xl font-semibold text-white mb-3">Review Overview</h3>
+                <h3 className="text-xl font-semibold text-white mb-3">Hướng dẫn chấm bài</h3>
                 <div className="rounded-xl border border-slate-700 bg-[#0f172a] p-4 text-sm text-slate-300 space-y-3">
-                  <p className="text-slate-200 font-medium">Assigned → Submitted → In Review → Approved / Rejected</p>
-                  <p>Reject bắt buộc comment. Approve không bắt buộc.</p>
-                  <p>Sau khi review, task sẽ bị khóa.</p>
-
-                  {datasetType === 'image' && (
-                    <div className="pt-2 border-t border-slate-700 space-y-1">
-                      <p className="text-xs uppercase tracking-wider text-slate-400">Object Summary</p>
-                      <p className="text-slate-200">Detected Objects: {(task?.labels?.objects || []).length}</p>
-                      {imageClassSummary.map(([name, count]) => (
-                        <p key={name} className="text-xs text-slate-300">• {name}: {count}</p>
-                      ))}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-emerald-400 font-bold">1.</span>
+                      <span className="text-slate-200 font-medium">Assigned → Submitted → In Review → Approved / Rejected</span>
                     </div>
-                  )}
-
-                  {datasetType === 'audio' && (
-                    <div className="pt-2 border-t border-slate-700 space-y-1">
-                      <p className="text-xs uppercase tracking-wider text-slate-400">Segment Overview</p>
-                      <p className="text-slate-200">Total Segments: {audioSegments.length}</p>
-                      <p className="text-xs text-slate-300">Duration: {task?.dataItem?.duration ? `${task.dataItem.duration}s` : 'N/A'}</p>
+                    <div className="flex items-start gap-2">
+                      <span className="text-red-400 font-bold">2.</span>
+                      <span className="text-slate-300">Reject <strong className="text-red-300">bắt buộc comment</strong> lý do.</span>
                     </div>
-                  )}
-
-                  {datasetType === 'text' && (
-                    <div className="pt-2 border-t border-slate-700 space-y-1">
-                      <p className="text-xs uppercase tracking-wider text-slate-400">Label Summary</p>
-                      <p className="text-slate-200">Entities: {textEntities.length}</p>
+                    <div className="flex items-start gap-2">
+                      <span className="text-emerald-400 font-bold">3.</span>
+                      <span className="text-slate-300">Approve <strong className="text-emerald-300">không bắt buộc</strong> comment.</span>
                     </div>
-                  )}
+                    <div className="flex items-start gap-2">
+                      <span className="text-amber-400 font-bold">4.</span>
+                      <span className="text-slate-300">Sau khi review, task sẽ bị <strong className="text-amber-300">khóa</strong>.</span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
+              {/* Comment Section */}
               <div>
-                <h3 className="text-xl font-semibold text-white mb-3">Error Checklist ({datasetType.toUpperCase()})</h3>
-                <p className="text-xs text-slate-400 mb-3">
-                  {datasetType === 'image' && 'Chọn các lỗi về bounding box và object trong ảnh'}
-                  {datasetType === 'audio' && 'Chọn các lỗi về segment và timestamp trong audio'}
-                  {datasetType === 'text' && 'Chọn các lỗi về entity và span trong văn bản'}
-                </p>
-                <div className="space-y-3">
-                  {issueOptions.map((issue) => {
-                    const checked = selectedIssues.includes(issue.id);
-                    return (
-                      <div key={issue.id} className="rounded-xl border border-slate-700 bg-[#0f172a] p-3">
-                        <label className="flex items-start gap-3 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={(e) => {
-                              const isChecked = e.target.checked;
-                              setSelectedIssues((prev) => isChecked
-                                ? [...prev, issue.id]
-                                : prev.filter((x) => x !== issue.id));
-                            }}
-                            className="h-4 w-4 mt-1 rounded border-slate-600 bg-[#0f172a] text-blue-600 focus:ring-blue-500"
-                          />
-                          <div className="flex-1">
-                            <span className="text-sm text-slate-200 font-medium">{issue.label}</span>
-                            {issue.description && (
-                              <p className="text-xs text-slate-500 mt-0.5">{issue.description}</p>
-                            )}
-                          </div>
-                        </label>
-
-                        {checked && issue.needsTarget && (
-                          <div className="mt-3 ml-7 space-y-2">
-                            <p className="text-xs text-slate-400">{issue.targetLabel}</p>
-                            <select
-                              value={issueTargets[issue.id] || ''}
-                              onChange={(e) => setIssueTargets((prev) => ({ ...prev, [issue.id]: e.target.value }))}
-                              className="w-full rounded-lg bg-[#0f172a] border border-slate-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-slate-200 text-sm px-3 py-2"
-                            >
-                              <option value="">-- Chọn {issue.targetLabel} --</option>
-                              {targetOptions.map((opt) => (
-                                <option key={opt.id} value={opt.id}>{opt.label}</option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
-
-                        {checked && (
-                          <div className="mt-3 ml-7">
-                            <textarea
-                              value={issueComments[issue.id] || ''}
-                              onChange={(e) => setIssueComments((prev) => ({ ...prev, [issue.id]: e.target.value }))}
-                              rows={2}
-                              placeholder="Mô tả chi tiết lỗi (tùy chọn)"
-                              className="w-full rounded-lg bg-[#0f172a] border border-slate-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-slate-200 text-sm px-3 py-2"
-                            />
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-xl font-semibold text-white mb-3">Structured Comment</h3>
+                <h3 className="text-xl font-semibold text-white mb-3">Nhận xét của Reviewer</h3>
                 <div className="rounded-xl border border-blue-700/40 bg-gradient-to-b from-[#0f172a] to-[#0b1220] p-4 space-y-3 shadow-[0_0_0_1px_rgba(59,130,246,0.15)]">
                   <div className="flex items-center justify-between">
-                    <label className="text-sm font-semibold text-blue-200 block">Overall Feedback</label>
+                    <label className="text-sm font-semibold text-blue-200 block">
+                      {isLockedForReview ? 'Nhận xét đã lưu' : 'Nhận xét'}
+                    </label>
                     <span className={`text-[11px] px-2 py-1 rounded-full border ${reviewComments.trim().length >= 12 ? 'text-emerald-300 border-emerald-600/40 bg-emerald-900/20' : 'text-amber-300 border-amber-600/40 bg-amber-900/20'}`}>
-                      {reviewComments.trim().length >= 12 ? 'Đủ nội dung' : 'Nên >= 12 ký tự'}
+                      {reviewComments.trim().length >= 12 ? 'Hợp lệ' : '>= 12 ký tự'}
                     </span>
                   </div>
                   <textarea
                     value={reviewComments}
                     onChange={(e) => setReviewComments(e.target.value)}
-                    rows={5}
-                    placeholder={datasetType === 'image'
-                      ? 'Ví dụ: Thiếu 1 object ở góc trái và sai class object #3.'
-                      : datasetType === 'audio'
-                        ? 'Ví dụ: Segment #2 sai nhãn, Segment #3 lệch timestamp 0.5s.'
-                        : 'Ví dụ: Missing entity LOCATION ở cuối câu, span entity #2 sai.'}
+                    rows={8}
+                    placeholder={
+                      datasetType === 'image'
+                        ? 'Nhập nhận xét của bạn...\nVí dụ: Thiếu 1 object ở góc trái và sai class object #3.'
+                        : datasetType === 'audio'
+                          ? 'Nhập nhận xét của bạn...\nVí dụ: Segment #2 sai nhãn, Segment #3 lệch timestamp 0.5s.'
+                          : 'Nhập nhận xét của bạn...\nVí dụ: Entity LOCATION bị miss ở câu cuối, entity #3 span không chính xác.'
+                    }
                     disabled={isLockedForReview}
-                    className="w-full rounded-lg bg-[#0a1020] border border-slate-500 focus:border-blue-400 focus:ring-2 focus:ring-blue-500/30 text-slate-100 text-sm px-3 py-3 placeholder:text-slate-400 disabled:opacity-60"
+                    className="w-full rounded-lg bg-[#0a1020] border border-slate-500 focus:border-blue-400 focus:ring-2 focus:ring-blue-500/30 text-slate-100 text-sm px-3 py-3 placeholder:text-slate-500 resize-none disabled:opacity-60"
                   />
-                  <div className="text-xs text-slate-300 rounded-lg border border-slate-700 bg-[#0b1328] px-3 py-2">
-                    {selectedIssueDetails.length > 0 ? (
-                      <div className="space-y-1">
-                        <p className="text-blue-200 font-semibold">Issues selected ({selectedIssueDetails.length})</p>
-                        {selectedIssueDetails.map((issue) => (
-                          <p key={issue.id}>• {issue.label}{issueTargets[issue.id] ? ` (${issueTargets[issue.id]})` : ''}</p>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-amber-200">Chưa chọn issue nào. Reject sẽ bị khóa cho tới khi chọn ít nhất 1 issue.</p>
-                    )}
-                  </div>
+                  {!isLockedForReview && (
+                    <p className="text-xs text-slate-400">
+                      {reviewComments.trim().length === 0
+                        ? <span className="text-amber-400">⚠ Reject bắt buộc nhập comment.</span>
+                        : reviewComments.trim().length < 12
+                          ? <span className="text-amber-400">⚠ Comment cần ít nhất 12 ký tự.</span>
+                          : <span className="text-emerald-400">✓ Comment hợp lệ.</span>
+                      }
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
