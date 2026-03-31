@@ -26,6 +26,7 @@ import AdminDashboard from './pages/Admin/Dashboard';
 import AdminUsers from './pages/Admin/Users';
 import AdminActivityLogs from './pages/Admin/ActivityLogs';
 import AdminDatasets from './pages/Admin/Datasets';
+import Profile from './pages/Profile';
 
 import Layout from './components/LayoutTailwind';
 import { useAuth } from './context/AuthContext';
@@ -213,6 +214,8 @@ function App() {
               <Route path="reviewer/tasks" element={<ReviewerDashboard />} />
               <Route path="reviewer/dashboard" element={<ReviewerDashboard />} />
               <Route path="reviewer/tasks/:id" element={<ReviewerTask />} />
+
+              <Route path="profile" element={<Profile />} />
 
               <Route path="admin/users" element={<AdminUsers />} />
               <Route path="admin/activity-logs" element={<AdminActivityLogs />} />

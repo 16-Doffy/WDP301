@@ -146,7 +146,7 @@ router.get('/my-tasks', auth, async (req, res) => {
     }
 
     const tasks = await Task.find(query)
-      .populate('projectId', 'name labelSet guidelines questions deadline')
+      .populate('projectId', 'name description labelSet guidelines questions deadline')
       .populate('datasetId', 'name')
       .populate('annotatorId', 'username fullName')
       .populate('reviewerId', 'username fullName')
@@ -179,7 +179,7 @@ router.get('/my-tasks', auth, async (req, res) => {
 router.get('/:id', auth, async (req, res) => {
   try {
     const task = await Task.findById(req.params.id)
-      .populate('projectId', 'name labelSet guidelines questions managerId deadline')
+      .populate('projectId', 'name description labelSet guidelines questions managerId deadline')
       .populate('datasetId', 'name')
       .populate('annotatorId', 'username fullName')
       .populate('reviewerId', 'username fullName')
@@ -241,7 +241,7 @@ router.get('/:id', auth, async (req, res) => {
 router.get('/:id/related', auth, async (req, res) => {
   try {
     const task = await Task.findById(req.params.id)
-      .populate('projectId', 'name labelSet guidelines questions managerId deadline')
+      .populate('projectId', 'name description labelSet guidelines questions managerId deadline')
       .populate('datasetId', 'name')
       .populate('annotatorId', 'username fullName')
       .populate('reviewerId', 'username fullName')
@@ -283,7 +283,7 @@ router.get('/:id/related', auth, async (req, res) => {
 
     const relatedTasks = await Task.find(query)
       .select('status dataItem labels annotatorId reviewedAt primaryForItem submittedAt')
-      .populate('projectId', 'name labelSet guidelines questions managerId deadline')
+      .populate('projectId', 'name description labelSet guidelines questions managerId deadline')
       .populate('datasetId', 'name')
       .populate('annotatorId', 'username fullName')
       .populate('reviewerId', 'username fullName')
