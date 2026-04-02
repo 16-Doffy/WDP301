@@ -573,35 +573,19 @@ const ReviewerTask = () => {
       }, { timeout: 15000 });
 
       if (response.status === 200 || response.status === 201) {
-        if (primaryQueued && targetTaskId === id) {
-          try {
-            await axios.post(`${API_URL}/api/reviews/${id}/primary`);
-          } catch (err) {
-            console.error('Error setting primary after approve:', err);
-            alert('Approve thành công nhưng không thể đặt ảnh chính. Vui lòng thử lại.');
-          }
-        }
-        setPrimaryQueued(false);
         alert('Đã phê duyệt task thành công!');
+        // Fetch task trước để đảm bảo dữ liệu mới nhất từ DB
+        await fetchTask();
         await fetchAllTasks();
         await fetchRelatedTasks();
-        if (autoNext) {
-          goToNextPendingTask();
-        } else {
-          await fetchTask();
-        }
       }
     } catch (error) {
       const msg = error.response?.data?.message || error.message || 'Lỗi khi phê duyệt';
       const alreadyReviewed = /already submitted your review decision|already been submitted|đã được đánh giá|đã gửi quyết định/i.test(msg);
       if (alreadyReviewed) {
+        await fetchTask();
         await fetchAllTasks();
         await fetchRelatedTasks();
-        if (autoNext) {
-          goToNextPendingTask();
-        } else {
-          await fetchTask();
-        }
         alert('Task này đã được bạn chấm trước đó. Mình đã đồng bộ lại trạng thái.');
       } else {
         alert(`Không thể hoàn tất: ${msg}`);
@@ -610,7 +594,7 @@ const ReviewerTask = () => {
     } finally {
       setProcessing(false);
     }
-  }, [id, reviewComments, reviewNotes, isLockedForReview, isOverdue, autoNext, fetchAllTasks, fetchTask, fetchRelatedTasks, goToNextPendingTask, processing, primaryQueued, activeAnnotatorId, selectedTaskForReview, selectedAnnotatorCount]);
+  }, [id, reviewComments, reviewNotes, isLockedForReview, isOverdue, fetchAllTasks, fetchTask, fetchRelatedTasks, processing, activeAnnotatorId, selectedTaskForReview, selectedAnnotatorCount]);
 
   const handleReject = useCallback(async () => {
     if (processing || isLockedForReview || task?.status === 'approved' || task?.status === 'rejected') {
@@ -710,24 +694,17 @@ const ReviewerTask = () => {
           },
         });
         alert('Đã từ chối task thành công!');
+        // Fetch task trước để đảm bảo dữ liệu mới nhất từ DB
+        await fetchTask();
         await fetchAllTasks();
         await fetchRelatedTasks();
-        if (autoNext) {
-          goToNextPendingTask();
-        } else {
-          await fetchTask();
-        }
       } catch (error) {
         const errorMessage = error.response?.data?.message || error.response?.data?.errors?.[0]?.msg || 'Lỗi khi từ chối task';
         const alreadyReviewed = /already submitted your review decision|already been submitted|đã được đánh giá|đã gửi quyết định/i.test(errorMessage);
         if (alreadyReviewed) {
-            await fetchAllTasks();
+          await fetchTask();
+          await fetchAllTasks();
           await fetchRelatedTasks();
-          if (autoNext) {
-            goToNextPendingTask();
-          } else {
-            await fetchTask();
-          }
           alert('Task này đã được bạn chấm trước đó. Mình đã đồng bộ lại trạng thái.');
         } else {
           alert(errorMessage);
@@ -737,7 +714,7 @@ const ReviewerTask = () => {
         setProcessing(false);
       }
     }
-  }, [id, task, reviewComments, reviewNotes, selectedIssues, issueOptions, issueTargets, issueComments, datasetType, autoNext, fetchAllTasks, fetchTask, fetchRelatedTasks, goToNextPendingTask, processing, isLockedForReview, isOverdue, activeAnnotatorId, selectedTaskForReview, selectedAnnotatorCount]);
+  }, [id, task, reviewComments, selectedIssues, issueOptions, issueTargets, issueComments, datasetType, fetchAllTasks, fetchTask, fetchRelatedTasks, processing, isLockedForReview, isOverdue, activeAnnotatorId, selectedTaskForReview, selectedAnnotatorCount]);
 
   const handleSkip = () => {
     goToNextPendingTask();
@@ -1834,21 +1811,12 @@ const ReviewerTask = () => {
         )}
       </div>
 
-      {/* Floating Action Dock */}
+      {/* Floating Action Dock - Chỉ có Reject và Approve */}
       {!isLockedForReview && (
         <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-4 px-6 py-4 rounded-2xl shadow-2xl ${darkMode
           ? 'bg-gray-800/95 backdrop-blur-xl border border-gray-700'
           : 'bg-white/95 backdrop-blur-xl border border-gray-200/50'
           }`}>
-          <button
-            onClick={handleSkip}
-            className={`px-6 py-3 rounded-xl font-bold transition-all transform hover:scale-105 ${darkMode
-              ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-          >
-            <span className="mr-2"></span> Skip
-          </button>
           <button
             onClick={handleReject}
             disabled={processing || isLockedForReview || !activeAnnotatorId || selectedAnnotatorCount !== 1}
@@ -1859,19 +1827,6 @@ const ReviewerTask = () => {
           >
             <span className="mr-2">✕</span> Reject
           </button>
-          {canSetPrimary && (
-            <button
-              onClick={handleSetPrimary}
-              disabled={processing}
-              className={`px-6 py-3 rounded-xl font-bold shadow-lg transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 ${primaryQueued && !isMyApproved
-                ? 'bg-gradient-to-r from-amber-500 to-orange-500 shadow-orange-500/40'
-                : 'bg-gradient-to-r from-indigo-500 to-blue-600 shadow-indigo-500/40'
-                } text-white`}
-              title={!isMyApproved ? 'Chọn trước, sẽ áp dụng khi Approve Task' : ''}
-            >
-              {primaryQueued && !isMyApproved ? 'Đã chọn ảnh chính' : 'Đặt ảnh chính'}
-            </button>
-          )}
           <button
             onClick={handleApprove}
             disabled={processing || isLockedForReview || !activeAnnotatorId || selectedAnnotatorCount !== 1}
@@ -1882,26 +1837,6 @@ const ReviewerTask = () => {
           >
             <span className="mr-2">✓</span> Approve Task
           </button>
-          <div className={`flex items-center gap-2 ml-4 pl-4 border-l ${darkMode ? 'border-gray-700' : 'border-gray-300'}`}>
-            <span className={`text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-              AUTO-NEXT
-            </span>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={autoNext}
-                onChange={(e) => setAutoNext(e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className={`w-12 h-6 rounded-full peer transition-all ${autoNext
-                ? darkMode ? 'bg-emerald-600' : 'bg-emerald-500'
-                : darkMode ? 'bg-gray-700' : 'bg-gray-300'
-                } peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300/50`}>
-                <div className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-all ${autoNext ? 'translate-x-6' : 'translate-x-0'
-                  }`}></div>
-              </div>
-            </label>
-          </div>
         </div>
       )}
     </div>

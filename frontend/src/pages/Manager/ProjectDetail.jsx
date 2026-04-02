@@ -774,7 +774,7 @@ const ManagerProjectDetail = () => {
         </Grid>
           </Grid>
 
-          <Box>
+          {/* <Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
               <Typography variant="h6" fontWeight={700} color="#e2e8f0">Team Performance</Typography>
               {!isAdmin && (
@@ -822,7 +822,7 @@ const ManagerProjectDetail = () => {
                 </TableBody>
               </Table>
             </TableContainer>
-      </Box>
+      </Box> */}
     </>
   );
 
