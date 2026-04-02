@@ -573,19 +573,35 @@ const ReviewerTask = () => {
       }, { timeout: 15000 });
 
       if (response.status === 200 || response.status === 201) {
+        if (primaryQueued && targetTaskId === id) {
+          try {
+            await axios.post(`${API_URL}/api/reviews/${id}/primary`);
+          } catch (err) {
+            console.error('Error setting primary after approve:', err);
+            alert('Approve thành công nhưng không thể đặt ảnh chính. Vui lòng thử lại.');
+          }
+        }
+        setPrimaryQueued(false);
         alert('Đã phê duyệt task thành công!');
-        // Fetch task trước để đảm bảo dữ liệu mới nhất từ DB
-        await fetchTask();
         await fetchAllTasks();
         await fetchRelatedTasks();
+        if (autoNext) {
+          goToNextPendingTask();
+        } else {
+          await fetchTask();
+        }
       }
     } catch (error) {
       const msg = error.response?.data?.message || error.message || 'Lỗi khi phê duyệt';
       const alreadyReviewed = /already submitted your review decision|already been submitted|đã được đánh giá|đã gửi quyết định/i.test(msg);
       if (alreadyReviewed) {
-        await fetchTask();
         await fetchAllTasks();
         await fetchRelatedTasks();
+        if (autoNext) {
+          goToNextPendingTask();
+        } else {
+          await fetchTask();
+        }
         alert('Task này đã được bạn chấm trước đó. Mình đã đồng bộ lại trạng thái.');
       } else {
         alert(`Không thể hoàn tất: ${msg}`);
@@ -594,7 +610,7 @@ const ReviewerTask = () => {
     } finally {
       setProcessing(false);
     }
-  }, [id, reviewComments, reviewNotes, isLockedForReview, isOverdue, fetchAllTasks, fetchTask, fetchRelatedTasks, processing, activeAnnotatorId, selectedTaskForReview, selectedAnnotatorCount]);
+  }, [id, reviewComments, reviewNotes, isLockedForReview, isOverdue, autoNext, fetchAllTasks, fetchTask, fetchRelatedTasks, goToNextPendingTask, processing, primaryQueued, activeAnnotatorId, selectedTaskForReview, selectedAnnotatorCount]);
 
   const handleReject = useCallback(async () => {
     if (processing || isLockedForReview || task?.status === 'approved' || task?.status === 'rejected') {
@@ -607,6 +623,21 @@ const ReviewerTask = () => {
     if (!activeAnnotatorId || selectedAnnotatorCount !== 1) {
       alert('Vui lòng chỉ bật ON đúng 1 annotator để chấm.');
       return;
+    }
+
+    // Validation: Must select at least 1 issue for rejection
+    // if (selectedIssues.length === 0) {
+    //   alert('Vui lòng chọn ít nhất 1 lỗi (issue) trước khi từ chối task.');
+    //   return;
+    // }
+
+    // Validate that issues requiring targets have targets selected
+    for (const issueId of selectedIssues) {
+      const issueInfo = issueOptions.find(i => i.id === issueId);
+      if (issueInfo?.needsTarget && !issueTargets[issueId]) {
+        alert(`Vui lòng chọn ${issueInfo.targetLabel} cho lỗi "${issueInfo.label}"`);
+        return;
+      }
     }
 
     const targetTaskId = selectedTaskForReview?._id;
@@ -656,22 +687,47 @@ const ReviewerTask = () => {
           return;
         }
 
+        // Determine backend error category based on first issue
+        const firstIssue = selectedIssues[0]?.toLowerCase?.() || '';
+        const backendErrorCategory = firstIssue.includes('class') || firstIssue.includes('wrong_category') || firstIssue.includes('incorrect_classification')
+          ? 'incorrect_label'
+          : firstIssue.includes('miss') || firstIssue.includes('missing')
+            ? 'missing_label'
+            : firstIssue.includes('box') || firstIssue.includes('tight') || firstIssue.includes('loose') || firstIssue.includes('span') || firstIssue.includes('timestamp')
+              ? 'poor_quality'
+              : 'does_not_follow_guidelines';
+
         await axios.post(`${API_URL}/api/reviews/${targetTaskId}/reject`, {
           reviewComments: reviewComments.trim(),
-          errorCategory: 'other',
+          errorCategory: backendErrorCategory,
+          reviewNotes: [],
+          review: {
+            taskId: targetTaskId,
+            datasetType,
+            status: 'rejected',
+            issues,
+            overallComment: reviewComments.trim(),
+          },
         });
         alert('Đã từ chối task thành công!');
-        // Fetch task trước để đảm bảo dữ liệu mới nhất từ DB
-        await fetchTask();
         await fetchAllTasks();
         await fetchRelatedTasks();
+        if (autoNext) {
+          goToNextPendingTask();
+        } else {
+          await fetchTask();
+        }
       } catch (error) {
         const errorMessage = error.response?.data?.message || error.response?.data?.errors?.[0]?.msg || 'Lỗi khi từ chối task';
         const alreadyReviewed = /already submitted your review decision|already been submitted|đã được đánh giá|đã gửi quyết định/i.test(errorMessage);
         if (alreadyReviewed) {
-          await fetchTask();
-          await fetchAllTasks();
+            await fetchAllTasks();
           await fetchRelatedTasks();
+          if (autoNext) {
+            goToNextPendingTask();
+          } else {
+            await fetchTask();
+          }
           alert('Task này đã được bạn chấm trước đó. Mình đã đồng bộ lại trạng thái.');
         } else {
           alert(errorMessage);
@@ -681,7 +737,7 @@ const ReviewerTask = () => {
         setProcessing(false);
       }
     }
-  }, [id, task, reviewComments, fetchAllTasks, fetchTask, fetchRelatedTasks, processing, isLockedForReview, isOverdue, activeAnnotatorId, selectedTaskForReview, selectedAnnotatorCount]);
+  }, [id, task, reviewComments, reviewNotes, selectedIssues, issueOptions, issueTargets, issueComments, datasetType, autoNext, fetchAllTasks, fetchTask, fetchRelatedTasks, goToNextPendingTask, processing, isLockedForReview, isOverdue, activeAnnotatorId, selectedTaskForReview, selectedAnnotatorCount]);
 
   const handleSkip = () => {
     goToNextPendingTask();
@@ -1646,7 +1702,7 @@ const ReviewerTask = () => {
                   <p>Reject bắt buộc comment. Approve không bắt buộc.</p>
                   <p>Sau khi review, task sẽ bị khóa.</p>
 
-                  {datasetType === 'image' && (
+                  {/* {datasetType === 'image' && (
                     <div className="pt-2 border-t border-slate-700 space-y-1">
                       <p className="text-xs uppercase tracking-wider text-slate-400">Object Summary</p>
                       <p className="text-slate-200">Detected Objects: {(task?.labels?.objects || []).length}</p>
@@ -1654,7 +1710,7 @@ const ReviewerTask = () => {
                         <p key={name} className="text-xs text-slate-300">• {name}: {count}</p>
                       ))}
                     </div>
-                  )}
+                  )} */}
 
                   {datasetType === 'audio' && (
                     <div className="pt-2 border-t border-slate-700 space-y-1">
@@ -1673,21 +1729,102 @@ const ReviewerTask = () => {
                 </div>
               </div>
 
+              {/* <div>
+                <h3 className="text-xl font-semibold text-white mb-3">Error Checklist ({datasetType.toUpperCase()})</h3>
+                <p className="text-xs text-slate-400 mb-3">
+                  {datasetType === 'image' && 'Chọn các lỗi về bounding box và object trong ảnh'}
+                  {datasetType === 'audio' && 'Chọn các lỗi về segment và timestamp trong audio'}
+                  {datasetType === 'text' && 'Chọn các lỗi về entity và span trong văn bản'}
+                </p>
+                <div className="space-y-3">
+                  {issueOptions.map((issue) => {
+                    const checked = selectedIssues.includes(issue.id);
+                    return (
+                      <div key={issue.id} className="rounded-xl border border-slate-700 bg-[#0f172a] p-3">
+                        <label className="flex items-start gap-3 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              const isChecked = e.target.checked;
+                              setSelectedIssues((prev) => isChecked
+                                ? [...prev, issue.id]
+                                : prev.filter((x) => x !== issue.id));
+                            }}
+                            className="h-4 w-4 mt-1 rounded border-slate-600 bg-[#0f172a] text-blue-600 focus:ring-blue-500"
+                          />
+                          <div className="flex-1">
+                            <span className="text-sm text-slate-200 font-medium">{issue.label}</span>
+                            {issue.description && (
+                              <p className="text-xs text-slate-500 mt-0.5">{issue.description}</p>
+                            )}
+                          </div>
+                        </label>
+
+                        {checked && issue.needsTarget && (
+                          <div className="mt-3 ml-7 space-y-2">
+                            <p className="text-xs text-slate-400">{issue.targetLabel}</p>
+                            <select
+                              value={issueTargets[issue.id] || ''}
+                              onChange={(e) => setIssueTargets((prev) => ({ ...prev, [issue.id]: e.target.value }))}
+                              className="w-full rounded-lg bg-[#0f172a] border border-slate-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-slate-200 text-sm px-3 py-2"
+                            >
+                              <option value="">-- Chọn {issue.targetLabel} --</option>
+                              {targetOptions.map((opt) => (
+                                <option key={opt.id} value={opt.id}>{opt.label}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
+
+                        {checked && (
+                          <div className="mt-3 ml-7">
+                            <textarea
+                              value={issueComments[issue.id] || ''}
+                              onChange={(e) => setIssueComments((prev) => ({ ...prev, [issue.id]: e.target.value }))}
+                              rows={2}
+                              placeholder="Mô tả chi tiết lỗi (tùy chọn)"
+                              className="w-full rounded-lg bg-[#0f172a] border border-slate-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-slate-200 text-sm px-3 py-2"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div> */}
+
               <div>
-                <h3 className="text-xl font-semibold text-white mb-3">Comment</h3>
+                <h3 className="text-xl font-semibold text-white mb-3"> Comment</h3>
                 <div className="rounded-xl border border-blue-700/40 bg-gradient-to-b from-[#0f172a] to-[#0b1220] p-4 space-y-3 shadow-[0_0_0_1px_rgba(59,130,246,0.15)]">
+                  {/* <div className="flex items-center justify-between">
+                    <label className="text-sm font-semibold text-blue-200 block">Overall Feedback</label>
+                    <span className={`text-[11px] px-2 py-1 rounded-full border ${reviewComments.trim().length >= 12 ? 'text-emerald-300 border-emerald-600/40 bg-emerald-900/20' : 'text-amber-300 border-amber-600/40 bg-amber-900/20'}`}>
+                      {reviewComments.trim().length >= 12 ? 'Đủ nội dung' : 'Nên >= 12 ký tự'}
+                    </span>
+                  </div> */}
                   <textarea
                     value={reviewComments}
                     onChange={(e) => setReviewComments(e.target.value)}
                     rows={5}
                     placeholder={datasetType === 'image'
-                      ? 'Nhập comment của bạn...'
+                      ? 'Ví dụ: gán nhãn sai....'
                       : datasetType === 'audio'
-                        ? 'Nhập comment của bạn...'
-                        : 'Nhập comment của bạn...'}
+                        ? 'Ví dụ: Segment #2 sai nhãn, Segment #3 lệch timestamp 0.5s.'
+                        : 'Ví dụ: Missing entity LOCATION ở cuối câu, span entity #2 sai.'}
                     disabled={isLockedForReview}
                     className="w-full rounded-lg bg-[#0a1020] border border-slate-500 focus:border-blue-400 focus:ring-2 focus:ring-blue-500/30 text-slate-100 text-sm px-3 py-3 placeholder:text-slate-400 disabled:opacity-60"
                   />
+                  {/* <div className="text-xs text-slate-300 rounded-lg border border-slate-700 bg-[#0b1328] px-3 py-2">
+                    {selectedIssueDetails.length > 0 && (
+                      <div className="space-y-1">
+                        <p className="text-blue-200 font-semibold">Issues selected ({selectedIssueDetails.length})</p>
+                        {selectedIssueDetails.map((issue) => (
+                          <p key={issue.id}>• {issue.label}{issueTargets[issue.id] ? ` (${issueTargets[issue.id]})` : ''}</p>
+                        ))}
+                      </div>
+                    )}
+                  </div> */}
                 </div>
               </div>
             </div>
@@ -1695,12 +1832,21 @@ const ReviewerTask = () => {
         )}
       </div>
 
-      {/* Floating Action Dock - Chỉ có Reject và Approve */}
+      {/* Floating Action Dock */}
       {!isLockedForReview && (
         <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-4 px-6 py-4 rounded-2xl shadow-2xl ${darkMode
           ? 'bg-gray-800/95 backdrop-blur-xl border border-gray-700'
           : 'bg-white/95 backdrop-blur-xl border border-gray-200/50'
           }`}>
+          {/* <button
+            onClick={handleSkip}
+            className={`px-6 py-3 rounded-xl font-bold transition-all transform hover:scale-105 ${darkMode
+              ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+          >
+            <span className="mr-2"></span> Skip
+          </button> */}
           <button
             onClick={handleReject}
             disabled={processing || isLockedForReview || !activeAnnotatorId || selectedAnnotatorCount !== 1}
@@ -1711,6 +1857,19 @@ const ReviewerTask = () => {
           >
             <span className="mr-2">✕</span> Reject
           </button>
+          {/* {canSetPrimary && (
+            <button
+              onClick={handleSetPrimary}
+              disabled={processing}
+              className={`px-6 py-3 rounded-xl font-bold shadow-lg transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 ${primaryQueued && !isMyApproved
+                ? 'bg-gradient-to-r from-amber-500 to-orange-500 shadow-orange-500/40'
+                : 'bg-gradient-to-r from-indigo-500 to-blue-600 shadow-indigo-500/40'
+                } text-white`}
+              title={!isMyApproved ? 'Chọn trước, sẽ áp dụng khi Approve Task' : ''}
+            >
+              {primaryQueued && !isMyApproved ? 'Đã chọn ảnh chính' : 'Đặt ảnh chính'}
+            </button>
+          )} */}
           <button
             onClick={handleApprove}
             disabled={processing || isLockedForReview || !activeAnnotatorId || selectedAnnotatorCount !== 1}
@@ -1721,6 +1880,26 @@ const ReviewerTask = () => {
           >
             <span className="mr-2">✓</span> Approve Task
           </button>
+          <div className={`flex items-center gap-2 ml-4 pl-4 border-l ${darkMode ? 'border-gray-700' : 'border-gray-300'}`}>
+            {/* <span className={`text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+              AUTO-NEXT
+            </span> */}
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={autoNext}
+                onChange={(e) => setAutoNext(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className={`w-12 h-6 rounded-full peer transition-all ${autoNext
+                ? darkMode ? 'bg-emerald-600' : 'bg-emerald-500'
+                : darkMode ? 'bg-gray-700' : 'bg-gray-300'
+                } peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300/50`}>
+                <div className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-all ${autoNext ? 'translate-x-6' : 'translate-x-0'
+                  }`}></div>
+              </div>
+            </label>
+          </div>
         </div>
       )}
     </div>
