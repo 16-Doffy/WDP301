@@ -13,19 +13,6 @@ const projectSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
-  labelSet: [{
-    name: {
-      type: String,
-      required: true
-    },
-    color: {
-      type: String,
-      default: '#000000'
-    },
-    description: {
-      type: String
-    }
-  }],
   questions: [{
     question: {
       type: String,

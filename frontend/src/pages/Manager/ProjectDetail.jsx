@@ -1250,7 +1250,7 @@ const ManagerProjectDetail = () => {
                       <Box sx={{ bgcolor: '#f8fafc', borderRadius: 2, p: 2, width: '100%' }}>
                         <AudioAnnotator
                           audioUrl={selectedApprovedItem.fileUrl}
-                          labelSet={project?.labelSet || []}
+                          labelSet={[]}
                           initialSegments={(selectedApprovedItem.annotatorLabels || []).flatMap((ann) => {
                             const shouldShow = showAnnotatorLabels ? (showAnnotatorLabelMap[ann.name] ?? true) : false;
                             if (!shouldShow) return [];

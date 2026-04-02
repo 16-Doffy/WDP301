@@ -38,7 +38,6 @@ const CreateProject = () => {
     name: '',
     description: '',
     guidelines: '',
-    labelSet: [],
     questions: [],
     reviewPolicy: { mode: 'full', sampleRate: 1.0 },
     deadline: '',
@@ -198,7 +197,6 @@ const CreateProject = () => {
         name: formData.name.trim(),
         description: formData.description?.trim() || '',
         guidelines: formData.guidelines.trim(),
-        labelSet: formData.labelSet || [],
         questions: formData.questions || [],
         status: 'draft',
         reviewPolicy: formData.reviewPolicy,
@@ -225,15 +223,6 @@ const CreateProject = () => {
     }
     if (!formData.guidelines.trim()) {
       showNotification('Vui lòng nhập guidelines', 'warning');
-      return;
-    }
-    if (!formData.labelSet || formData.labelSet.length === 0) {
-      showNotification('Vui lòng thêm ít nhất một label để annotator có thể chọn khi gán nhãn');
-      return;
-    }
-    const invalidLabels = formData.labelSet.filter(l => !l.name || !l.name.trim());
-    if (invalidLabels.length > 0) {
-      showNotification('Tất cả labels phải có tên. Vui lòng kiểm tra lại.');
       return;
     }
     if (selectedDatasets.length === 0) {
@@ -265,7 +254,6 @@ const CreateProject = () => {
         name: formData.name.trim(),
         description: formData.description?.trim() || '',
         guidelines: formData.guidelines.trim(),
-        labelSet: formData.labelSet || [],
         questions: formData.questions || [],
         status: 'active',
         reviewPolicy: formData.reviewPolicy,
@@ -461,151 +449,11 @@ const CreateProject = () => {
               </Grid>
             </Box>
 
-            {/* Label Set Management */}
-            <Box sx={{ mb: 4 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Typography variant="h5">Label Set</Typography>
-                <Button
-                  variant="outlined"
-                  size="small"
-                  startIcon={<AddIcon />}
-                  onClick={() => {
-                    const newLabel = {
-                      name: '',
-                      color: `#${Math.floor(Math.random()*16777215).toString(16)}`,
-                      description: ''
-                    };
-                    setFormData({
-                      ...formData,
-                      labelSet: [...formData.labelSet, newLabel]
-                    });
-                  }}
-                >
-                  Add Label
-                </Button>
-              </Box>
-              
-              {formData.labelSet.length === 0 ? (
-                <Alert severity="info">
-                  Chưa có label nào. Vui lòng thêm ít nhất một label để annotator có thể chọn khi gán nhãn.
-                </Alert>
-              ) : (
-                <Box 
-                  sx={{ 
-                    display: 'flex', 
-                    flexDirection: 'column', 
-                    gap: 2,
-                    maxHeight: '500px',
-                    overflowY: 'auto',
-                    overflowX: 'hidden',
-                    pr: 2,
-                    pb: 2,
-                    border: '1px solid #e0e0e0',
-                    borderRadius: 2,
-                    p: 2,
-                    '&::-webkit-scrollbar': {
-                      width: '10px',
-                    },
-                    '&::-webkit-scrollbar-track': {
-                      background: '#f1f1f1',
-                      borderRadius: '5px',
-                    },
-                    '&::-webkit-scrollbar-thumb': {
-                      background: '#888',
-                      borderRadius: '5px',
-                      '&:hover': {
-                        background: '#555',
-                      },
-                    },
-                  }}
-                >
-                  {formData.labelSet.map((label, idx) => (
-                    <Card key={idx} variant="outlined" sx={{ flexShrink: 0 }}>
-                      <CardContent>
-                        <Grid container spacing={2} alignItems="center">
-                          <Grid item xs={12} sm={4}>
-                            <TextField
-                              fullWidth
-                              size="small"
-                              label="Label Name *"
-                              value={label.name}
-                              onChange={(e) => {
-                                const updated = [...formData.labelSet];
-                                updated[idx].name = e.target.value;
-                                setFormData({ ...formData, labelSet: updated });
-                              }}
-                              placeholder="e.g., Car, Person, Dog"
-                              required
-                            />
-                          </Grid>
-                          <Grid item xs={12} sm={3}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                              <input
-                                type="color"
-                                value={label.color || '#000000'}
-                                onChange={(e) => {
-                                  const updated = [...formData.labelSet];
-                                  updated[idx].color = e.target.value;
-                                  setFormData({ ...formData, labelSet: updated });
-                                }}
-                                style={{
-                                  width: '50px',
-                                  height: '40px',
-                                  border: '1px solid #ccc',
-                                  borderRadius: '4px',
-                                  cursor: 'pointer'
-                                }}
-                              />
-                              <TextField
-                                size="small"
-                                value={label.color || '#000000'}
-                                onChange={(e) => {
-                                  const updated = [...formData.labelSet];
-                                  updated[idx].color = e.target.value;
-                                  setFormData({ ...formData, labelSet: updated });
-                                }}
-                                placeholder="#000000"
-                                sx={{ flex: 1 }}
-                              />
-                            </Box>
-                          </Grid>
-                          <Grid item xs={12} sm={4}>
-                            <TextField
-                              fullWidth
-                              size="small"
-                              label="Description (Optional)"
-                              value={label.description || ''}
-                              onChange={(e) => {
-                                const updated = [...formData.labelSet];
-                                updated[idx].description = e.target.value;
-                                setFormData({ ...formData, labelSet: updated });
-                              }}
-                              placeholder="Brief description"
-                            />
-                          </Grid>
-                          <Grid item xs={12} sm={1}>
-                            <IconButton
-                              color="error"
-                              onClick={() => {
-                                const updated = formData.labelSet.filter((_, i) => i !== idx);
-                                setFormData({ ...formData, labelSet: updated });
-                              }}
-                            >
-                              <DeleteIcon />
-                            </IconButton>
-                          </Grid>
-                        </Grid>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </Box>
-              )}
-              
-              {formData.labelSet.length > 0 && (
-                <Alert severity="success" sx={{ mt: 2 }}>
-                  Đã thêm {formData.labelSet.length} label(s). Annotator sẽ có thể chọn các label này khi gán nhãn.
-                </Alert>
-              )}
+            {/* Labels Info */}
+            <Box sx={{ mb: 4, p: 2, borderRadius: 2, bgcolor: 'rgba(59,130,246,0.08)', border: '1px solid #3b82f6' }}>
+              <Alert severity="info">
+                Labels se tu dong lay tu Dataset → Subtopic → LabelSet. Vui long dam bao Dataset da duoc gan Subtopic co LabelSet trong <strong>Topics</strong> truoc khi tao project.
+              </Alert>
             </Box>
 
             {/* Dataset Selection */}

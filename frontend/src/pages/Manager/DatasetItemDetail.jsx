@@ -108,8 +108,10 @@ const DatasetItemDetail = () => {
       pickBestLabelSet(
         state.labelSet,
         state.item?.labelSet,
-        state.item?.projectId?.labelSet,
-        state.item?.datasetId?.projectId?.labelSet,
+        state.item?.availableLabels,
+        state.item?.projectId?.availableLabels,
+        state.item?.datasetId?.projectId?.availableLabels,
+        state.item?.datasetId?.availableLabels,
       )
     )
   );
@@ -336,12 +338,12 @@ const DatasetItemDetail = () => {
           setResolvedDatasetName(resp.data?.datasetName || resolvedDatasetName);
 
           const resolvedLabels = pickBestLabelSet(
-            // ưu tiên nguồn có color trước
-            found?.projectId?.labelSet,
-            resp.data?.projectId?.labelSet,
-            resp.data?.dataset?.projectId?.labelSet,
-            found?.datasetId?.projectId?.labelSet,
-            // sau đó mới fallback về labelSet item/dataset
+            found?.availableLabels,
+            found?.projectId?.availableLabels,
+            resp.data?.projectId?.availableLabels,
+            resp.data?.dataset?.projectId?.availableLabels,
+            found?.datasetId?.projectId?.availableLabels,
+            found?.datasetId?.availableLabels,
             found?.labelSet,
             resp.data?.labelSet,
             resp.data?.dataset?.labelSet,

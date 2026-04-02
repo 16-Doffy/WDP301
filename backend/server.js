@@ -32,6 +32,9 @@ app.use('/api/labels', require('./routes/labels'));
 app.use('/api/reviews', require('./routes/reviews'));
 app.use('/api/activity-logs', require('./routes/activityLogs').router);
 app.use('/api/settings', require('./routes/settings'));
+app.use('/api/topics', require('./routes/topics'));
+app.use('/api/subtopics', require('./routes/subtopics'));
+app.use('/api/labelsets', require('./routes/labelsets'));
 
 // System Health API
 app.get('/api/admin/system-health', (req, res) => {

@@ -1,0 +1,1 @@
+const fs=require('fs');const p='d:/Desktop/WDP/WDP301/backend/routes/topics.js';let c=fs.readFileSync(p,'utf8');c=c.split("${'}in'").join('$in');fs.writeFileSync(p,c);console.log('topics fixed '+c.length);

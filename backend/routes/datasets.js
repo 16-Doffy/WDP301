@@ -289,7 +289,7 @@ router.get('/:id', auth, async (req, res) => {
 // Create dataset and upload files (Manager or Admin)
 router.post('/', auth, authorize('manager', 'admin'), upload.array('files', 100), async (req, res) => {
   try {
-    const { projectId, name, description, type } = req.body;
+    const { projectId, subtopicId, name, description, type } = req.body;
     const datasetType = (type || 'image').toString().toLowerCase();
 
     // Validate required fields
@@ -393,8 +393,9 @@ router.post('/', auth, authorize('manager', 'admin'), upload.array('files', 100)
 
     const dataset = new Dataset({
       type: datasetType,
-      projectId: projectId || null, // Optional
-      managerId: managerId, // Determined above based on user role
+      projectId: projectId || null,
+      subtopicId: subtopicId || null,
+      managerId: managerId,
       name: name.trim(),
       description: description?.trim() || '',
       files,
@@ -427,7 +428,7 @@ router.post('/', auth, authorize('manager', 'admin'), upload.array('files', 100)
 // Update dataset (Manager or Admin)
 router.put('/:id', auth, authorize('manager', 'admin'), async (req, res) => {
   try {
-    const { projectId, name, description } = req.body;
+    const { projectId, subtopicId, name, description } = req.body;
     const dataset = await Dataset.findById(req.params.id);
     
     if (!dataset) {
@@ -454,6 +455,7 @@ router.put('/:id', auth, authorize('manager', 'admin'), async (req, res) => {
     if (name) dataset.name = name.trim();
     if (description !== undefined) dataset.description = description?.trim() || '';
     if (projectId !== undefined) dataset.projectId = projectId || null;
+    if (subtopicId !== undefined) dataset.subtopicId = subtopicId || null;
 
     await dataset.save();
     res.json(dataset);
@@ -657,13 +659,17 @@ router.get('/:id/items', auth, authorize('manager', 'admin'), async (req, res) =
       return res.status(403).json({ message: 'Not authorized' });
     }
 
-    // Get labelSet from the project's dataset link
-    let labelSet = [];
-    if (dataset.projectId) {
-      const project = await Project.findById(dataset.projectId).select('labelSet').lean();
-      if (project?.labelSet) {
-        labelSet = project.labelSet;
-      }
+    // Get availableLabels from tasks or from subtopic labelSets
+    let availableLabels = [];
+    if (dataset.subtopicId) {
+      const LabelSetModel = require('../models/LabelSet');
+      const labelSets = await LabelSetModel.find({ subtopicId: dataset.subtopicId }).lean();
+      availableLabels = labelSets.flatMap(ls => ls.labels || []);
+    }
+    if (availableLabels.length === 0) {
+      // Fallback: try to get from any task in this dataset
+      const firstTask = await Task.findOne({ datasetId: dataset._id }).select('availableLabels').lean();
+      if (firstTask?.availableLabels) availableLabels = firstTask.availableLabels;
     }
 
     // Get all tasks for this dataset

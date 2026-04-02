@@ -36,6 +36,11 @@ const LayoutTailwind = () => {
         icon: <img src={datasetsIcon} alt="Datasets" className="h-5 w-5" />,
         path: '/manager/datasets',
       });
+      baseItems.push({
+        text: 'Topics',
+        icon: '🗂️',
+        path: '/manager/topics',
+      });
     }
 
     if (user.role === 'annotator') {

@@ -98,7 +98,7 @@ const AnnotatorTask = () => {
         });
       }
 
-      const labelInfo = task?.projectId?.labelSet?.find((l) => l.name === span.label);
+      const labelInfo = task?.availableLabels?.find((l) => l.name === span.label);
       parts.push({
         text: textContent.substring(span.start, span.end),
         isSpan: true,
@@ -721,7 +721,7 @@ const AnnotatorTask = () => {
 
                 <ImageAnnotator
                   imageUrl={buildFileUrl(task.dataItem)}
-                  labelSet={task?.projectId?.labelSet || []}
+                  labelSet={task?.availableLabels || []}
                   questions={task?.projectId?.questions || []}
                   onAnnotationsChange={handleAnnotationsChange}
                   initialAnnotations={annotations}
@@ -846,7 +846,7 @@ const AnnotatorTask = () => {
                     {renderTextWithSpans()}
                   </div>
 
-                  {showLabelDropdown && selectedTextRange && task?.projectId?.labelSet?.length > 0 && (
+                  {showLabelDropdown && selectedTextRange && task?.availableLabels?.length > 0 && (
                     <div
                       ref={dropdownRef}
                       className="absolute z-50 bg-gray-150/40 border border-slate-300 rounded-lg shadow-xl p-2 min-w-[220px]"
@@ -858,7 +858,7 @@ const AnnotatorTask = () => {
                     >
                       <div className="text-sm font-semibold text-slate-800 mb-2">Chọn nhãn:</div>
                       <div className="space-y-1">
-                        {task.projectId.labelSet.map((lbl) => (
+                        {task.availableLabels.map((lbl) => (
                           <button
                             key={lbl.name}
                             onClick={() => {
@@ -903,7 +903,7 @@ const AnnotatorTask = () => {
                     </label>
                     <div className="border rounded-md p-3 max-h-48 overflow-auto space-y-2">
                       {textSpans.map((span) => {
-                        const labelInfo = task?.projectId?.labelSet?.find((l) => l.name === span.label);
+                        const labelInfo = task?.availableLabels?.find((l) => l.name === span.label);
                         return (
                           <div
                             key={span.id}
@@ -1020,7 +1020,7 @@ const AnnotatorTask = () => {
                 </div>
                 <AudioAnnotator
                   audioUrl={buildFileUrl(task?.dataItem)}
-                  labelSet={task?.projectId?.labelSet || []}
+                  labelSet={task?.availableLabels || []}
                   initialSegments={labels?.segments || []}
                   readOnly={task?.status === 'submitted' || task?.status === 'approved'}
                   onChange={(segs) => {

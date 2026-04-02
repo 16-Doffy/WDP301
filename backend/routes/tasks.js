@@ -2,6 +2,7 @@ const express = require('express');
 const Task = require('../models/Task');
 const Dataset = require('../models/Dataset');
 const Project = require('../models/Project');
+const LabelSet = require('../models/LabelSet');
 const { auth, authorize } = require('../middleware/auth');
 const { createActivityLog } = require('./activityLogs');
 
@@ -146,8 +147,8 @@ router.get('/my-tasks', auth, async (req, res) => {
     }
 
     const tasks = await Task.find(query)
-      .populate('projectId', 'name labelSet guidelines questions deadline')
-      .populate('datasetId', 'name')
+      .populate('projectId', 'name guidelines questions deadline')
+      .populate('datasetId', 'name subtopicId')
       .populate('annotatorId', 'username fullName')
       .populate('reviewerId', 'username fullName')
       .populate('reviewers.reviewerId', 'username fullName')
@@ -179,7 +180,7 @@ router.get('/my-tasks', auth, async (req, res) => {
 router.get('/:id', auth, async (req, res) => {
   try {
     const task = await Task.findById(req.params.id)
-      .populate('projectId', 'name labelSet guidelines questions managerId deadline')
+      .populate('projectId', 'name guidelines questions managerId deadline')
       .populate('datasetId', 'name')
       .populate('annotatorId', 'username fullName')
       .populate('reviewerId', 'username fullName')
@@ -241,7 +242,7 @@ router.get('/:id', auth, async (req, res) => {
 router.get('/:id/related', auth, async (req, res) => {
   try {
     const task = await Task.findById(req.params.id)
-      .populate('projectId', 'name labelSet guidelines questions managerId deadline')
+      .populate('projectId', 'name guidelines questions managerId deadline')
       .populate('datasetId', 'name')
       .populate('annotatorId', 'username fullName')
       .populate('reviewerId', 'username fullName')
@@ -283,7 +284,7 @@ router.get('/:id/related', auth, async (req, res) => {
 
     const relatedTasks = await Task.find(query)
       .select('status dataItem labels annotatorId reviewedAt primaryForItem submittedAt')
-      .populate('projectId', 'name labelSet guidelines questions managerId deadline')
+      .populate('projectId', 'name guidelines questions managerId deadline')
       .populate('datasetId', 'name')
       .populate('annotatorId', 'username fullName')
       .populate('reviewerId', 'username fullName')
@@ -456,6 +457,14 @@ router.post('/assign', auth, authorize('manager', 'admin'), async (req, res) => 
       existingTasks.map((t) => `${normalizeId(t.annotatorId)}::${t?.dataItem?.filename || ''}::${normalizePath(t?.dataItem?.path || '')}`)
     );
 
+    // Load available labels from Dataset → Subtopic → LabelSet
+    let availableLabels = [];
+    if (dataset.subtopicId) {
+      const labelSets = await LabelSet.find({ subtopicId: dataset.subtopicId });
+      // Merge all labels from all label sets
+      availableLabels = labelSets.flatMap(ls => ls.labels || []);
+    }
+
     const tasks = [];
     for (const file of dataset.files) {
       for (const annotatorId of annotatorIds) {
@@ -473,6 +482,7 @@ router.post('/assign', auth, authorize('manager', 'admin'), async (req, res) => 
             mimeType: file.mimeType || 'application/octet-stream'
           },
           status: 'assigned',
+          availableLabels,
           reviewers: normalizedReviewerIds.map(rid => ({
             reviewerId: rid,
             status: 'pending'
@@ -536,7 +546,7 @@ router.post('/assign', auth, authorize('manager', 'admin'), async (req, res) => 
 router.put('/:id/label', auth, authorize('annotator'), async (req, res) => {
   try {
     const task = await Task.findById(req.params.id)
-      .populate('projectId', 'labelSet deadline');
+      .populate('projectId', 'deadline');
     
     if (!task) {
       return res.status(404).json({ message: 'Task not found' });
@@ -589,9 +599,9 @@ router.put('/:id/label', auth, authorize('annotator'), async (req, res) => {
 
     // Validate labels if provided
     if (req.body.labels) {
-      // If project has labelSet, validate that labels use valid label names
-      if (task.projectId?.labelSet && Array.isArray(task.projectId.labelSet) && task.projectId.labelSet.length > 0) {
-        const validLabels = task.projectId.labelSet.map(l => l.name || l);
+      // If task has availableLabels, validate that labels use valid label names
+      if (task.availableLabels && Array.isArray(task.availableLabels) && task.availableLabels.length > 0) {
+        const validLabels = task.availableLabels.map(l => l.name || l);
 
         // Image object labels
         if (req.body.labels.objects && Array.isArray(req.body.labels.objects)) {

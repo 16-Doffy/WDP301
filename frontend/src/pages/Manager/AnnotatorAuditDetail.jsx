@@ -401,7 +401,7 @@ const AnnotatorAuditDetail = () => {
                   <div className="w-full">
                     <AudioAnnotator
                       audioUrl={getDataItemUrl(selectedTask)}
-                      labelSet={selectedTask?.projectId?.labelSet || []}
+                      labelSet={selectedTask?.availableLabels || []}
                       initialSegments={getNormalizedAudioSegments(selectedTask)}
                       readOnly
                     />

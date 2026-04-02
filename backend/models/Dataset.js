@@ -9,7 +9,12 @@ const datasetSchema = new mongoose.Schema({
   projectId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Project',
-    required: false // Optional - dataset can exist before project
+    required: false
+  },
+  subtopicId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Subtopic',
+    required: false
   },
   managerId: {
     type: mongoose.Schema.Types.ObjectId,

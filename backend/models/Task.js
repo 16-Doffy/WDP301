@@ -30,6 +30,13 @@ const taskSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.Mixed,
     default: {}
   },
+  // Labels available for this task (loaded from Dataset → Subtopic → LabelSet)
+  availableLabels: [{
+    name: { type: String, required: true },
+    color: { type: String, default: '#3b82f6' },
+    description: { type: String, default: '' },
+    shortcut: { type: String, default: '' }
+  }],
   // Multi-annotator consensus fields (non-breaking, optional)
   annotatorLabels: [
     {

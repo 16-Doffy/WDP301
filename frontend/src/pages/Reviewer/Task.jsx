@@ -822,7 +822,7 @@ const ReviewerTask = () => {
 
     return visibleRelatedTasks.flatMap((t, tIdx) => {
       const aid = t?.annotatorId?._id || t?.annotatorId || `ann_${tIdx}`;
-      const labelSet = t?.projectId?.labelSet || [];
+      const labelSet = t?.availableLabels || [];
       const color = labelSet.find((l) => l?.name)?.color;
       const isPrimary = Boolean(t?.primaryForItem);
       const isSelected = activeAnnotatorId === aid || (!activeAnnotatorId && tIdx === 0);
@@ -1117,7 +1117,7 @@ const ReviewerTask = () => {
                   </div>
                   <div className={`${darkMode ? 'text-slate-300' : 'text-gray-700'}`}>
                     <span className="opacity-70">Labels:</span>{' '}
-                    <span className="font-medium">{task?.projectId?.labelSet?.length || 0}</span>
+                    <span className="font-medium">{task?.availableLabels?.length || 0}</span>
                   </div>
                   <div className={`${darkMode ? 'text-slate-300' : 'text-gray-700'}`}>
                     <span className="opacity-70">Scope:</span>{' '}
@@ -1150,7 +1150,7 @@ const ReviewerTask = () => {
                       <ImageViewer
                         imageUrl={buildFileUrl(task.dataItem)}
                         annotations={combinedAnnotations}
-                        labelSet={task?.projectId?.labelSet || []}
+                        labelSet={task?.availableLabels || []}
                         reviewNotes={reviewNotes}
                         readOnly={false}
                         highlightedIndex={hoveredObjectIndex}
@@ -1372,7 +1372,7 @@ const ReviewerTask = () => {
                                   <div className={`p-2 rounded-lg border ${darkMode ? 'bg-gray-900 border-gray-700' : 'bg-gray-50 border-gray-200'}`}>
                                     <AudioAnnotator
                                       audioUrl={audioUrl}
-                                      labelSet={task?.projectId?.labelSet || []}
+                                      labelSet={task?.availableLabels || []}
                                       initialSegments={segments}
                                       readOnly
                                     />
@@ -1408,7 +1408,7 @@ const ReviewerTask = () => {
                   })()
                 ) : task?.dataItem?.mimeType?.startsWith('text/') || task?.dataItem?.text ? (
                   (() => {
-                    const getLabelColor = (label) => task?.projectId?.labelSet?.find((l) => l.name === label)?.color || '#3b82f6';
+                    const getLabelColor = (label) => task?.availableLabels?.find((l) => l.name === label)?.color || '#3b82f6';
 
                     const textCompareTasks = visibleRelatedTasks.length > 0
                       ? visibleRelatedTasks

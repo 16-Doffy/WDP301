@@ -2,6 +2,9 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const Project = require('../models/Project');
 const Task = require('../models/Task');
+const Dataset = require('../models/Dataset');
+const Subtopic = require('../models/Subtopic');
+const LabelSet = require('../models/LabelSet');
 const { auth, authorize } = require('../middleware/auth');
 const { createActivityLog } = require('./activityLogs');
 
@@ -98,7 +101,6 @@ router.get('/:id', auth, async (req, res) => {
 router.post('/', auth, authorize('manager', 'admin'), [
   body('name').trim().notEmpty().withMessage('Project name is required'),
   body('guidelines').trim().notEmpty().withMessage('Guidelines are required'),
-  body('labelSet').optional().isArray().withMessage('labelSet must be an array'),
   body('questions').optional().isArray().withMessage('questions must be an array'),
   body('reviewPolicy').optional().isObject().withMessage('reviewPolicy must be object')
 ], async (req, res) => {
@@ -106,15 +108,6 @@ router.post('/', auth, authorize('manager', 'admin'), [
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
-    }
-
-    // Validate labelSet if provided
-    if (req.body.labelSet && Array.isArray(req.body.labelSet)) {
-      for (const label of req.body.labelSet) {
-        if (!label.name || label.name.trim() === '') {
-          return res.status(400).json({ message: 'All labels must have a name' });
-        }
-      }
     }
 
     // Validate questions if provided
@@ -156,7 +149,6 @@ router.post('/', auth, authorize('manager', 'admin'), [
       name: req.body.name.trim(),
       description: req.body.description?.trim() || '',
       guidelines: req.body.guidelines.trim(),
-      labelSet: req.body.labelSet || [],
       questions: req.body.questions || [],
       managerId: managerId,
       status: req.body.status || 'draft',
@@ -224,7 +216,6 @@ router.put('/:id', auth, authorize('manager', 'admin'), async (req, res) => {
       'name',
       'description',
       'guidelines',
-      'labelSet',
       'questions',
       'status',
       'deadline',
@@ -422,18 +413,10 @@ router.post('/:id/review-decision', auth, authorize('reviewer', 'admin'), async 
 router.get('/:id/export', auth, authorize('manager', 'admin'), async (req, res) => {
   try {
     const { format = 'json' } = req.query;
-    const project = await Project.findById(req.params.id).select('name description labelSet managerId');
+    const project = await Project.findById(req.params.id).select('name description managerId');
     
     if (!project) {
       return res.status(404).json({ message: 'Project not found' });
-    }
-
-    // Ensure labelSet exists for YOLO/VOC export
-    if ((format.toUpperCase() === 'YOLO' || format.toUpperCase() === 'VOC') && 
-        (!project.labelSet || !Array.isArray(project.labelSet) || project.labelSet.length === 0)) {
-      return res.status(400).json({ 
-        message: 'Project does not have any labels defined. Please add labels to the project before exporting in YOLO/VOC format.' 
-      });
     }
 
     // Authorization check - Manager can only export their own projects, Admin can export all
@@ -483,6 +466,20 @@ router.get('/:id/export', auth, authorize('manager', 'admin'), async (req, res) 
     })
       .populate('annotatorId', 'username fullName');
 
+    // Build projectLabels from task availableLabels (all tasks should have the same labels)
+    const projectLabels = [];
+    const labelNameSet = new Set();
+    for (const task of tasks) {
+      if (task.availableLabels && Array.isArray(task.availableLabels)) {
+        for (const lbl of task.availableLabels) {
+          if (!labelNameSet.has(lbl.name)) {
+            labelNameSet.add(lbl.name);
+            projectLabels.push(lbl);
+          }
+        }
+      }
+    }
+
     let exportData;
     let contentType;
     let filename;
@@ -498,7 +495,7 @@ router.get('/:id/export', auth, authorize('manager', 'admin'), async (req, res) 
           const imagePath = task.dataItem?.path || '';
           const annotations = task.labels.objects.map(obj => {
             const [x1, y1, x2, y2] = obj.bbox || [0, 0, 0, 0];
-            const labelIndex = project.labelSet.findIndex(l => l.name === obj.label);
+            const labelIndex = projectLabels.findIndex(l => l.name === obj.label);
             
             if (labelIndex === -1) {
               return null;
@@ -616,7 +613,7 @@ ${vocData.join('\n')}
             height: 0
           })),
           annotations: [],
-          categories: project.labelSet.map((label, idx) => ({
+          categories: projectLabels.map((label, idx) => ({
             id: idx + 1,
             name: label.name,
             supercategory: 'object'
@@ -627,7 +624,7 @@ ${vocData.join('\n')}
           if (task.labels?.objects && Array.isArray(task.labels.objects)) {
             task.labels.objects.forEach((obj, objIdx) => {
               const [x1, y1, x2, y2] = obj.bbox || [0, 0, 0, 0];
-              const labelIndex = project.labelSet.findIndex(l => l.name === obj.label);
+              const labelIndex = projectLabels.findIndex(l => l.name === obj.label);
               cocoData.annotations.push({
                 id: (taskIdx + 1) * 1000 + objIdx + 1,
                 image_id: taskIdx + 1,
