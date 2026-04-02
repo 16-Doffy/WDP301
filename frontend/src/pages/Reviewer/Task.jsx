@@ -609,21 +609,6 @@ const ReviewerTask = () => {
       return;
     }
 
-    // Validation: Must select at least 1 issue for rejection
-    if (selectedIssues.length === 0) {
-      alert('Vui lòng chọn ít nhất 1 lỗi (issue) trước khi từ chối task.');
-      return;
-    }
-
-    // Validate that issues requiring targets have targets selected
-    for (const issueId of selectedIssues) {
-      const issueInfo = issueOptions.find(i => i.id === issueId);
-      if (issueInfo?.needsTarget && !issueTargets[issueId]) {
-        alert(`Vui lòng chọn ${issueInfo.targetLabel} cho lỗi "${issueInfo.label}"`);
-        return;
-      }
-    }
-
     const targetTaskId = selectedTaskForReview?._id;
     if (!targetTaskId) {
       alert('Không tìm thấy task pending của annotator này để chấm.');
@@ -671,27 +656,9 @@ const ReviewerTask = () => {
           return;
         }
 
-        // Determine backend error category based on first issue
-        const firstIssue = selectedIssues[0]?.toLowerCase?.() || '';
-        const backendErrorCategory = firstIssue.includes('class') || firstIssue.includes('wrong_category') || firstIssue.includes('incorrect_classification')
-          ? 'incorrect_label'
-          : firstIssue.includes('miss') || firstIssue.includes('missing')
-            ? 'missing_label'
-            : firstIssue.includes('box') || firstIssue.includes('tight') || firstIssue.includes('loose') || firstIssue.includes('span') || firstIssue.includes('timestamp')
-              ? 'poor_quality'
-              : 'does_not_follow_guidelines';
-
         await axios.post(`${API_URL}/api/reviews/${targetTaskId}/reject`, {
           reviewComments: reviewComments.trim(),
-          errorCategory: backendErrorCategory,
-          reviewNotes: [],
-          review: {
-            taskId: targetTaskId,
-            datasetType,
-            status: 'rejected',
-            issues,
-            overallComment: reviewComments.trim(),
-          },
+          errorCategory: 'other',
         });
         alert('Đã từ chối task thành công!');
         // Fetch task trước để đảm bảo dữ liệu mới nhất từ DB
@@ -714,7 +681,7 @@ const ReviewerTask = () => {
         setProcessing(false);
       }
     }
-  }, [id, task, reviewComments, selectedIssues, issueOptions, issueTargets, issueComments, datasetType, fetchAllTasks, fetchTask, fetchRelatedTasks, processing, isLockedForReview, isOverdue, activeAnnotatorId, selectedTaskForReview, selectedAnnotatorCount]);
+  }, [id, task, reviewComments, fetchAllTasks, fetchTask, fetchRelatedTasks, processing, isLockedForReview, isOverdue, activeAnnotatorId, selectedTaskForReview, selectedAnnotatorCount]);
 
   const handleSkip = () => {
     goToNextPendingTask();
@@ -1707,103 +1674,20 @@ const ReviewerTask = () => {
               </div>
 
               <div>
-                <h3 className="text-xl font-semibold text-white mb-3">Error Checklist ({datasetType.toUpperCase()})</h3>
-                <p className="text-xs text-slate-400 mb-3">
-                  {datasetType === 'image' && 'Chọn các lỗi về bounding box và object trong ảnh'}
-                  {datasetType === 'audio' && 'Chọn các lỗi về segment và timestamp trong audio'}
-                  {datasetType === 'text' && 'Chọn các lỗi về entity và span trong văn bản'}
-                </p>
-                <div className="space-y-3">
-                  {issueOptions.map((issue) => {
-                    const checked = selectedIssues.includes(issue.id);
-                    return (
-                      <div key={issue.id} className="rounded-xl border border-slate-700 bg-[#0f172a] p-3">
-                        <label className="flex items-start gap-3 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={(e) => {
-                              const isChecked = e.target.checked;
-                              setSelectedIssues((prev) => isChecked
-                                ? [...prev, issue.id]
-                                : prev.filter((x) => x !== issue.id));
-                            }}
-                            className="h-4 w-4 mt-1 rounded border-slate-600 bg-[#0f172a] text-blue-600 focus:ring-blue-500"
-                          />
-                          <div className="flex-1">
-                            <span className="text-sm text-slate-200 font-medium">{issue.label}</span>
-                            {issue.description && (
-                              <p className="text-xs text-slate-500 mt-0.5">{issue.description}</p>
-                            )}
-                          </div>
-                        </label>
-
-                        {checked && issue.needsTarget && (
-                          <div className="mt-3 ml-7 space-y-2">
-                            <p className="text-xs text-slate-400">{issue.targetLabel}</p>
-                            <select
-                              value={issueTargets[issue.id] || ''}
-                              onChange={(e) => setIssueTargets((prev) => ({ ...prev, [issue.id]: e.target.value }))}
-                              className="w-full rounded-lg bg-[#0f172a] border border-slate-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-slate-200 text-sm px-3 py-2"
-                            >
-                              <option value="">-- Chọn {issue.targetLabel} --</option>
-                              {targetOptions.map((opt) => (
-                                <option key={opt.id} value={opt.id}>{opt.label}</option>
-                              ))}
-                            </select>
-                          </div>
-                        )}
-
-                        {checked && (
-                          <div className="mt-3 ml-7">
-                            <textarea
-                              value={issueComments[issue.id] || ''}
-                              onChange={(e) => setIssueComments((prev) => ({ ...prev, [issue.id]: e.target.value }))}
-                              rows={2}
-                              placeholder="Mô tả chi tiết lỗi (tùy chọn)"
-                              className="w-full rounded-lg bg-[#0f172a] border border-slate-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-slate-200 text-sm px-3 py-2"
-                            />
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-xl font-semibold text-white mb-3">Structured Comment</h3>
+                <h3 className="text-xl font-semibold text-white mb-3">Comment</h3>
                 <div className="rounded-xl border border-blue-700/40 bg-gradient-to-b from-[#0f172a] to-[#0b1220] p-4 space-y-3 shadow-[0_0_0_1px_rgba(59,130,246,0.15)]">
-                  <div className="flex items-center justify-between">
-                    <label className="text-sm font-semibold text-blue-200 block">Overall Feedback</label>
-                    <span className={`text-[11px] px-2 py-1 rounded-full border ${reviewComments.trim().length >= 12 ? 'text-emerald-300 border-emerald-600/40 bg-emerald-900/20' : 'text-amber-300 border-amber-600/40 bg-amber-900/20'}`}>
-                      {reviewComments.trim().length >= 12 ? 'Đủ nội dung' : 'Nên >= 12 ký tự'}
-                    </span>
-                  </div>
                   <textarea
                     value={reviewComments}
                     onChange={(e) => setReviewComments(e.target.value)}
                     rows={5}
                     placeholder={datasetType === 'image'
-                      ? 'Ví dụ: Thiếu 1 object ở góc trái và sai class object #3.'
+                      ? 'Nhập comment của bạn...'
                       : datasetType === 'audio'
-                        ? 'Ví dụ: Segment #2 sai nhãn, Segment #3 lệch timestamp 0.5s.'
-                        : 'Ví dụ: Missing entity LOCATION ở cuối câu, span entity #2 sai.'}
+                        ? 'Nhập comment của bạn...'
+                        : 'Nhập comment của bạn...'}
                     disabled={isLockedForReview}
                     className="w-full rounded-lg bg-[#0a1020] border border-slate-500 focus:border-blue-400 focus:ring-2 focus:ring-blue-500/30 text-slate-100 text-sm px-3 py-3 placeholder:text-slate-400 disabled:opacity-60"
                   />
-                  <div className="text-xs text-slate-300 rounded-lg border border-slate-700 bg-[#0b1328] px-3 py-2">
-                    {selectedIssueDetails.length > 0 ? (
-                      <div className="space-y-1">
-                        <p className="text-blue-200 font-semibold">Issues selected ({selectedIssueDetails.length})</p>
-                        {selectedIssueDetails.map((issue) => (
-                          <p key={issue.id}>• {issue.label}{issueTargets[issue.id] ? ` (${issueTargets[issue.id]})` : ''}</p>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-amber-200">Chưa chọn issue nào. Reject sẽ bị khóa cho tới khi chọn ít nhất 1 issue.</p>
-                    )}
-                  </div>
                 </div>
               </div>
             </div>

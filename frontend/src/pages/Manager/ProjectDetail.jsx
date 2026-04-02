@@ -774,12 +774,12 @@ const ManagerProjectDetail = () => {
         </Grid>
           </Grid>
 
-          {/* <Box>
+          <Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
               <Typography variant="h6" fontWeight={700} color="#e2e8f0">Team Performance</Typography>
-              {!isAdmin && (
+              {/* {!isAdmin && (
                 <Button variant="contained" startIcon={<AssignmentIcon />} onClick={() => setAssignDialogOpen(true)} sx={primaryBtnSx}>Phân công task từ dataset</Button>
-              )}
+              )} */}
             </Box>
 
             <Box sx={{ mb: 2, display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
@@ -822,7 +822,7 @@ const ManagerProjectDetail = () => {
                 </TableBody>
               </Table>
             </TableContainer>
-      </Box> */}
+      </Box>
     </>
   );
 
