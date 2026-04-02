@@ -701,14 +701,14 @@ const AnnotatorTask = () => {
   };
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden overflow-x-hidden bg-gray-50 h-screen">
+    <div className="flex-1 flex flex-col overflow-hidden overflow-x-hidden bg-slate-900 text-gray-200 h-screen">
       {getStatusBadge() && <div className="px-6 pt-4">{getStatusBadge()}</div>}
 
-      <div className="px-6 pt-3">
-        <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
+      <div className="px-6 pt-4">
+        <div className="rounded-xl border border-gray-700 bg-gray-800 px-5 py-4 shadow-lg">
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
-              <h2 className="text-base font-semibold text-blue-900">{task?.projectId?.name || 'Project Detail'}</h2>
+              <h2 className="text-lg font-semibold text-gray-100">{task?.projectId?.name || 'Project Detail'}</h2>
               <p className="text-xs text-blue-600 mt-0.5">
                 Task hiện tại: {Math.max(1, currentTaskIndex + 1)} / {Math.max(1, batchTasks.length)}
                 {' '}• Đã hoàn thành: {completedInBatch}/{Math.max(1, batchTasks.length)}
@@ -734,7 +734,7 @@ const AnnotatorTask = () => {
             </div>
           </div>
 
-          <div className="mt-2 h-2 w-full rounded-full bg-blue-100">
+          <div className="mt-3 h-2 w-full rounded-full bg-gray-700">
             <div
               className="h-2 rounded-full bg-blue-600 transition-all"
               style={{ width: `${Math.min(100, Math.round(batchProgress || 0))}%` }}
