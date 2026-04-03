@@ -667,9 +667,9 @@ router.get('/:id/items', auth, authorize('manager', 'admin'), async (req, res) =
       .populate('reviewers.reviewerId', 'username fullName')
       .lean();
 
-    // Group tasks by dataItem to get status for each raw item
+    // Build items from tasks (if any exist)
     const itemsMap = new Map();
-    
+
     // Get unique dataItems from tasks
     tasks.forEach((task) => {
       // Use dataItem.path or construct a unique key
@@ -749,6 +749,30 @@ router.get('/:id/items', auth, authorize('manager', 'admin'), async (req, res) =
       }
       item.totalVotes += 1;
     });
+
+    // Fallback: if no tasks yet, build items directly from dataset.files[]
+    if (itemsMap.size === 0 && Array.isArray(dataset.files) && dataset.files.length > 0) {
+      dataset.files.forEach((file, idx) => {
+        const filePath = file.path || '';
+        const filename = filePath ? filePath.split('/').pop() : (file.filename || 'unknown');
+        itemsMap.set(filePath || `file-${idx}`, {
+          id: idx + 1,
+          filename: file.filename || filename,
+          originalName: file.originalName || file.filename || 'Unknown',
+          type: dataset.type,
+          mimeType: file.mimeType || dataset.type,
+          path: filePath,
+          imageUrl: filePath || (filename ? `/uploads/datasets/${filename}` : ''),
+          labelSet: availableLabels,
+          annotations: [],
+          status: 'pending',
+          approvedCount: 0,
+          rejectedCount: 0,
+          totalVotes: 0,
+          displayLabel: 'Chưa có nhãn',
+        });
+      });
+    }
 
     // Convert to array
     const items = Array.from(itemsMap.values()).map((item, index) => {

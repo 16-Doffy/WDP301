@@ -34,7 +34,7 @@ function TabPanel({ value, index, children }) {
   return value === index ? <Box sx={{ pt: 2 }}>{children}</Box> : null;
 }
 
-const SubtopicDetail = ({ selectedSubtopic, onSubtopicUpdate, topics }) => {
+const SubtopicDetail = ({ selectedSubtopic, onSubtopicUpdate, topics, autoHighlightDs }) => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState(0);
   const [labelSets, setLabelSets] = useState([]);
@@ -52,6 +52,7 @@ const SubtopicDetail = ({ selectedSubtopic, onSubtopicUpdate, topics }) => {
   const [assetSearch, setAssetSearch] = useState('');
   const [dragOver, setDragOver] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+  const [highlightedDsId, setHighlightedDsId] = useState(null);
 
   useEffect(() => {
     if (selectedSubtopic) {
@@ -60,6 +61,15 @@ const SubtopicDetail = ({ selectedSubtopic, onSubtopicUpdate, topics }) => {
       loadAssets();
     }
   }, [selectedSubtopic?._id]);
+
+  // Handle auto-highlight from TopicManagement
+  useEffect(() => {
+    if (!autoHighlightDs) return;
+    if (autoHighlightDs.tab === 'datasets') {
+      setActiveTab(1); // Switch to Datasets tab
+      setTimeout(() => setHighlightedDsId(autoHighlightDs.id), 300);
+    }
+  }, [autoHighlightDs]);
 
   const loadLabelSets = async () => {
     setLabelSetsLoading(true);
@@ -326,7 +336,7 @@ const SubtopicDetail = ({ selectedSubtopic, onSubtopicUpdate, topics }) => {
                 <Grid item xs={12} key={ds._id}>
                   <Card
                     onClick={() => navigate('/manager/datasets/' + ds._id + '/items')}
-                    sx={{ ...cardSx, p: 1.5, cursor: 'pointer' }}
+                    sx={{ ...cardSx, p: 1.5, cursor: 'pointer', border: highlightedDsId === ds._id ? '2px solid #22c55e' : cardSx.border, boxShadow: highlightedDsId === ds._id ? '0 0 20px rgba(34,197,94,0.4)' : cardSx.boxShadow }}
                   >
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                       <FolderIcon sx={{ color: '#60a5fa', flexShrink: 0 }} />

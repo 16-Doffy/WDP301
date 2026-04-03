@@ -1,4 +1,7 @@
-﻿import React, { useState, useEffect, useMemo } from 'react';
+$ErrorActionPreference = "Continue"
+# Write file
+$content = @"
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import {
@@ -10,7 +13,7 @@ import {
 } from '@mui/material';
 import {
   Add as AddIcon, Delete as DeleteIcon,
-  Search as SearchIcon, Download as DownloadIcon, CheckCircle as CheckCircleIcon,
+  Search as SearchIcon, Download as DownloadIcon,
   Dataset as DatasetIcon, Visibility as VisibilityIcon, Image as ImageIcon,
   AudioFile as AudioIcon, Description as TextIcon, Summarize as StatsIcon,
   FilterList as FilterIcon, Sort as SortIcon, AccessTime as TimeIcon,
@@ -45,9 +48,9 @@ const timeAgo = (d) => {
   const h = Math.floor(diff / 3600000);
   const days = Math.floor(diff / 86400000);
   if (m < 1) return 'Vua xong';
-  if (m < 60) return `${m}p truoc`;
-  if (h < 24) return `${h}h truoc`;
-  if (days < 30) return `${days}ngay truoc`;
+  if (m < 60) return m + 'p truoc';
+  if (h < 24) return h + 'h truoc';
+  if (days < 30) return days + 'ngay truoc';
   return fmtDate(d);
 };
 
@@ -64,7 +67,7 @@ const ChartBar = ({ label, value, max, color = '#3b82f6' }) => {
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
       <Box sx={{ width: 120, shrink: 0 }}><Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.7rem' }}>{label}</Typography></Box>
       <Box sx={{ flex: 1, height: 18, borderRadius: 1, bgcolor: '#0f172a', overflow: 'hidden', position: 'relative' }}>
-        <Box sx={{ width: `${pct}%`, height: '100%', bgcolor: color, borderRadius: 1, display: 'flex', alignItems: 'center', px: 0.5, transition: 'width 0.5s' }}>
+        <Box sx={{ width: pct + '%', height: '100%', bgcolor: color, borderRadius: 1, display: 'flex', alignItems: 'center', px: 0.5, transition: 'width 0.5s' }}>
           {pct > 20 && <Typography sx={{ color: '#fff', fontSize: '0.65rem', fontWeight: 700 }}>{value}</Typography>}
         </Box>
         {pct <= 20 && value > 0 && <Typography sx={{ position: 'absolute', left: 4, top: '50%', transform: 'translateY(-50%)', fontSize: '0.65rem', fontWeight: 700, color }}>{value}</Typography>}
@@ -76,7 +79,7 @@ const ChartBar = ({ label, value, max, color = '#3b82f6' }) => {
 
 const TypeBadge = ({ type }) => {
   const t = { image: { bg: 'rgba(245,158,11,0.15)', color: '#f59e0b' }, audio: { bg: 'rgba(244,114,182,0.15)', color: '#f472b6' }, text: { bg: 'rgba(52,211,153,0.15)', color: '#34d399' } }[type] || { bg: 'rgba(245,158,11,0.15)', color: '#f59e0b' };
-  return <Chip label={type?.toUpperCase() || 'IMAGE'} size="small" sx={{ bgcolor: t.bg, color: t.color, fontWeight: 700, fontSize: '0.65rem', height: 20 }} />;
+  return <Chip label={(type || 'IMAGE').toUpperCase()} size="small" sx={{ bgcolor: t.bg, color: t.color, fontWeight: 700, fontSize: '0.65rem', height: 20 }} />;
 };
 
 const Datasets = () => {
@@ -158,7 +161,6 @@ const Datasets = () => {
 
   useEffect(() => { fetchDatasets(); fetchTopics(); }, []);
 
-  // Auto-scroll + toast when returning after creating a dataset
   useEffect(() => {
     if (highlightedDsId && datasets.length > 0 && !loading) {
       setTimeout(() => {
@@ -172,7 +174,7 @@ const Datasets = () => {
   const fetchTopics = async () => {
     try {
       const res = await getTopics();
-      const data = Array.isArray(res) ? res : (res?.error ? [] : []);
+      const data = Array.isArray(res) ? res : [];
       setTopics(data);
     } catch { setTopics([]); }
   };
@@ -220,28 +222,24 @@ const Datasets = () => {
   };
 
   useEffect(() => {
-    if (selectedSubtopicId) {
-      loadSubtopicPool(selectedSubtopicId);
-    } else {
-      setSubtopicAssets(null);
-      setSubtopicLabels([]);
-    }
+    if (selectedSubtopicId) loadSubtopicPool(selectedSubtopicId);
+    else { setSubtopicAssets(null); setSubtopicLabels([]); }
   }, [selectedSubtopicId]);
 
   const filtered = useMemo(() => {
     let r = [...datasets];
     if (search.trim()) {
       const t = search.toLowerCase();
-      r = r.filter(ds => ds.name?.toLowerCase().includes(t) || ds.description?.toLowerCase().includes(t));
+      r = r.filter(ds => (ds.name || '').toLowerCase().includes(t) || (ds.description || '').toLowerCase().includes(t));
     }
     if (filterType !== 'all') r = r.filter(ds => ds.type === filterType);
     if (filterStatus !== 'all') r = r.filter(ds => getDsStatus(statusByDs[ds._id]).status === filterStatus);
     r.sort((a, b) => {
       let av, bv;
       if (sortBy === 'name') { av = (a.name || '').toLowerCase(); bv = (b.name || '').toLowerCase(); return sortOrder === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av); }
-      if (sortBy === 'items') { av = statusByDs[a._id]?.totalRawItems || 0; bv = statusByDs[b._id]?.totalRawItems || 0; } else
-      if (sortBy === 'approved') { av = statusByDs[a._id]?.counts?.approved || 0; bv = statusByDs[b._id]?.counts?.approved || 0; } else
-      if (sortBy === 'progress') {
+      if (sortBy === 'items') { av = statusByDs[a._id]?.totalRawItems || 0; bv = statusByDs[b._id]?.totalRawItems || 0; }
+      else if (sortBy === 'approved') { av = statusByDs[a._id]?.counts?.approved || 0; bv = statusByDs[b._id]?.counts?.approved || 0; }
+      else if (sortBy === 'progress') {
         const sg = (id) => { const s = statusByDs[id]; const raw = s?.totalRawItems || 0; const ap = s?.counts?.approved || 0; return raw > 0 ? (ap / raw) * 100 : 0; };
         av = sg(a._id); bv = sg(b._id);
       } else { av = new Date(a.createdAt || 0); bv = new Date(b.createdAt || 0); }
@@ -269,21 +267,12 @@ const Datasets = () => {
     setCreating(true);
     setError(null);
     try {
-      const payload = {
-        name: form.name.trim(),
-        type: form.type,
-        subtopicId: selectedSubtopicId,
-        imageCount: imageCount,
-        description: form.description.trim(),
-      };
+      const payload = { name: form.name.trim(), type: form.type, subtopicId: selectedSubtopicId, imageCount, description: form.description.trim() };
       const cr = await axios.post(API_URL + '/api/datasets', payload, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
       const created = cr.data;
       setForm({ name: '', description: '', type: 'image', subtopicId: '' });
-      setSelectedTopicId('');
-      setSelectedSubtopicId('');
-      setImageCount(100);
-      setSubtopicAssets(null);
-      setSubtopicLabels([]);
+      setSelectedTopicId(''); setSelectedSubtopicId(''); setImageCount(100);
+      setSubtopicAssets(null); setSubtopicLabels([]);
       setCreateOpen(false);
       await fetchDatasets();
       if (created?._id) {
@@ -308,18 +297,12 @@ const Datasets = () => {
     if (!selectedDs) return;
     try {
       await axios.delete(API_URL + '/api/datasets/' + selectedDs._id, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
-      setDeleteOpen(false);
-      setSelectedDs(null);
-      fetchDatasets();
+      setDeleteOpen(false); setSelectedDs(null); fetchDatasets();
     } catch (err) { alert('Loi: ' + (err.response?.data?.message || err.message)); }
   };
 
   const handleOpenDetail = async (ds) => {
-    setDetailDs(ds);
-    setDetailOpen(true);
-    setDetailLoading(true);
-    setDetailItemsLoading(true);
-    setDetailTab(0);
+    setDetailDs(ds); setDetailOpen(true); setDetailLoading(true); setDetailItemsLoading(true); setDetailTab(0);
     try {
       const [sRes, iRes] = await Promise.all([
         axios.get(API_URL + '/api/datasets/' + ds._id + '/status', { headers: { Authorization: 'Bearer ' + getAuthToken() } }),
@@ -331,11 +314,7 @@ const Datasets = () => {
   };
 
   const handleOpenExport = async (ds) => {
-    setExportDs(ds);
-    setExportOpen(true);
-    setExportFormat('JSON');
-    setExportLoading(true);
-    setExportPreview(null);
+    setExportDs(ds); setExportOpen(true); setExportFormat('JSON'); setExportLoading(true); setExportPreview(null);
     try {
       const s = statusByDs[ds._id];
       const previewItems = (s?.finalItems || []).slice(0, 5).map(item => {
@@ -359,11 +338,8 @@ const Datasets = () => {
       const blob = new Blob([resp.data], { type: 'application/json' });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.href = url;
-      link.download = `dataset_${exportDs.name}_${exportFormat}_${Date.now()}.json`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+      link.href = url; link.download = 'dataset_' + exportDs.name + '_' + exportFormat + '_' + Date.now() + '.json';
+      document.body.appendChild(link); link.click(); link.remove();
       setExportOpen(false);
     } catch (err) { alert(err.response?.data?.message || 'Loi export'); }
   };
@@ -373,7 +349,6 @@ const Datasets = () => {
   return (
     <Box sx={{ p: { xs: 2, sm: 3, md: 4 }, minHeight: '100vh', bgcolor: '#0f172a' }}>
       <Box sx={panelSx}>
-        {/* Header */}
         <Box sx={{ p: { xs: 2, sm: 3 }, borderBottom: '1px solid #334155' }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', md: 'center' }, flexDirection: { xs: 'column', md: 'row' }, gap: 2 }}>
             <Box>
@@ -384,17 +359,8 @@ const Datasets = () => {
           </Box>
         </Box>
 
-        {/* Stats */}
         <Box sx={{ p: 2, borderBottom: '1px solid #334155', display: 'flex', gap: 3, flexWrap: 'wrap', bgcolor: '#0f172a' }}>
-          {[
-            { label: 'Tong Datasets', value: datasets.length, color: '#60a5fa' },
-            { label: 'Raw Items', value: stats.totalItems, color: '#e2e8f0' },
-            { label: 'Da Duyet', value: stats.totalApproved, color: '#22c55e' },
-            { label: 'Tu Choi', value: stats.totalRejected, color: '#ef4444' },
-            { label: 'San sang AI', value: stats.ready, color: '#a78bfa' },
-            { label: 'Dang GN', value: stats.annotating, color: '#3b82f6' },
-            { label: 'Cho Review', value: stats.review, color: '#fbbf24' },
-          ].map(s => (
+          {[{ label: 'Tong Datasets', value: datasets.length, color: '#60a5fa' }, { label: 'Raw Items', value: stats.totalItems, color: '#e2e8f0' }, { label: 'Da Duyet', value: stats.totalApproved, color: '#22c55e' }, { label: 'Tu Choi', value: stats.totalRejected, color: '#ef4444' }, { label: 'San sang AI', value: stats.ready, color: '#a78bfa' }, { label: 'Dang GN', value: stats.annotating, color: '#3b82f6' }, { label: 'Cho Review', value: stats.review, color: '#fbbf24' }].map(s => (
             <Box key={s.label} sx={{ textAlign: 'center', minWidth: 70 }}>
               <Typography variant="h5" fontWeight={800} sx={{ color: s.color }}>{s.value}</Typography>
               <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.65rem' }}>{s.label}</Typography>
@@ -402,13 +368,12 @@ const Datasets = () => {
           ))}
         </Box>
 
-        {/* Filter Bar */}
         <Box sx={{ p: 2, borderBottom: '1px solid #334155' }}>
           <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center', flexWrap: 'wrap' }}>
             <TextField placeholder="Tim kiem..." size="small" value={search} onChange={e => setSearch(e.target.value)} sx={{ ...inputSx, minWidth: 200, '& .MuiOutlinedInput-root': { ...inputSx['& .MuiOutlinedInput-root'], height: 38 } }} InputProps={{ startAdornment: <SearchIcon sx={{ color: '#94a3b8', mr: 1, fontSize: 18 }} /> }} />
             <Button size="small" startIcon={<FilterIcon />} onClick={() => setShowFilters(!showFilters)} sx={btnSecondary}>Loc {showFilters ? '(Bat)' : ''}</Button>
             <Box sx={{ display: 'flex', gap: 1, ml: 'auto' }}>
-              <Chip label={`${filtered.length} / ${datasets.length}`} size="small" sx={{ bgcolor: '#334155', color: '#94a3b8', fontWeight: 700 }} />
+              <Chip label={filtered.length + ' / ' + datasets.length} size="small" sx={{ bgcolor: '#334155', color: '#94a3b8', fontWeight: 700 }} />
               <IconButton size="small" onClick={() => setViewMode(v => v === 'card' ? 'table' : 'card')} sx={{ color: '#94a3b8' }}><DatasetIcon /></IconButton>
             </Box>
           </Box>
@@ -438,7 +403,6 @@ const Datasets = () => {
           )}
         </Box>
 
-        {/* Content */}
         <Box sx={{ p: { xs: 1.5, sm: 2.5 } }}>
           {error && <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>{error}</Alert>}
 
@@ -469,7 +433,7 @@ const Datasets = () => {
                         </Box>
                         <Stack direction="row" spacing={0.8} sx={{ mb: 1.5, flexWrap: 'wrap', gap: 0.5 }}>
                           <TypeBadge type={ds.type} />
-                          <Chip label={`${raw} items`} size="small" sx={{ bgcolor: 'rgba(16,185,129,0.15)', color: '#34d399', fontWeight: 700, fontSize: '0.65rem', height: 20 }} />
+                          <Chip label={raw + ' items'} size="small" sx={{ bgcolor: 'rgba(16,185,129,0.15)', color: '#34d399', fontWeight: 700, fontSize: '0.65rem', height: 20 }} />
                           {ds.description && <Tooltip title={ds.description}><Chip label="Co mo ta" size="small" sx={{ bgcolor: 'rgba(168,85,247,0.15)', color: '#a78bfa', fontWeight: 700, fontSize: '0.65rem', height: 20 }} /></Tooltip>}
                         </Stack>
                         <Box sx={{ mb: 1.5 }}>
@@ -530,12 +494,12 @@ const Datasets = () => {
                         <TableCell sx={{ width: 120 }}>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <Box sx={{ flex: 1, height: 6, borderRadius: 3, bgcolor: '#334155', overflow: 'hidden' }}>
-                              <Box sx={{ width: `${pct}%`, height: '100%', bgcolor: si.color, borderRadius: 3 }} />
+                              <Box sx={{ width: pct + '%', height: '100%', bgcolor: si.color, borderRadius: 3 }} />
                             </Box>
                             <Typography sx={{ color: si.color, fontSize: '0.7rem', fontWeight: 700, minWidth: 32 }}>{pct}%</Typography>
                           </Box>
                         </TableCell>
-                        <TableCell><Chip label={si.label} size="small" sx={{ bgcolor: `${si.color}20`, color: si.color, fontWeight: 700, fontSize: '0.65rem', height: 20 }} /></TableCell>
+                        <TableCell><Chip label={si.label} size="small" sx={{ bgcolor: si.color + '20', color: si.color, fontWeight: 700, fontSize: '0.65rem', height: 20 }} /></TableCell>
                         <TableCell sx={{ color: '#64748b', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>
                           <div>{fmtDate(ds.createdAt)}</div>
                           <div style={{ color: '#475569', fontSize: '0.6rem' }}>{timeAgo(ds.createdAt)}</div>
@@ -559,7 +523,6 @@ const Datasets = () => {
         </Box>
       </Box>
 
-      {/* Detail Dialog */}
       <Dialog open={detailOpen} onClose={() => setDetailOpen(false)} maxWidth="lg" fullWidth PaperProps={{ sx: modalSx }}>
         <DialogTitle sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}>
           <DatasetIcon sx={{ color: '#3b82f6' }} />{detailDs?.name}<Box sx={{ flex: 1 }} /><TypeBadge type={detailDs?.type} />
@@ -584,16 +547,7 @@ const Datasets = () => {
                       <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 2, color: '#e2e8f0' }}>Thong ke chi tiet</Typography>
                       {detailDs?.statusData && (
                         <Stack spacing={1.5}>
-                          {[
-                            { label: 'Tong Items', value: detailDs.statusData.totalRawItems, color: '#e2e8f0' },
-                            { label: 'Da ghi nhan', value: detailDs.statusData.counts?.completed || 0, color: '#60a5fa' },
-                            { label: 'Dang review', value: detailDs.statusData.counts?.submitted || 0, color: '#fbbf24' },
-                            { label: 'Da duyet', value: detailDs.statusData.counts?.approved || 0, color: '#22c55e' },
-                            { label: 'Tu choi', value: detailDs.statusData.counts?.rejected || 0, color: '#ef4444' },
-                            { label: 'Tong Votes', value: detailDs.statusData.votes?.totalVotes || 0, color: '#a78bfa' },
-                            { label: 'Vote duyet', value: detailDs.statusData.votes?.approveVotes || 0, color: '#22c55e' },
-                            { label: 'Vote tu choi', value: detailDs.statusData.votes?.rejectVotes || 0, color: '#ef4444' },
-                          ].map(item => <Box key={item.label} sx={{ display: 'flex', justifyContent: 'space-between' }}><Typography variant="body2" sx={{ color: '#94a3b8' }}>{item.label}</Typography><Typography variant="body2" fontWeight={700} sx={{ color: item.color }}>{item.value}</Typography></Box>)}
+                          {[{ label: 'Tong Items', value: detailDs.statusData.totalRawItems, color: '#e2e8f0' }, { label: 'Da ghi nhan', value: detailDs.statusData.counts?.completed || 0, color: '#60a5fa' }, { label: 'Dang review', value: detailDs.statusData.counts?.submitted || 0, color: '#fbbf24' }, { label: 'Da duyet', value: detailDs.statusData.counts?.approved || 0, color: '#22c55e' }, { label: 'Tu choi', value: detailDs.statusData.counts?.rejected || 0, color: '#ef4444' }, { label: 'Tong Votes', value: detailDs.statusData.votes?.totalVotes || 0, color: '#a78bfa' }].map(item => <Box key={item.label} sx={{ display: 'flex', justifyContent: 'space-between' }}><Typography variant="body2" sx={{ color: '#94a3b8' }}>{item.label}</Typography><Typography variant="body2" fontWeight={700} sx={{ color: item.color }}>{item.value}</Typography></Box>)}
                         </Stack>
                       )}
                     </Box>
@@ -603,21 +557,7 @@ const Datasets = () => {
                       <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 2, color: '#e2e8f0' }}>Phan bo nhan</Typography>
                       {detailDs?.statusData?.finalItems && detailDs.statusData.finalItems.length > 0 ? (
                         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                          {(() => {
-                            const dist = {};
-                            const colors = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
-                            let ci = 0;
-                            detailDs.statusData.finalItems.forEach(item => {
-                              const lbls = item.labels?.objects || item.labels?.spans || [];
-                              lbls.forEach(l => {
-                                const k = l.label || l.text || 'unknown';
-                                dist[k] = { count: (dist[k]?.count || 0) + 1, color: dist[k]?.color || colors[ci++ % colors.length] };
-                              });
-                            });
-                            const sorted = Object.entries(dist).sort((a, b) => b[1].count - a[1].count);
-                            const max = sorted[0]?.[1].count || 1;
-                            return sorted.map(([k, v]) => <ChartBar key={k} label={k} value={v.count} max={max} color={v.color} />);
-                          })()}
+                          {(() => { const dist = {}; const colors = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316']; let ci = 0; detailDs.statusData.finalItems.forEach(item => { const lbls = item.labels?.objects || item.labels?.spans || []; lbls.forEach(l => { const k = l.label || l.text || 'unknown'; dist[k] = { count: (dist[k]?.count || 0) + 1, color: dist[k]?.color || colors[ci++ % colors.length] }; }); }); const sorted = Object.entries(dist).sort((a, b) => b[1].count - a[1].count); const max = sorted[0]?.[1].count || 1; return sorted.map(([k, v]) => <ChartBar key={k} label={k} value={v.count} max={max} color={v.color} />); })()}
                         </Box>
                       ) : <Typography variant="body2" sx={{ color: '#94a3b8' }}>Chua co nhan nao</Typography>}
                     </Box>
@@ -629,26 +569,9 @@ const Datasets = () => {
                   <Typography variant="body2" sx={{ color: '#94a3b8', mb: 2 }}>Tat ca nhan da ghi nhan trong dataset</Typography>
                   {detailDs?.statusData?.finalItems && detailDs.statusData.finalItems.length > 0 ? (
                     <Grid container spacing={1}>
-                      {(() => {
-                        const dist = {};
-                        const colors = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
-                        let ci = 0;
-                        detailDs.statusData.finalItems.forEach(item => {
-                          const lbls = item.labels?.objects || item.labels?.spans || [];
-                          lbls.forEach(l => {
-                            const k = l.label || l.text || 'unknown';
-                            if (!dist[k]) dist[k] = { count: 0, color: colors[ci++ % colors.length] };
-                            dist[k].count++;
-                          });
-                        });
-                        return Object.entries(dist).sort((a, b) => b[1].count - a[1].count).map(([k, v]) => (
-                          <Grid item xs="auto" key={k}>
-                            <Chip label={`${k} (${v.count})`} sx={{ bgcolor: `${v.color}25`, color: v.color, border: `1px solid ${v.color}60`, fontWeight: 700, fontSize: '0.75rem' }} />
-                          </Grid>
-                        ));
-                      })()}
+                      {(() => { const dist = {}; const colors = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316']; let ci = 0; detailDs.statusData.finalItems.forEach(item => { const lbls = item.labels?.objects || item.labels?.spans || []; lbls.forEach(l => { const k = l.label || l.text || 'unknown'; if (!dist[k]) dist[k] = { count: 0, color: colors[ci++ % colors.length] }; dist[k].count++; }); }); return Object.entries(dist).sort((a, b) => b[1].count - a[1].count).map(([k, v]) => (<Grid item xs="auto" key={k}><Chip label={k + ' (' + v.count + ')'} sx={{ bgcolor: v.color + '25', color: v.color, border: '1px solid ' + v.color + '60', fontWeight: 700, fontSize: '0.75rem' }} /></Grid>)); })()}
                     </Grid>
-                  ) : <Box sx={{ textAlign: 'center', py: 8, color: '#64748b' }}><Typography>Chua co nhan nao</Typography></Box>}
+                  ) : <Box sx={{ textAlign: 'center', py: 8 }}><Typography sx={{ color: '#64748b' }}>Chua co nhan nao</Typography></Box>}
                 </Box>
               )}
               {detailTab === 2 && (
@@ -659,15 +582,15 @@ const Datasets = () => {
                       {detailItems.map((item, idx) => {
                         const src = getFullImageUrl(item.path, item.imageUrl, item.filename);
                         const fn = item.originalName || item.filename || item.path || 'Unknown';
-                        const isText = /\.(txt|csv|json|xml)$/i.test(fn) || item.mimeType?.startsWith('text/');
-                        const isAudio = /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(fn) || item.mimeType?.startsWith('audio/');
+                        const isText = /\.(txt|csv|json|xml)$/i.test(fn) || (item.mimeType && item.mimeType.startsWith('text/'));
+                        const isAudio = /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(fn) || (item.mimeType && item.mimeType.startsWith('audio/'));
                         const anns = (item.annotations || []).filter(a => a.status === 'approved');
                         return (
                           <Grid item xs={4} sm={3} md={2} key={item.id || idx}>
-                            <Box onClick={() => navigate(`/manager/datasets/${detailDs?._id}/items/${item.id || idx}`, { state: { item, datasetName: detailDs?.name } })} sx={{ position: 'relative', width: '100%', paddingTop: '100%', overflow: 'hidden', borderRadius: 2, border: '1px solid #334155', bgcolor: '#0f172a', cursor: 'pointer', transition: 'all 0.2s', '&:hover': { borderColor: '#3b82f6', transform: 'scale(1.05)' } }}>
+                            <Box onClick={() => navigate('/manager/datasets/' + (detailDs?._id) + '/items/' + (item.id || idx), { state: { item, datasetName: detailDs?.name } })} sx={{ position: 'relative', width: '100%', paddingTop: '100%', overflow: 'hidden', borderRadius: 2, border: '1px solid #334155', bgcolor: '#0f172a', cursor: 'pointer', transition: 'all 0.2s', '&:hover': { borderColor: '#3b82f6', transform: 'scale(1.05)' } }}>
                               {src ? <Box component="img" src={src} alt={fn} sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
                                : isText ? <Box sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', bgcolor: '#1e293b' }}><Typography sx={{ color: '#60a5fa', fontSize: 20, fontWeight: 700 }}>T</Typography><Typography sx={{ color: '#94a3b8', fontSize: 8 }}>Text</Typography></Box>
-                               : isAudio ? <Box sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', bgcolor: '#1e293b' }}><Typography sx={{ color: '#f472b6', fontSize: 20, fontWeight: 700 }}>♪</Typography><Typography sx={{ color: '#94a3b8', fontSize: 8 }}>Audio</Typography></Box>
+                               : isAudio ? <Box sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', bgcolor: '#1e293b' }}><Typography sx={{ color: '#f472b6', fontSize: 20, fontWeight: 700 }}>&#9835;</Typography><Typography sx={{ color: '#94a3b8', fontSize: 8 }}>Audio</Typography></Box>
                                : <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: 10 }}>No preview</Box>}
                               {anns.length > 0 && <Box sx={{ position: 'absolute', bottom: 2, right: 2, bgcolor: '#22c55e', color: '#fff', borderRadius: 1, px: 0.5, fontSize: '0.6rem', fontWeight: 700 }}>{anns.length} GN</Box>}
                             </Box>
@@ -684,7 +607,6 @@ const Datasets = () => {
         <DialogActions sx={{ px: 3, pb: 2 }}><Button onClick={() => setDetailOpen(false)} sx={btnSecondary}>Dong</Button></DialogActions>
       </Dialog>
 
-      {/* Export Preview Dialog */}
       <Dialog open={exportOpen} onClose={() => setExportOpen(false)} maxWidth="md" fullWidth PaperProps={{ sx: modalSx }}>
         <DialogTitle sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 1 }}><DownloadIcon sx={{ color: '#22c55e' }} />Export: {exportDs?.name}</DialogTitle>
         <DialogContent dividers sx={{ borderColor: '#334155' }}>
@@ -744,7 +666,6 @@ const Datasets = () => {
         </DialogActions>
       </Dialog>
 
-      {/* Create Dialog */}
       <Dialog open={createOpen} onClose={() => setCreateOpen(false)} maxWidth="md" fullWidth PaperProps={{ sx: modalSx }}>
         <DialogTitle sx={{ fontWeight: 700 }}>Tao Dataset Moi</DialogTitle>
         <DialogContent>
@@ -757,7 +678,6 @@ const Datasets = () => {
           </FormControl>
           <TextField fullWidth multiline rows={2} label="Mo ta" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} sx={{ mb: 2, ...inputSx }} />
 
-          {/* Context: Topic + Subtopic */}
           <Box sx={{ p: 2, border: '1px solid #3b82f6', borderRadius: 2, mb: 2, bgcolor: 'rgba(59,130,246,0.05)' }}>
             <Typography variant="subtitle2" fontWeight={700} sx={{ color: '#60a5fa', mb: 1.5 }}>Dataset Context (Taxonomy Structure)</Typography>
             <FormControl fullWidth sx={{ mb: 1.5, ...inputSx }}>
@@ -783,53 +703,28 @@ const Datasets = () => {
             )}
           </Box>
 
-          {/* Data Source: Show pool info */}
           {subtopicAssets ? (
             <Box sx={{ p: 2, border: '1px solid #334155', borderRadius: 2, mb: 2, bgcolor: '#0f172a' }}>
               <Typography variant="subtitle2" fontWeight={700} sx={{ color: '#94a3b8', mb: 1.5 }}>Data Source (Trich xuat tu kho)</Typography>
               <Box sx={{ display: 'flex', gap: 3, mb: 2, flexWrap: 'wrap' }}>
-                <Box sx={{ textAlign: 'center' }}>
-                  <Typography variant="h5" fontWeight={800} sx={{ color: '#60a5fa' }}>{subtopicAssets.total}</Typography>
-                  <Typography variant="caption" sx={{ color: '#64748b' }}>Tong assets</Typography>
-                </Box>
-                <Box sx={{ textAlign: 'center' }}>
-                  <Typography variant="h5" fontWeight={800} sx={{ color: '#f59e0b' }}>{subtopicAssets.images}</Typography>
-                  <Typography variant="caption" sx={{ color: '#64748b' }}>Images</Typography>
-                </Box>
-                <Box sx={{ textAlign: 'center' }}>
-                  <Typography variant="h5" fontWeight={800} sx={{ color: '#34d399' }}>{subtopicAssets.texts}</Typography>
-                  <Typography variant="caption" sx={{ color: '#64748b' }}>Texts</Typography>
-                </Box>
-                <Box sx={{ textAlign: 'center' }}>
-                  <Typography variant="h5" fontWeight={800} sx={{ color: '#f472b6' }}>{subtopicAssets.audios}</Typography>
-                  <Typography variant="caption" sx={{ color: '#64748b' }}>Audios</Typography>
-                </Box>
+                {[{ label: 'Tong assets', value: subtopicAssets.total, color: '#60a5fa' }, { label: 'Images', value: subtopicAssets.images, color: '#f59e0b' }, { label: 'Texts', value: subtopicAssets.texts, color: '#34d399' }, { label: 'Audios', value: subtopicAssets.audios, color: '#f472b6' }].map(item => (
+                  <Box key={item.label} sx={{ textAlign: 'center' }}>
+                    <Typography variant="h5" fontWeight={800} sx={{ color: item.color }}>{item.value}</Typography>
+                    <Typography variant="caption" sx={{ color: '#64748b' }}>{item.label}</Typography>
+                  </Box>
+                ))}
               </Box>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                 <Typography variant="body2" sx={{ color: '#94a3b8', fontWeight: 600, minWidth: 140 }}>Lay so luong:</Typography>
-                <TextField
-                  size="small"
-                  type="number"
-                  value={imageCount}
-                  onChange={e => setImageCount(Math.max(1, parseInt(e.target.value) || 1))}
-                  sx={{ width: 100, ...inputSx, '& .MuiOutlinedInput-root': { ...inputSx['& .MuiOutlinedInput-root'], height: 36 } }}
-                  inputProps={{ min: 1, max: subtopicAssets.images }}
-                />
-                <Typography variant="caption" sx={{ color: '#64748b' }}>
-                  trong tong so <strong style={{ color: '#60a5fa' }}>{subtopicAssets.images}</strong> images
-                </Typography>
+                <TextField size="small" type="number" value={imageCount} onChange={e => setImageCount(Math.max(1, parseInt(e.target.value) || 1))} sx={{ width: 100, ...inputSx, '& .MuiOutlinedInput-root': { ...inputSx['& .MuiOutlinedInput-root'], height: 36 } }} inputProps={{ min: 1, max: subtopicAssets.images }} />
+                <Typography variant="caption" sx={{ color: '#64748b' }}>trong tong so <strong style={{ color: '#60a5fa' }}>{subtopicAssets.images}</strong> images</Typography>
               </Box>
               {subtopicLabels.length > 0 && (
                 <Box sx={{ mt: 2 }}>
                   <Typography variant="caption" sx={{ color: '#64748b', mb: 0.5, display: 'block' }}>Labelsets duoc ke thua ({subtopicLabels.length}):</Typography>
                   <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                     {subtopicLabels.map(ls => (
-                      <Chip
-                        key={ls._id}
-                        label={ls.name}
-                        size="small"
-                        sx={{ bgcolor: 'rgba(59,130,246,0.15)', color: '#60a5fa', fontWeight: 600, fontSize: '0.7rem' }}
-                      />
+                      <Chip key={ls._id} label={ls.name} size="small" sx={{ bgcolor: 'rgba(59,130,246,0.15)', color: '#60a5fa', fontWeight: 600, fontSize: '0.7rem' }} />
                     ))}
                   </Box>
                 </Box>
@@ -854,7 +749,6 @@ const Datasets = () => {
         </DialogActions>
       </Dialog>
 
-      {/* Delete Dialog */}
       <Dialog open={deleteOpen} onClose={() => setDeleteOpen(false)} PaperProps={{ sx: modalSx }}>
         <DialogTitle sx={{ fontWeight: 700 }}>Xoa Dataset</DialogTitle>
         <DialogContent><Typography>Ban co that su muon xoa dataset <strong>"{selectedDs?.name}"</strong>?</Typography></DialogContent>
@@ -864,13 +758,7 @@ const Datasets = () => {
         </DialogActions>
       </Dialog>
 
-      {/* Toast notification */}
-      <Snackbar
-        open={toast.open}
-        autoHideDuration={4000}
-        onClose={() => setToast({ ...toast, open: false })}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-      >
+      <Snackbar open={toast.open} autoHideDuration={4000} onClose={() => setToast({ ...toast, open: false })} anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}>
         <Alert severity={toast.severity} sx={{ bgcolor: toast.severity === 'error' ? '#7f1d1d' : '#14532d', color: '#fff' }}>
           {toast.message}
         </Alert>
@@ -880,3 +768,7 @@ const Datasets = () => {
 };
 
 export default Datasets;
+"@
+
+Set-Content -Path "D:\Desktop\WDP\WDP301\frontend\src\pages\Manager\Datasets.jsx" -Value $content -Encoding UTF8
+Write-Host "File written successfully"
