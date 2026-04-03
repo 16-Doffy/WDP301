@@ -286,109 +286,97 @@ router.get('/:id', auth, async (req, res) => {
   }
 });
 
-// Create dataset and upload files (Manager or Admin)
+// Create dataset - supports both file upload AND subtopic pool reference
 router.post('/', auth, authorize('manager', 'admin'), upload.array('files', 100), async (req, res) => {
   try {
-    const { projectId, subtopicId, name, description, type } = req.body;
+    const { projectId, subtopicId, name, description, type, imageCount } = req.body;
     const datasetType = (type || 'image').toString().toLowerCase();
 
-    // Validate required fields
     if (!name || !name.trim()) {
       return res.status(400).json({ message: 'Dataset name is required' });
     }
 
-    if (!req.files || req.files.length === 0) {
-      return res.status(400).json({ message: 'At least one file is required' });
-    }
-
-    // If projectId is provided, validate it
-    if (projectId) {
-      const project = await Project.findById(projectId);
-      if (!project) {
-        return res.status(404).json({ message: 'Project not found' });
-      }
-
-      // Manager can only create dataset for their own project
-      // Admin can create dataset for any project
-      if (req.user.role !== 'admin' && project.managerId.toString() !== req.user._id.toString()) {
-        return res.status(403).json({ message: 'Not authorized to create dataset for this project' });
-      }
-    }
-
-    // Determine the managerId for the dataset
-    // For admin: if projectId is provided, use project's managerId; otherwise use admin's ID
-    // For manager: use their own ID
-    let managerId = req.user._id;
-    if (req.user.role === 'admin' && projectId) {
-      const project = await Project.findById(projectId);
-      if (project) {
-        managerId = project.managerId;
-      }
-    }
-
-    let files = [];
-
-    // Archive upload (single file). ZIP is auto-extracted; RAR is accepted but requires unpack before upload.
-    if (req.files?.length === 1 && isArchiveUpload(req.files[0])) {
-      const archiveFile = req.files[0];
-      const archiveExt = path.extname(archiveFile.originalname || '').toLowerCase();
-
-      if (archiveExt === '.rar') {
-        // Cleanup uploaded rar before returning validation error.
-        if (archiveFile.path && fs.existsSync(archiveFile.path)) {
-          try { fs.unlinkSync(archiveFile.path); } catch (e) { /* ignore */ }
-        }
-        return res.status(400).json({
-          message: 'RAR đã được nhận diện nhưng hiện hệ thống chỉ tự giải nén ZIP. Vui lòng giải nén RAR rồi upload file bên trong, hoặc nén lại thành ZIP.',
-        });
-      }
-
-      const extractDir = path.join('uploads/datasets', `extracted-${Date.now()}-${Math.round(Math.random() * 1e6)}`);
-      try {
-        files = await extractZipAndCollectFiles({
-          zipPath: archiveFile.path,
-          destRoot: extractDir,
-          datasetType,
-        });
-      } finally {
-        if (archiveFile.path && fs.existsSync(archiveFile.path)) {
-          try { fs.unlinkSync(archiveFile.path); } catch (e) { /* ignore */ }
-        }
-      }
-
-      if (!files || files.length === 0) {
-        return res.status(400).json({
-          message: `Archive không có file hợp lệ cho dataset type "${datasetType}". Vui lòng kiểm tra nội dung file nén.`,
-        });
-      }
-    } else {
-      files = req.files.map(file => ({
-        filename: file.filename,
-        originalName: file.originalname,
-        path: normalizePath(file.path),
-        mimeType: file.mimetype,
-        size: file.size
-      }));
-    }
-
     if (!['image', 'text', 'audio'].includes(datasetType)) {
-      // cleanup uploaded files
-      files.forEach(f => {
-        if (f.path && fs.existsSync(f.path)) fs.unlinkSync(f.path);
-      });
       return res.status(400).json({ message: 'Invalid dataset type. Must be one of: image, text, audio' });
     }
 
-    const fileErrors = validateFilesForDatasetType(datasetType, files);
-    if (fileErrors.length > 0) {
-      // cleanup uploaded files
-      files.forEach(f => {
-        if (f.path && fs.existsSync(f.path)) fs.unlinkSync(f.path);
-      });
-      return res.status(400).json({ 
-        message: `Uploaded files do not match dataset type "${datasetType}"`,
-        errors: fileErrors
-      });
+    let managerId = req.user._id;
+    if (req.user.role === 'admin' && projectId) {
+      const project = await Project.findById(projectId);
+      if (project) managerId = project.managerId;
+    }
+
+    let files = [];
+    let totalItems = 0;
+    let ic = 0;
+    let labelsets = [];
+
+    // MODE 1: Subtopic pool reference
+    if (subtopicId && (!req.files || req.files.length === 0)) {
+      const Subtopic = require('../models/Subtopic');
+      const LabelSet = require('../models/LabelSet');
+
+      const subtopic = await Subtopic.findById(subtopicId);
+      if (!subtopic) return res.status(404).json({ message: 'Subtopic not found' });
+
+      const assetLimit = parseInt(imageCount) || 100;
+      const allAssets = subtopic.assets || [];
+      const imageAssets = allAssets.filter(a => a.type === 'image').slice(0, assetLimit);
+
+      const subtopicLabelsets = await LabelSet.find({ subtopicId: subtopicId }).lean();
+      labelsets = subtopicLabelsets.map(ls => ls._id);
+
+      files = imageAssets.map(a => ({
+        filename: a.filename || (a.path || '').split('/').pop(),
+        originalName: a.originalName || a.filename || 'Unknown',
+        path: a.path,
+        mimeType: a.mimeType || a.type,
+        size: a.size || 0,
+        uploadedAt: a.uploadedAt || new Date()
+      }));
+      totalItems = files.length;
+      ic = files.length;
+    }
+    // MODE 2: File upload
+    else if (req.files && req.files.length > 0) {
+      if (req.files.length === 1 && isArchiveUpload(req.files[0])) {
+        const archiveFile = req.files[0];
+        const archiveExt = path.extname(archiveFile.originalname || '').toLowerCase();
+
+        if (archiveExt === '.rar') {
+          if (archiveFile.path && fs.existsSync(archiveFile.path)) { try { fs.unlinkSync(archiveFile.path); } catch (e) {} }
+          return res.status(400).json({ message: 'RAR files are not supported. Please use ZIP.' });
+        }
+
+        const extractDir = path.join('uploads/datasets', `extracted-${Date.now()}-${Math.round(Math.random() * 1e6)}`);
+        try {
+          files = await extractZipAndCollectFiles({ zipPath: archiveFile.path, destRoot: extractDir, datasetType });
+        } finally {
+          if (archiveFile.path && fs.existsSync(archiveFile.path)) { try { fs.unlinkSync(archiveFile.path); } catch (e) {} }
+        }
+
+        if (!files || files.length === 0) {
+          return res.status(400).json({ message: `Archive does not contain valid files for type "${datasetType}".` });
+        }
+      } else {
+        files = req.files.map(file => ({
+          filename: file.filename,
+          originalName: file.originalname,
+          path: normalizePath(file.path),
+          mimeType: file.mimetype,
+          size: file.size
+        }));
+      }
+
+      const fileErrors = validateFilesForDatasetType(datasetType, files);
+      if (fileErrors.length > 0) {
+        files.forEach(f => { if (f.path && fs.existsSync(f.path)) fs.unlinkSync(f.path); });
+        return res.status(400).json({ message: `Uploaded files do not match dataset type "${datasetType}"`, errors: fileErrors });
+      }
+      totalItems = files.length;
+      ic = files.length;
+    } else {
+      return res.status(400).json({ message: 'Either upload files OR select a subtopic pool. Both cannot be empty.' });
     }
 
     const dataset = new Dataset({
@@ -399,23 +387,21 @@ router.post('/', auth, authorize('manager', 'admin'), upload.array('files', 100)
       name: name.trim(),
       description: description?.trim() || '',
       files,
-      totalItems: files.length
+      totalItems,
+      imageCount: ic,
+      labelsets,
+      status: 'draft'
     });
 
     await dataset.save();
-    
-    // Log dataset upload
+
     await createActivityLog(
       req.user._id,
-      'dataset_upload',
+      'dataset_create',
       'dataset',
       dataset._id,
-      `Uploaded dataset: ${dataset.name} with ${files.length} file(s)`,
-      { 
-        datasetName: dataset.name,
-        filesCount: files.length,
-        projectId: projectId || null
-      },
+      `Created dataset: ${dataset.name} with ${totalItems} items from ${subtopicId ? 'subtopic pool' : 'upload'}`,
+      { datasetName: dataset.name, totalItems, subtopicId, source: subtopicId ? 'subtopic_pool' : 'upload' },
       req
     );
 
@@ -424,6 +410,7 @@ router.post('/', auth, authorize('manager', 'admin'), upload.array('files', 100)
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
+
 
 // Update dataset (Manager or Admin)
 router.put('/:id', auth, authorize('manager', 'admin'), async (req, res) => {

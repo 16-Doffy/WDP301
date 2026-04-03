@@ -11,7 +11,6 @@ import ManagerProjects from './pages/Manager/Projects';
 import ManagerProjectDetail from './pages/Manager/ProjectDetail';
 import AnnotatorAuditDetail from './pages/Manager/AnnotatorAuditDetail';
 import CreateProject from './pages/Manager/CreateProject';
-import TeamManagement from './pages/Manager/TeamManagement';
 import Datasets from './pages/Manager/Datasets';
 import DatasetItemDetail from './pages/Manager/DatasetItemDetail';
 import TopicManagement from './pages/Manager/TopicManagement';
@@ -89,7 +88,6 @@ function App() {
               <Route path="manager/projects/create" element={<CreateProject />} />
               <Route path="manager/projects/:id" element={<ManagerProjectDetail />} />
               <Route path="manager/projects/:projectId/annotator/:annotatorId" element={<AnnotatorAuditDetail />} />
-              <Route path="manager/team" element={<TeamManagement />} />
               <Route path="manager/datasets" element={<Datasets />} />
               <Route path="manager/datasets/:datasetId/items/*" element={<DatasetItemDetail />} />
               <Route path="manager/topics" element={<TopicManagement />} />

@@ -9,7 +9,7 @@ import {
   TableCell, TableContainer, TableHead, TableRow, Paper, Tooltip,
 } from '@mui/material';
 import {
-  Add as AddIcon, Delete as DeleteIcon, CloudUpload as CloudUploadIcon,
+  Add as AddIcon, Delete as DeleteIcon,
   Search as SearchIcon, Download as DownloadIcon, CheckCircle as CheckCircleIcon,
   Dataset as DatasetIcon, Visibility as VisibilityIcon, Image as ImageIcon,
   AudioFile as AudioIcon, Description as TextIcon, Summarize as StatsIcon,
@@ -90,12 +90,14 @@ const Datasets = () => {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [selectedDs, setSelectedDs] = useState(null);
   const [form, setForm] = useState({ name: '', description: '', type: 'image', subtopicId: '' });
-  const [files, setFiles] = useState([]);
   const [topics, setTopics] = useState([]);
   const [subtopics, setSubtopics] = useState([]);
   const [selectedTopicId, setSelectedTopicId] = useState('');
   const [selectedSubtopicId, setSelectedSubtopicId] = useState('');
-  const [uploading, setUploading] = useState(false);
+  const [subtopicAssets, setSubtopicAssets] = useState(null);
+  const [subtopicLabels, setSubtopicLabels] = useState([]);
+  const [imageCount, setImageCount] = useState(100);
+  const [creating, setCreating] = useState(false);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState('all');
@@ -173,11 +175,44 @@ const Datasets = () => {
     if (selectedTopicId) {
       setSelectedSubtopicId('');
       setForm(f => ({ ...f, subtopicId: '' }));
+      setSubtopicAssets(null);
+      setSubtopicLabels([]);
       loadSubtopicsForTopic(selectedTopicId);
     } else {
       setSubtopics([]);
+      setSubtopicAssets(null);
+      setSubtopicLabels([]);
     }
   }, [selectedTopicId]);
+
+  const loadSubtopicPool = async (subtopicId) => {
+    try {
+      const [assetRes, labelRes] = await Promise.all([
+        axios.get(API_URL + '/api/subtopics/' + subtopicId + '/assets', { headers: { Authorization: 'Bearer ' + getAuthToken() } }),
+        axios.get(API_URL + '/api/labelsets?subtopicId=' + subtopicId, { headers: { Authorization: 'Bearer ' + getAuthToken() } }),
+      ]);
+      const assets = Array.isArray(assetRes.data) ? assetRes.data : [];
+      const labels = Array.isArray(labelRes.data) ? labelRes.data : [];
+      const imgs = assets.filter(a => a.type === 'image').length;
+      const txts = assets.filter(a => a.type === 'text').length;
+      const auds = assets.filter(a => a.type === 'audio').length;
+      const vids = assets.filter(a => a.type === 'video').length;
+      setSubtopicAssets({ total: assets.length, images: imgs, texts: txts, videos: vids, audios: auds });
+      setSubtopicLabels(labels);
+    } catch {
+      setSubtopicAssets(null);
+      setSubtopicLabels([]);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedSubtopicId) {
+      loadSubtopicPool(selectedSubtopicId);
+    } else {
+      setSubtopicAssets(null);
+      setSubtopicLabels([]);
+    }
+  }, [selectedSubtopicId]);
 
   const filtered = useMemo(() => {
     let r = [...datasets];
@@ -214,27 +249,27 @@ const Datasets = () => {
     };
   }, [statusByDs]);
 
-  const handleFileUpload = (e) => { const f = Array.from(e.target.files || []); if (f.length) { setFiles(p => [...p, ...f]); setError(null); } };
-  const handleRemoveFile = (i) => setFiles(files.filter((_, idx) => idx !== i));
-
   const handleCreate = async () => {
     if (!form.name.trim()) return alert('Nhap ten dataset');
-    if (!files.length) return alert('Upload it nhat 1 file');
-    setUploading(true);
+    if (!selectedSubtopicId) return alert('Chon Topic va Subtopic');
+    setCreating(true);
     setError(null);
     try {
-      const fd = new FormData();
-      fd.append('name', form.name.trim());
-      fd.append('type', form.type);
-      if (selectedSubtopicId) fd.append('subtopicId', selectedSubtopicId);
-      if (form.description) fd.append('description', form.description.trim());
-      files.forEach(f => fd.append('files', f));
-      const cr = await axios.post(API_URL + '/api/datasets', fd, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
+      const payload = {
+        name: form.name.trim(),
+        type: form.type,
+        subtopicId: selectedSubtopicId,
+        imageCount: imageCount,
+        description: form.description.trim(),
+      };
+      const cr = await axios.post(API_URL + '/api/datasets', payload, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
       const created = cr.data;
       setForm({ name: '', description: '', type: 'image', subtopicId: '' });
-      setFiles([]);
       setSelectedTopicId('');
       setSelectedSubtopicId('');
+      setImageCount(100);
+      setSubtopicAssets(null);
+      setSubtopicLabels([]);
       setCreateOpen(false);
       await fetchDatasets();
       if (created?._id) {
@@ -245,7 +280,7 @@ const Datasets = () => {
     } catch (err) {
       setError('Loi tao dataset: ' + (err.response?.data?.message || err.message));
     } finally {
-      setUploading(false);
+      setCreating(false);
     }
   };
 
@@ -693,53 +728,109 @@ const Datasets = () => {
       <Dialog open={createOpen} onClose={() => setCreateOpen(false)} maxWidth="md" fullWidth PaperProps={{ sx: modalSx }}>
         <DialogTitle sx={{ fontWeight: 700 }}>Tao Dataset Moi</DialogTitle>
         <DialogContent>
-          <TextField fullWidth label="Ten Dataset *" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} sx={inputSx} margin="normal" />
-          <FormControl fullWidth sx={inputSx} margin="normal">
+          <TextField fullWidth label="Ten Dataset *" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} sx={{ mt: 2, mb: 2, ...inputSx }} />
+          <FormControl fullWidth sx={{ mb: 2, ...inputSx }}>
             <InputLabel>Loai Dataset *</InputLabel>
             <Select value={form.type} label="Loai Dataset *" onChange={e => setForm({ ...form, type: e.target.value })}>
               <MenuItem value="image">Image</MenuItem><MenuItem value="text">Text</MenuItem><MenuItem value="audio">Audio</MenuItem>
             </Select>
           </FormControl>
-          <TextField fullWidth multiline rows={3} label="Mo ta" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} sx={inputSx} margin="normal" />
-          <FormControl fullWidth sx={inputSx} margin="normal">
-            <InputLabel>Topic</InputLabel>
-            <Select value={selectedTopicId} label="Topic" onChange={e => setSelectedTopicId(e.target.value)}>
-              <MenuItem value=""><em>Khong chon</em></MenuItem>
-              {topics.map(t => <MenuItem key={t._id} value={t._id}>{t.name}</MenuItem>)}
-            </Select>
-          </FormControl>
-          {selectedTopicId && (
-            <FormControl fullWidth sx={inputSx} margin="normal">
-              <InputLabel>Subtopic</InputLabel>
-              <Select value={selectedSubtopicId} label="Subtopic" onChange={e => setSelectedSubtopicId(e.target.value)}>
+          <TextField fullWidth multiline rows={2} label="Mo ta" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} sx={{ mb: 2, ...inputSx }} />
+
+          {/* Context: Topic + Subtopic */}
+          <Box sx={{ p: 2, border: '1px solid #3b82f6', borderRadius: 2, mb: 2, bgcolor: 'rgba(59,130,246,0.05)' }}>
+            <Typography variant="subtitle2" fontWeight={700} sx={{ color: '#60a5fa', mb: 1.5 }}>Dataset Context (Taxonomy Structure)</Typography>
+            <FormControl fullWidth sx={{ mb: 1.5, ...inputSx }}>
+              <InputLabel>Topic *</InputLabel>
+              <Select value={selectedTopicId} label="Topic *" onChange={e => setSelectedTopicId(e.target.value)}>
                 <MenuItem value=""><em>Khong chon</em></MenuItem>
-                {subtopics.map(s => <MenuItem key={s._id} value={s._id}>{s.name}</MenuItem>)}
+                {topics.map(t => <MenuItem key={t._id} value={t._id}>{t.name}</MenuItem>)}
               </Select>
             </FormControl>
-          )}
-          <Box sx={{ border: '2px dashed #475569', borderRadius: 2, p: 4, textAlign: 'center', mt: 2, cursor: 'pointer', bgcolor: '#0f172a', '&:hover': { borderColor: '#3b82f6', bgcolor: 'rgba(30,41,59,0.7)' } }} onClick={() => document.getElementById('ds-upload').click()}>
-            <CloudUploadIcon sx={{ fontSize: 44, color: '#60a5fa', mb: 1 }} />
-            <Typography variant="h6" fontWeight={700} gutterBottom>Upload files / zip</Typography>
-            <Typography variant="body2" sx={{ color: '#94a3b8' }}>File ZIP se tu giai nen</Typography>
-            <input id="ds-upload" type="file" multiple style={{ display: 'none' }} onChange={handleFileUpload} accept="image/*,.zip,.rar" />
+            {selectedTopicId && (
+              <FormControl fullWidth sx={{ ...inputSx }}>
+                <InputLabel>Subtopic *</InputLabel>
+                <Select value={selectedSubtopicId} label="Subtopic *" onChange={e => setSelectedSubtopicId(e.target.value)}>
+                  <MenuItem value=""><em>Khong chon</em></MenuItem>
+                  {subtopics.map(s => <MenuItem key={s._id} value={s._id}>{s.name}</MenuItem>)}
+                </Select>
+              </FormControl>
+            )}
+            {selectedSubtopicId && (
+              <Typography variant="caption" sx={{ color: '#475569', mt: 0.5, display: 'block', fontStyle: 'italic' }}>
+                Subtopic context is linked. Label sets will be auto-inherited from this subtopic.
+              </Typography>
+            )}
           </Box>
-          {files.length > 0 && (
-            <Box sx={{ mt: 3 }}>
-              <Typography variant="subtitle2" fontWeight={700} gutterBottom>Files da upload ({files.length})</Typography>
-              <Box sx={{ maxHeight: 200, overflowY: 'auto', border: '1px solid #334155', borderRadius: 2, p: 1, bgcolor: '#0f172a' }}>
-                {files.map((f, i) => (
-                  <Box key={i} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', p: 1, borderBottom: i < files.length - 1 ? '1px solid #334155' : 'none' }}>
-                    <Typography variant="body2" noWrap sx={{ maxWidth: 280, color: '#cbd5e1' }}>{f.name}</Typography>
-                    <IconButton size="small" sx={{ color: '#f87171' }} onClick={() => handleRemoveFile(i)}><DeleteIcon fontSize="small" /></IconButton>
-                  </Box>
-                ))}
+
+          {/* Data Source: Show pool info */}
+          {subtopicAssets ? (
+            <Box sx={{ p: 2, border: '1px solid #334155', borderRadius: 2, mb: 2, bgcolor: '#0f172a' }}>
+              <Typography variant="subtitle2" fontWeight={700} sx={{ color: '#94a3b8', mb: 1.5 }}>Data Source (Trich xuat tu kho)</Typography>
+              <Box sx={{ display: 'flex', gap: 3, mb: 2, flexWrap: 'wrap' }}>
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography variant="h5" fontWeight={800} sx={{ color: '#60a5fa' }}>{subtopicAssets.total}</Typography>
+                  <Typography variant="caption" sx={{ color: '#64748b' }}>Tong assets</Typography>
+                </Box>
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography variant="h5" fontWeight={800} sx={{ color: '#f59e0b' }}>{subtopicAssets.images}</Typography>
+                  <Typography variant="caption" sx={{ color: '#64748b' }}>Images</Typography>
+                </Box>
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography variant="h5" fontWeight={800} sx={{ color: '#34d399' }}>{subtopicAssets.texts}</Typography>
+                  <Typography variant="caption" sx={{ color: '#64748b' }}>Texts</Typography>
+                </Box>
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography variant="h5" fontWeight={800} sx={{ color: '#f472b6' }}>{subtopicAssets.audios}</Typography>
+                  <Typography variant="caption" sx={{ color: '#64748b' }}>Audios</Typography>
+                </Box>
               </Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                <Typography variant="body2" sx={{ color: '#94a3b8', fontWeight: 600, minWidth: 140 }}>Lay so luong:</Typography>
+                <TextField
+                  size="small"
+                  type="number"
+                  value={imageCount}
+                  onChange={e => setImageCount(Math.max(1, parseInt(e.target.value) || 1))}
+                  sx={{ width: 100, ...inputSx, '& .MuiOutlinedInput-root': { ...inputSx['& .MuiOutlinedInput-root'], height: 36 } }}
+                  inputProps={{ min: 1, max: subtopicAssets.images }}
+                />
+                <Typography variant="caption" sx={{ color: '#64748b' }}>
+                  trong tong so <strong style={{ color: '#60a5fa' }}>{subtopicAssets.images}</strong> images
+                </Typography>
+              </Box>
+              {subtopicLabels.length > 0 && (
+                <Box sx={{ mt: 2 }}>
+                  <Typography variant="caption" sx={{ color: '#64748b', mb: 0.5, display: 'block' }}>Labelsets duoc ke thua ({subtopicLabels.length}):</Typography>
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                    {subtopicLabels.map(ls => (
+                      <Chip
+                        key={ls._id}
+                        label={ls.name}
+                        size="small"
+                        sx={{ bgcolor: 'rgba(59,130,246,0.15)', color: '#60a5fa', fontWeight: 600, fontSize: '0.7rem' }}
+                      />
+                    ))}
+                  </Box>
+                </Box>
+              )}
+            </Box>
+          ) : selectedSubtopicId ? (
+            <Box sx={{ p: 2, border: '1px solid #334155', borderRadius: 2, mb: 2, bgcolor: '#0f172a', textAlign: 'center' }}>
+              <CircularProgress size={20} />
+              <Typography variant="caption" sx={{ color: '#64748b', ml: 1 }}>Dang tai thong tin kho...</Typography>
+            </Box>
+          ) : (
+            <Box sx={{ p: 2, border: '1px dashed #334155', borderRadius: 2, mb: 2, textAlign: 'center', bgcolor: '#0f172a' }}>
+              <Typography variant="body2" sx={{ color: '#64748b' }}>Chon Topic va Subtopic de xem kho du lieu</Typography>
             </Box>
           )}
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 3 }}>
           <Button onClick={() => setCreateOpen(false)} sx={btnSecondary}>Huy</Button>
-          <Button onClick={handleCreate} variant="contained" disabled={uploading || !form.name.trim() || files.length === 0} sx={btnPrimary}>{uploading ? <CircularProgress size={20} color="inherit" /> : 'Tao Dataset'}</Button>
+          <Button onClick={handleCreate} variant="contained" disabled={creating || !form.name.trim() || !selectedSubtopicId} sx={btnPrimary}>
+            {creating ? <CircularProgress size={20} color="inherit" /> : 'Tao Dataset'}
+          </Button>
         </DialogActions>
       </Dialog>
 

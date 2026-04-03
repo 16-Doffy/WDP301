@@ -43,6 +43,19 @@ const datasetSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  imageCount: {
+    type: Number,
+    default: 0
+  },
+  labelsets: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'LabelSet'
+  }],
+  status: {
+    type: String,
+    enum: ['draft', 'labeling', 'review', 'completed'],
+    default: 'draft'
+  },
   createdAt: {
     type: Date,
     default: Date.now
