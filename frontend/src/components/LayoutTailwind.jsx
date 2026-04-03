@@ -54,6 +54,7 @@ const LayoutTailwind = () => {
     if (user.role === 'admin') {
       baseItems.push({ text: 'Users', icon: '👤', path: '/admin/users' });
       baseItems.push({ text: 'Activity Logs', icon: '📜', path: '/admin/activity-logs' });
+      baseItems.push({ text: 'Datasets', icon: '🗂️', path: '/admin/datasets' });
     }
 
     return baseItems;

@@ -11,6 +11,11 @@ const taskSchema = new mongoose.Schema({
     ref: 'Dataset',
     required: true
   },
+  subtopicId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Subtopic',
+    required: false
+  },
   annotatorId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',

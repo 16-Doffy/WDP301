@@ -113,6 +113,113 @@ const normalizePath = (filePath) => {
   return normalized;
 };
 
+// Get projects overview for annotator (grouped by project + subtopic)
+router.get('/annotator-projects', auth, async (req, res) => {
+  try {
+    if (req.user.role !== 'annotator') {
+      return res.status(403).json({ message: 'Only annotators can access this endpoint' });
+    }
+
+    // Get all tasks for this annotator with full population
+    const tasks = await Task.find({ annotatorId: req.user._id })
+      .populate('projectId', 'name guidelines questions deadline status')
+      .populate('datasetId', 'name subtopicId')
+      .populate('subtopicId', 'name description guideline taskType')
+      .sort({ createdAt: -1 });
+
+    // Group by projectId
+    const projectMap = new Map();
+
+    tasks.forEach((task) => {
+      const project = task.projectId;
+      if (!project) return;
+
+      const projectKey = project._id.toString();
+
+      if (!projectMap.has(projectKey)) {
+        projectMap.set(projectKey, {
+          projectId: project._id,
+          projectName: project.name,
+          guidelines: project.guidelines,
+          deadline: project.deadline,
+          projectStatus: project.status,
+          subtopics: new Map(),
+        });
+      }
+
+      const projectEntry = projectMap.get(projectKey);
+
+      // Subtopic key
+      const subtopicKey = task.subtopicId ? task.subtopicId._id.toString() : '__default__';
+      const subtopicName = task.subtopicId?.name || 'Default';
+      const subtopicDesc = task.subtopicId?.description || '';
+      const subtopicGuideline = task.subtopicId?.guideline || '';
+
+      if (!projectEntry.subtopics.has(subtopicKey)) {
+        projectEntry.subtopics.set(subtopicKey, {
+          subtopicId: task.subtopicId?._id || null,
+          subtopicName,
+          subtopicDescription: subtopicDesc,
+          subtopicGuideline,
+          taskType: task.subtopicId?.taskType || project.guidelines || 'bbox',
+          datasetId: task.datasetId?._id || task.datasetId,
+          datasetName: task.datasetId?.name || '',
+          tasks: [],
+          total: 0,
+          completed: 0,
+          submitted: 0,
+          approved: 0,
+          rejected: 0,
+          inProgress: 0,
+        });
+      }
+
+      const subtopic = projectEntry.subtopics.get(subtopicKey);
+      subtopic.tasks.push({
+        taskId: task._id,
+        status: task.status,
+        dataItem: task.dataItem,
+        labels: task.labels,
+        createdAt: task.createdAt,
+        updatedAt: task.updatedAt,
+        submittedAt: task.submittedAt,
+      });
+      subtopic.total++;
+      switch (task.status) {
+        case 'approved': subtopic.approved++; break;
+        case 'submitted': subtopic.submitted++; subtopic.approved++; break;
+        case 'completed': subtopic.completed++; break;
+        case 'rejected': subtopic.rejected++; break;
+        case 'in_progress': subtopic.inProgress++; break;
+      }
+    });
+
+    // Build response
+    const result = Array.from(projectMap.values()).map((project) => ({
+      projectId: project.projectId,
+      projectName: project.projectName,
+      guidelines: project.guidelines,
+      deadline: project.deadline,
+      projectStatus: project.projectStatus,
+      subtopics: Array.from(project.subtopics.values()).map((st) => ({
+        ...st,
+        progress: st.total > 0 ? Math.round(((st.completed + st.submitted + st.approved) / st.total) * 100) : 0,
+        doneCount: st.completed + st.submitted + st.approved,
+      })),
+      totalTasks: Array.from(project.subtopics.values()).reduce((sum, st) => sum + st.total, 0),
+      totalDone: Array.from(project.subtopics.values()).reduce((sum, st) => sum + st.doneCount, 0),
+    })).map((p) => ({
+      ...p,
+      overallProgress: p.totalTasks > 0 ? Math.round((p.totalDone / p.totalTasks) * 100) : 0,
+    }));
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error in /annotator-projects:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
 // Get tasks for current user
 router.get('/my-tasks', auth, async (req, res) => {
   try {
@@ -121,6 +228,17 @@ router.get('/my-tasks', auth, async (req, res) => {
     // Optional filtering by datasetId (used by Annotator batch navigation)
     if (req.query.datasetId) {
       query.datasetId = req.query.datasetId;
+    }
+
+    // Optional filtering by subtopicId
+    if (req.query.subtopicId) {
+      if (req.query.subtopicId === '__all__') {
+        // Show all subtopics (no filter)
+      } else if (req.query.subtopicId === '__none__') {
+        query.subtopicId = { $eq: null };
+      } else {
+        query.subtopicId = req.query.subtopicId;
+      }
     }
     
     if (req.user.role === 'annotator') {
@@ -149,6 +267,7 @@ router.get('/my-tasks', auth, async (req, res) => {
     const tasks = await Task.find(query)
       .populate('projectId', 'name guidelines questions deadline')
       .populate('datasetId', 'name subtopicId')
+      .populate('subtopicId', 'name description guideline taskType')
       .populate('annotatorId', 'username fullName')
       .populate('reviewerId', 'username fullName')
       .populate('reviewers.reviewerId', 'username fullName')
@@ -181,7 +300,8 @@ router.get('/:id', auth, async (req, res) => {
   try {
     const task = await Task.findById(req.params.id)
       .populate('projectId', 'name guidelines questions managerId deadline')
-      .populate('datasetId', 'name')
+      .populate('datasetId', 'name subtopicId')
+      .populate('subtopicId', 'name description guideline taskType')
       .populate('annotatorId', 'username fullName')
       .populate('reviewerId', 'username fullName')
       .populate('reviewers.reviewerId', 'username fullName');
@@ -474,6 +594,7 @@ router.post('/assign', auth, authorize('manager', 'admin'), async (req, res) => 
         const task = new Task({
           projectId,
           datasetId,
+          subtopicId: dataset.subtopicId || undefined,
           annotatorId,
           dataItem: {
             filename: file.filename,
@@ -704,12 +825,16 @@ router.post('/:id/complete', auth, authorize('annotator'), async (req, res) => {
 // Submit batch (all tasks in a dataset) for review (Annotator)
 router.post('/submit-batch', auth, authorize('annotator'), async (req, res) => {
   try {
-    const { datasetId } = req.body;
-    if (!datasetId) {
-      return res.status(400).json({ message: 'datasetId is required' });
+    const { datasetId, subtopicId } = req.body;
+    if (!datasetId && !subtopicId) {
+      return res.status(400).json({ message: 'datasetId or subtopicId is required' });
     }
 
-    const tasks = await Task.find({ datasetId, annotatorId: req.user._id })
+    const query = { annotatorId: req.user._id };
+    if (subtopicId) query.subtopicId = subtopicId;
+    else if (datasetId) query.datasetId = datasetId;
+
+    const tasks = await Task.find(query)
       .populate('projectId', 'questions deadline');
 
     if (!tasks || tasks.length === 0) {
