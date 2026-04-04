@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
@@ -89,7 +89,7 @@ const TaskWrapper = () => {
       const datasetId = fetchedTask.datasetId?._id || fetchedTask.datasetId;
       const tasksRes = await axios.get(API_URL + '/api/tasks/my-tasks', { params: subtopicId ? { subtopicId } : { datasetId } });
       setTasks(tasksRes.data || []);
-    } catch (err) { console.error(err); setMessage('Loi tai task'); } finally { setLoading(false); }
+    } catch (err) { console.error("fetchTask error:", err); if (err.response?.status === 403) { setMessage("Ban khong co quyen xem task nay."); } else if (err.response?.status === 404) { setMessage("Task khong ton tai."); } else { setMessage("Loi tai task: " + (err.response?.data?.message || err.message)); } } finally { setLoading(false); }
   };
 
   const buildLabelsPayload = () => {
@@ -110,7 +110,7 @@ const TaskWrapper = () => {
     const hasAnnotation = annotations.length > 0 || textSpans.length > 0 || audioSegments.length > 0 || note.trim();
     if (!hasAnnotation) { alert('Vui long tao it nhat 1 annotation'); return; }
     setSaving(true);
-    try { await handleSave(); await axios.post(API_URL + '/api/tasks/' + id + '/complete'); const currentIdx = tasks.findIndex((t) => t._id === id); const nextTask = tasks.find((t, i) => i > currentIdx && t.status !== 'approved' && t.status !== 'submitted'); if (nextTask) navigate('/annotator/tasks/' + nextTask._id); else setShowSubmitBatchDialog(true); } catch (err) { alert('Loi: ' + (err.response?.data?.message || err.message)); } finally { setSaving(false); }
+    try { await handleSave(); await axios.post(API_URL + '/api/tasks/' + id + '/complete'); const currentIdx = tasks.findIndex((t) => t._id === id); const nextTask = tasks.find((t, i) => i > currentIdx && t.status !== 'approved' && t.status !== 'submitted'); if (nextTask) navigate('/annotator/workspace/' + nextTask._id); else setShowSubmitBatchDialog(true); } catch (err) { alert('Loi: ' + (err.response?.data?.message || err.message)); } finally { setSaving(false); }
   };
 
   const handleSubmitBatch = async () => {
@@ -131,7 +131,7 @@ const TaskWrapper = () => {
   const availableLabels = task?.availableLabels || [];
 
   if (loading) return <div className="flex min-h-screen items-center justify-center bg-slate-900"><CircularProgress /></div>;
-  if (!task) return <div className="flex min-h-screen items-center justify-center bg-slate-900 text-gray-400"><p>Khong tim thay task</p></div>;
+  if (!task) return (<div className="flex min-h-screen items-center justify-center bg-slate-900"><div className="text-center"><div className="text-4xl mb-4">⚠️</div><p className="text-red-400 text-lg mb-4">{message || "Khong tim thay task"}</p><button onClick={() => navigate("/annotator/tasks")} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Quay lai Dashboard</button></div></div>);
 
   return (
     <div className="flex flex-col h-screen bg-slate-900 text-gray-200">
@@ -144,8 +144,8 @@ const TaskWrapper = () => {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {prevTask && <Button size="small" variant="outlined" onClick={() => navigate('/annotator/tasks/' + prevTask._id)}>Prev</Button>}
-          {nextTask && <Button size="small" variant="outlined" onClick={() => navigate('/annotator/tasks/' + nextTask._id)}>Next</Button>}
+          {prevTask && <Button size="small" variant="outlined" onClick={() => navigate('/annotator/workspace/' + prevTask._id)}>Prev</Button>}
+          {nextTask && <Button size="small" variant="outlined" onClick={() => navigate('/annotator/workspace/' + nextTask._id)}>Next</Button>}
           {message && <span className="text-sm text-emerald-400">{message}</span>}
           <Button size="small" variant="outlined" onClick={handleSave} disabled={saving || isReadOnly}>Luu</Button>
           {!isReadOnly && <Button size="small" variant="contained" color="primary" onClick={handleComplete} disabled={saving}>Hoan thanh</Button>}
