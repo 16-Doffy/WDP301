@@ -47,13 +47,24 @@ function App() {
             <Route path="/register" element={<Register />} />
 
             <Route element={<PrivateRoute><LayoutTailwind /></PrivateRoute>}>
-              <Route path="/dashboard" element={<ManagerDashboard />} />
+              <Route path="/dashboard" element={<Navigate to={(() => {
+                const token = sessionStorage.getItem('token');
+                if (!token) return '/login';
+                try {
+                  const payload = JSON.parse(atob(token.split('.')[1]));
+                  if (payload?.role === 'annotator') return '/annotator';
+                  if (payload?.role === 'reviewer') return '/reviewer';
+                  if (payload?.role === 'admin') return '/admin';
+                } catch {}
+                return '/dashboard';
+              })()} replace />} />
               <Route path="/manager/projects" element={<ManagerProjects />} />
               <Route path="/manager/projects/create" element={<CreateProject />} />
               <Route path="/manager/projects/:id" element={<ManagerProjectDetail />} />
               <Route path="/manager/annotators/:projectId/:annotatorId" element={<AnnotatorAuditDetail />} />
               <Route path="/manager/datasets" element={<Datasets />} />
               <Route path="/manager/datasets/:id" element={<DatasetItemDetail />} />
+              <Route path="/manager/datasets/:id/items/*" element={<DatasetItemDetail />} />
               <Route path="/manager/topics" element={<TopicManagement />} />
               <Route path="/admin/users" element={<AdminUsers />} />
               <Route path="/admin/activity-logs" element={<AdminActivityLogs />} />
@@ -65,7 +76,18 @@ function App() {
               <Route path="/reviewer" element={<ReviewerDashboard />} />
               <Route path="/reviewer/tasks" element={<ReviewerDashboard />} />
               <Route path="/reviewer/tasks/:id" element={<ReviewerTask />} />
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/" element={<Navigate to={(() => {
+                const token = sessionStorage.getItem('token');
+                if (!token) return '/login';
+                try {
+                  const payload = JSON.parse(atob(token.split('.')[1]));
+                  if (payload?.role === 'annotator') return '/annotator';
+                  if (payload?.role === 'reviewer') return '/reviewer';
+                  if (payload?.role === 'admin') return '/admin';
+                } catch {}
+                return '/dashboard';
+              })()} replace />} />
+              <Route path="/dashboard" element={<ManagerDashboard />} />
             </Route>
 
             <Route path="*" element={<Navigate to="/dashboard" replace />} />

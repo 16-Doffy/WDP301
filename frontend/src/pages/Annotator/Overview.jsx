@@ -45,10 +45,10 @@ const AnnotatorOverview = () => {
   }, []);
 
   if (loading) return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-900">
-      <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-700 border-t-blue-500" />
-    </div>
-  );
+      <div className="flex min-h-screen items-center justify-center bg-slate-900">
+        <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-700 border-t-blue-500" />
+      </div>
+    );
 
   return (
     <div className="min-h-screen bg-slate-900 p-6 text-gray-200">

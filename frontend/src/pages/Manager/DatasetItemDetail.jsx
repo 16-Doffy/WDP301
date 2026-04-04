@@ -103,6 +103,20 @@ const DatasetItemDetail = () => {
 
   const [resolvedItem, setResolvedItem] = useState(state.item || null);
   const [resolvedDatasetName, setResolvedDatasetName] = useState(state.datasetName || 'Dataset');
+  const [allDatasetItems, setAllDatasetItems] = useState([]);
+  const [itemSearch, setItemSearch] = useState('');
+  const [itemStatusFilter, setItemStatusFilter] = useState('all');
+  const datasetItems = useMemo(() => {
+    let items = allDatasetItems;
+    if (itemSearch) {
+      const q = itemSearch.toLowerCase();
+      items = items.filter(it => (it.originalName || it.filename || it.id || '').toLowerCase().includes(q));
+    }
+    if (itemStatusFilter && itemStatusFilter !== 'all') {
+      items = items.filter(it => it.status === itemStatusFilter);
+    }
+    return items;
+  }, [allDatasetItems, itemSearch, itemStatusFilter]);
   const [resolvedLabelSet, setResolvedLabelSet] = useState(
     normalizeLabelSet(
       pickBestLabelSet(
@@ -317,6 +331,7 @@ const DatasetItemDetail = () => {
           headers: { Authorization: 'Bearer ' + token },
         });
         let items = resp.data?.items || [];
+        setAllDatasetItems(items);
         const decodedId = itemId ? decodeURIComponent(itemId) : '';
         let found = items.find((it) => it.id?.toString?.() === decodedId || it.path === decodedId || it.imageUrl === decodedId);
         
@@ -377,22 +392,68 @@ const DatasetItemDetail = () => {
         </Typography>
       </Stack>
 
-      {!item ? (
+      {!item && !itemId ? (
         <Box sx={{ p: 4, borderRadius: 3, bgcolor: '#1e293b', border: '1px solid #334155' }}>
           {loading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
               <CircularProgress />
             </Box>
-          ) : (
+          ) : !datasetItems || datasetItems.length === 0 ? (
             <>
               <Typography sx={{ color: '#94a3b8' }}>
-                Không có dữ liệu item để hiển thị. Vui lòng quay lại và chọn item từ tab Items.
+                Dataset nay chua co item nao.
               </Typography>
               <Typography sx={{ color: '#64748b', mt: 1 }}>
                 Dataset ID: {datasetId}
               </Typography>
             </>
+          ) : (
+            <Box>
+              <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+                <input
+                  type="text"
+                  placeholder="Search items..."
+                  value={itemSearch}
+                  onChange={e => setItemSearch(e.target.value)}
+                  style={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 6, padding: '6px 12px', color: '#e2e8f0', width: 300, fontSize: 14 }}
+                />
+                <select
+                  value={itemStatusFilter}
+                  onChange={e => setItemStatusFilter(e.target.value)}
+                  style={{ background: '#0f172a', border: '1px solid #334155', borderRadius: 6, padding: '6px 12px', color: '#e2e8f0', fontSize: 14 }}
+                >
+                  <option value="all">All</option>
+                  <option value="pending">Pending</option>
+                  <option value="in_review">In Review</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                </select>
+              </Box>
+              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 1.5 }}>
+                {datasetItems.map(it => (
+                  <Box
+                    key={it.id}
+                    onClick={() => navigate(`/manager/datasets/${datasetId}/items/${encodeURIComponent(it.id)}`, { state: { item: it, datasetName, labelSet: normalizedLabelSet } })}
+                    sx={{ p: 1.5, borderRadius: 2, bgcolor: '#0f172a', border: '1px solid #334155', cursor: 'pointer', '&:hover': { borderColor: '#3b82f6' } }}
+                  >
+                    <Typography variant="body2" sx={{ color: '#e2e8f0', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', mb: 0.5 }}>
+                      {it.originalName || it.filename || it.id}
+                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                      <Typography variant="caption" sx={{ color: '#64748b' }}>{it.status || 'pending'}</Typography>
+                      {it.displayLabel && it.displayLabel !== 'Chua co nhan' && (
+                        <Typography variant="caption" sx={{ color: '#60a5fa' }}>{it.displayLabel}</Typography>
+                      )}
+                    </Box>
+                  </Box>
+                ))}
+              </Box>
+            </Box>
           )}
+        </Box>
+      ) : !item ? (
+        <Box sx={{ p: 4, borderRadius: 3, bgcolor: '#1e293b', border: '1px solid #334155' }}>
+          <Typography sx={{ color: '#94a3b8' }}>Item not found.</Typography>
         </Box>
       ) : (
         <Box sx={{ display: 'grid', gap: 3, gridTemplateColumns: { xs: '1fr', lg: '2fr 1fr' } }}>

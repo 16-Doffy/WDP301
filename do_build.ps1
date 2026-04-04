@@ -1,0 +1,1 @@
+npm.cmd run build 2>&1 | Select-Object -Last 20

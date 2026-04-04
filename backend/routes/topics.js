@@ -33,7 +33,20 @@ router.get('/:id', auth, async (req, res) => {
 
 router.post('/', auth, authorize('manager', 'admin'), async (req, res) => {
   try {
-    const topic = new Topic({ ...req.body, managerId: req.user._id });
+    const { name } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Tên topic không được để trống' });
+    }
+    // Check for duplicate name under the same manager
+    const existing = await Topic.findOne({
+      name: name.trim(),
+      managerId: req.user._id,
+      status: 'active'
+    });
+    if (existing) {
+      return res.status(400).json({ error: 'Tên topic đã tồn tại. Vui lòng chọn tên khác.' });
+    }
+    const topic = new Topic({ ...req.body, name: name.trim(), managerId: req.user._id });
     await topic.save();
     res.status(201).json(topic);
   } catch (err) { res.status(400).json({ error: err.message }); }
@@ -41,7 +54,19 @@ router.post('/', auth, authorize('manager', 'admin'), async (req, res) => {
 
 router.put('/:id', auth, authorize('manager', 'admin'), async (req, res) => {
   try {
-    const topic = await Topic.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+    const { name } = req.body;
+    if (name && name.trim()) {
+      const existing = await Topic.findOne({
+        name: name.trim(),
+        managerId: req.user._id,
+        status: 'active',
+        _id: { $ne: req.params.id }
+      });
+      if (existing) {
+        return res.status(400).json({ error: 'Tên topic đã tồn tại. Vui lòng chọn tên khác.' });
+      }
+    }
+    const topic = await Topic.findByIdAndUpdate(req.params.id, { ...req.body, name: name ? name.trim() : undefined }, { new: true, runValidators: true });
     if (!topic) return res.status(404).json({ error: 'Topic not found' });
     res.json(topic);
   } catch (err) { res.status(400).json({ error: err.message }); }

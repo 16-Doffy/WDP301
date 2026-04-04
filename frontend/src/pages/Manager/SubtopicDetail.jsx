@@ -335,7 +335,7 @@ const SubtopicDetail = ({ selectedSubtopic, onSubtopicUpdate, topics, autoHighli
               {filteredDatasets.map(ds => (
                 <Grid item xs={12} key={ds._id}>
                   <Card
-                    onClick={() => navigate('/manager/datasets/' + ds._id + '/items')}
+                    onClick={() => navigate('/manager/datasets/' + ds._id)}
                     sx={{ ...cardSx, p: 1.5, cursor: 'pointer', border: highlightedDsId === ds._id ? '2px solid #22c55e' : cardSx.border, boxShadow: highlightedDsId === ds._id ? '0 0 20px rgba(34,197,94,0.4)' : cardSx.boxShadow }}
                   >
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>

@@ -1,112 +1,190 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { API_URL } from '../../config/api';
+
+export function buildFileUrl(dataItem) {
+  if (!dataItem) return '';
+  const baseUrl = API_URL.replace(/\/+$/, '');
+  const rawPath = dataItem.path || '';
+  const cleanPath = rawPath.replace(/^\/+/, '');
+  if (cleanPath) {
+    return baseUrl + '/' + cleanPath;
+  }
+  if (dataItem.filename) {
+    return baseUrl + '/uploads/datasets/' + dataItem.filename;
+  }
+  return '';
+}
 
 const ReviewMediaView = ({ task, annotations = [] }) => {
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
+  const [imgError, setImgError] = useState(false);
+  const [imgLoaded, setImgLoaded] = useState(false);
   const containerRef = useRef(null);
   const canvasRef = useRef(null);
+  const imgRef = useRef(null);
 
-  const getTaskKind = () => {
+  const getTaskKind = useCallback(() => {
     const mt = (task?.dataItem?.mimeType || '').toLowerCase();
     const fileName = (task?.dataItem?.filename || task?.dataItem?.path || '').toLowerCase();
-    if (mt.startsWith('image/')) return 'image';
-    if (mt.startsWith('audio/')) return 'audio';
-    if (mt.startsWith('text/')) return 'text';
-    if (/\.(jpg|jpeg|png|gif|bmp|webp|svg)$/i.test(fileName)) return 'image';
-    if (/\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(fileName)) return 'audio';
-    if (/\.(txt|csv|json|xml)$/i.test(fileName)) return 'text';
+    if (mt.startsWith('image/') || /\.(jpg|jpeg|png|gif|bmp|webp|svg)$/i.test(fileName)) return 'image';
+    if (mt.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(fileName)) return 'audio';
+    if (mt.startsWith('text/') || /\.(txt|csv|json|xml)$/i.test(fileName)) return 'text';
     return 'other';
-  };
-
-  const buildFileUrl = (dataItem) => {
-    if (!dataItem) return '';
-    const baseUrl = API_URL.replace(/\/+$/, '');
-    const rawPath = dataItem.path || '';
-    const cleanPath = rawPath.replace(/^\/+/, '');
-    if (cleanPath) {
-      return dataItem.filename
-        ? baseUrl + '/' + cleanPath + '/' + dataItem.filename
-        : baseUrl + '/' + cleanPath;
-    }
-    return dataItem.filename ? baseUrl + '/uploads/datasets/' + dataItem.filename : '';
-  };
+  }, [task]);
 
   const getLabelColor = (labelName) => {
     const labelDef = task?.availableLabels?.find((l) => l.name === labelName);
     return labelDef?.color || '#3b82f6';
   };
 
-  const kind = getTaskKind();
-
-  useEffect(() => {
-    if (kind !== 'image' || !canvasRef.current || imageSize.width === 0) return;
+  const drawAnnotations = useCallback(() => {
+    if (!canvasRef.current || !imgRef.current || !imgLoaded) return;
     const canvas = canvasRef.current;
+    const img = imgRef.current;
     const ctx = canvas.getContext('2d');
-    const scaleX = canvas.width / imageSize.width;
-    const scaleY = canvas.height / imageSize.height;
+
+    const displayWidth = img.clientWidth;
+    const displayHeight = img.clientHeight;
+    canvas.width = displayWidth;
+    canvas.height = displayHeight;
+
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const natW = img.naturalWidth || displayWidth;
+    const natH = img.naturalHeight || displayHeight;
+    const scaleX = displayWidth / natW;
+    const scaleY = displayHeight / natH;
+
     const objects = annotations.length > 0 ? annotations : (task?.labels?.objects || []);
-    objects.forEach((obj) => {
+
+    objects.forEach((obj, idx) => {
       const [x1, y1, x2, y2] = obj.bbox || [0, 0, 0, 0];
       const color = getLabelColor(obj.label);
+
+      const dx1 = x1 * scaleX;
+      const dy1 = y1 * scaleY;
+      const dw = (x2 - x1) * scaleX;
+      const dh = (y2 - y1) * scaleY;
+
+      ctx.fillStyle = color + '20';
+      ctx.fillRect(dx1, dy1, dw, dh);
+
       ctx.strokeStyle = color;
       ctx.lineWidth = 2;
-      ctx.strokeRect(x1 * scaleX, y1 * scaleY, (x2 - x1) * scaleX, (y2 - y1) * scaleY);
-      ctx.fillStyle = color;
-      const labelText = obj.label || 'Unknown';
+      ctx.strokeRect(dx1, dy1, dw, dh);
+
+      const labelText = obj.label || 'Label ' + (idx + 1);
       ctx.font = 'bold 12px Inter, sans-serif';
       const textWidth = ctx.measureText(labelText).width + 8;
-      ctx.fillRect(x1 * scaleX, y1 * scaleY - 20, Math.max(textWidth, 60), 18);
+      ctx.fillStyle = color;
+      ctx.fillRect(dx1, Math.max(0, dy1 - 22), Math.max(textWidth, 60), 20);
       ctx.fillStyle = '#ffffff';
-      ctx.fillText(labelText, x1 * scaleX + 4, y1 * scaleY - 7);
+      ctx.fillText(labelText, dx1 + 4, dy1 - 7);
+
       if (obj.confidence !== undefined) {
         ctx.fillStyle = color;
         ctx.font = '10px Inter, sans-serif';
-        ctx.fillText(Math.round(obj.confidence * 100) + '%', x2 * scaleX - 30, y2 * scaleY + 14);
+        ctx.fillText(Math.round(obj.confidence * 100) + '%', dx1 + 4, dy1 + dh + 14);
       }
     });
-  }, [annotations, imageSize, kind, task]);
+  }, [annotations, task, imgLoaded]);
+
+  const kind = getTaskKind();
+
+  useEffect(() => {
+    if (kind === 'image' && imgLoaded) {
+      const timer = setTimeout(drawAnnotations, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [kind, imgLoaded, drawAnnotations]);
+
+  useEffect(() => {
+    if (kind !== 'image') return;
+    const handleResize = () => { if (imgLoaded) drawAnnotations(); };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [kind, imgLoaded, drawAnnotations]);
+
+  // Reset state when task changes
+  useEffect(() => {
+    setImgError(false);
+    setImgLoaded(false);
+    setImageSize({ width: 0, height: 0 });
+  }, [task?._id]);
 
   if (kind === 'image') {
     const imageUrl = buildFileUrl(task?.dataItem);
+    const objects = annotations.length > 0 ? annotations : (task?.labels?.objects || []);
+
     return (
-      <div ref={containerRef} className="relative w-full">
+      <div ref={containerRef} className="relative w-full space-y-3">
         <div className="relative overflow-auto rounded-lg border border-gray-700 bg-gray-800">
-          {imageUrl && (
-            <img
-              src={imageUrl}
-              alt={task?.dataItem?.filename || 'Review image'}
-              className="max-w-full h-auto"
-              onLoad={(e) => {
-                setImageSize({ width: e.target.naturalWidth, height: e.target.naturalHeight });
-                if (canvasRef.current) {
-                  canvasRef.current.width = e.target.clientWidth;
-                  canvasRef.current.height = e.target.clientHeight;
-                }
-              }}
-              onError={(e) => { e.target.style.display = 'none'; }}
-            />
+          {imgError ? (
+            <div className="flex flex-col items-center justify-center p-8 min-h-[300px]">
+              <div className="text-4xl mb-3">?</div>
+              <p className="text-sm text-gray-400 mb-1">Khong the tai anh</p>
+              <p className="text-xs text-gray-600 break-all px-4 text-center max-w-md" title={imageUrl}>
+                {imageUrl}
+              </p>
+            </div>
+          ) : (
+            <div className="relative inline-block w-full">
+              <img
+                ref={imgRef}
+                src={imageUrl}
+                alt={task?.dataItem?.filename || 'Review image'}
+                className="max-w-full h-auto block"
+                onLoad={(e) => {
+                  setImgLoaded(true);
+                  setImgError(false);
+                  setImageSize({ width: e.target.naturalWidth, height: e.target.naturalHeight });
+                }}
+                onError={(e) => { setImgError(true); setImgLoaded(false); e.target.style.display = 'none'; }}
+                crossOrigin="anonymous"
+              />
+              <canvas
+                ref={canvasRef}
+                className="absolute top-0 left-0 w-full h-full pointer-events-none"
+                style={{ opacity: 0.9 }}
+              />
+            </div>
           )}
-          <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" style={{ opacity: 0.85 }} />
         </div>
-        {(task?.labels?.objects || []).length > 0 && (
-          <div className="mt-3 space-y-2">
-            <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Annotations ({task.labels.objects.length})</h4>
-            <div className="space-y-1 max-h-48 overflow-y-auto">
-              {task.labels.objects.map((obj, idx) => (
-                <div key={idx} className="flex items-center gap-2 rounded border border-gray-700 bg-gray-800 px-3 py-1.5">
-                  <div className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: getLabelColor(obj.label) }} />
-                  <span className="text-xs font-medium text-gray-200">{obj.label}</span>
-                  <span className="ml-auto text-[10px] text-gray-500 font-mono">
-                    {((obj.bbox?.[0]) || 0).toFixed(0)},{((obj.bbox?.[1]) || 0).toFixed(0)},{((obj.bbox?.[2]) || 0).toFixed(0)},{((obj.bbox?.[3]) || 0).toFixed(0)}
+
+        {objects.length > 0 && (
+          <div className="space-y-2">
+            <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+              Annotations ({objects.length})
+            </h4>
+            <div className="space-y-1 max-h-64 overflow-y-auto">
+              {objects.map((obj, idx) => (
+                <div key={idx} className="flex items-center gap-2 rounded border border-gray-700 bg-gray-800 px-3 py-2 hover:border-gray-600 transition-colors">
+                  <div className="w-4 h-4 rounded-sm flex-shrink-0" style={{ backgroundColor: getLabelColor(obj.label) }} />
+                  <span className="text-sm font-medium text-gray-200">
+                    {obj.label || 'Object ' + (idx + 1)}
+                  </span>
+                  {obj.confidence !== undefined && (
+                    <span className="ml-auto text-xs text-gray-500">
+                      {Math.round(obj.confidence * 100)}%
+                    </span>
+                  )}
+                  <span className="ml-2 text-[11px] text-gray-600 font-mono">
+                    [{((obj.bbox?.[0]) || 0).toFixed(0)}, {((obj.bbox?.[1]) || 0).toFixed(0)}, {((obj.bbox?.[2]) || 0).toFixed(0)}, {((obj.bbox?.[3]) || 0).toFixed(0)}]
                   </span>
                 </div>
               ))}
             </div>
           </div>
         )}
-        <div className="mt-2 rounded border border-gray-700/50 bg-gray-800/50 px-3 py-1.5 text-center">
-          <span className="text-xs text-gray-500 italic">Read-only review - Labels added by Annotator</span>
+
+        {objects.length === 0 && (
+          <div className="rounded border border-gray-700 bg-gray-800/50 px-3 py-2 text-center">
+            <span className="text-xs text-gray-500 italic">Khong co annotation nao tu annotator</span>
+          </div>
+        )}
+
+        <div className="rounded border border-gray-700/50 bg-gray-800/50 px-3 py-1.5 text-center">
+          <span className="text-xs text-gray-500 italic">Che do doc - Annotations duoc them boi Annotator</span>
         </div>
       </div>
     );
@@ -155,7 +233,7 @@ const ReviewMediaView = ({ task, annotations = [] }) => {
           </div>
         )}
         <div className="rounded border border-gray-700/50 bg-gray-800/50 px-3 py-1.5 text-center">
-          <span className="text-xs text-gray-500 italic">Read-only review mode</span>
+          <span className="text-xs text-gray-500 italic">Che do doc - Annotations duoc them boi Annotator</span>
         </div>
       </div>
     );
@@ -168,9 +246,9 @@ const ReviewMediaView = ({ task, annotations = [] }) => {
       <div className="space-y-3">
         <div className="rounded-lg border border-gray-700 bg-gray-800 p-4">
           {audioUrl ? (
-            <audio controls className="w-full h-12" src={audioUrl}>Your browser does not support audio.</audio>
+            <audio controls className="w-full h-12" src={audioUrl}>Trinh duyet khong ho tro audio.</audio>
           ) : (
-            <div className="text-center text-gray-500 py-4">No audio file available</div>
+            <div className="text-center text-gray-500 py-4">Khong co file audio</div>
           )}
         </div>
         {segments.length > 0 && (
@@ -189,15 +267,17 @@ const ReviewMediaView = ({ task, annotations = [] }) => {
           </div>
         )}
         <div className="rounded border border-gray-700/50 bg-gray-800/50 px-3 py-1.5 text-center">
-          <span className="text-xs text-gray-500 italic">Read-only review mode</span>
+          <span className="text-xs text-gray-500 italic">Che do doc - Annotations duoc them boi Annotator</span>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex items-center justify-center rounded-lg border border-gray-700 bg-gray-800 p-8 text-gray-500">
-      Unsupported file type for review.
+    <div className="flex flex-col items-center justify-center rounded-lg border border-gray-700 bg-gray-800 p-8 text-gray-500 min-h-[200px]">
+      <div className="text-3xl mb-2">?</div>
+      <p className="text-sm">File khong ho tro preview truc tiep.</p>
+      <p className="text-xs mt-1 text-gray-600">mimeType: {task?.dataItem?.mimeType || 'unknown'}</p>
     </div>
   );
 };

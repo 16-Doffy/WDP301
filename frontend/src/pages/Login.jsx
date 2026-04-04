@@ -62,7 +62,13 @@ const Login = () => {
       localStorage.removeItem('token');
       sessionStorage.removeItem('token');
       await login(email, password);
-      navigate('/dashboard');
+      const token = sessionStorage.getItem('token');
+      const payload = token ? JSON.parse(atob(token.split('.')[1])) : {};
+      const role = payload?.role;
+      if (role === 'annotator') navigate('/annotator');
+      else if (role === 'reviewer') navigate('/reviewer');
+      else if (role === 'admin') navigate('/admin');
+      else navigate('/dashboard');
     } catch (err) {
       setError(err.response?.data?.message || 'Đăng nhập thất bại');
     } finally {

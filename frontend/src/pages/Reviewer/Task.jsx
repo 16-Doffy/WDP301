@@ -21,6 +21,15 @@ const ReviewerTask = () => {
   const [activeTab, setActiveTab] = useState('media'); // 'media' | 'consensus' | 'history'
   const [textContent, setTextContent] = useState('');
 
+  const getTaskKind = (t) => {
+    const mt = (t?.dataItem?.mimeType || '').toLowerCase();
+    const fileName = (t?.dataItem?.filename || t?.dataItem?.path || '').toLowerCase();
+    if (mt.startsWith('image/') || /\.(jpg|jpeg|png|gif|bmp|webp|svg)$/i.test(fileName)) return 'image';
+    if (mt.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(fileName)) return 'audio';
+    if (mt.startsWith('text/') || /\.(txt|csv|json|xml)$/i.test(fileName)) return 'text';
+    return 'other';
+  };
+
   useEffect(() => {
     setLoading(true);
     setMessage('');
@@ -67,15 +76,6 @@ const ReviewerTask = () => {
     } finally {
       setLoading(false);
     }
-  };
-
-  const getTaskKind = (t) => {
-    const mt = (t?.dataItem?.mimeType || '').toLowerCase();
-    const fileName = (t?.dataItem?.filename || t?.dataItem?.path || '').toLowerCase();
-    if (mt.startsWith('image/') || /\.(jpg|jpeg|png|gif|bmp|webp|svg)$/i.test(fileName)) return 'image';
-    if (mt.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(fileName)) return 'audio';
-    if (mt.startsWith('text/') || /\.(txt|csv|json|xml)$/i.test(fileName)) return 'text';
-    return 'other';
   };
 
   const getCurrentUserReviewer = useCallback(() => {
