@@ -16,6 +16,10 @@ const datasetSchema = new mongoose.Schema({
     ref: 'Subtopic',
     required: false
   },
+  subtopicIds: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Subtopic'
+  }],
   managerId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -34,6 +38,11 @@ const datasetSchema = new mongoose.Schema({
     path: String,
     mimeType: String,
     size: Number,
+    subtopicId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Subtopic',
+      required: false
+    },
     uploadedAt: {
       type: Date,
       default: Date.now

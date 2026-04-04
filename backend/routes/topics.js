@@ -5,6 +5,37 @@ const Subtopic = require('../models/Subtopic');
 const Dataset = require('../models/Dataset');
 const LabelSet = require('../models/LabelSet');
 const { auth, authorize } = require('../middleware/auth');
+const Project = require('../models/Project');
+const Task = require('../models/Task');
+
+const hasLockedAssignmentForTopic = async (topicId) => {
+  const subtopicIds = await Subtopic.find({ topicId }).distinct('_id');
+  if (!subtopicIds.length) return false;
+
+  const datasetIds = await Dataset.find({
+    $or: [
+      { subtopicId: { $in: subtopicIds } },
+      { subtopicIds: { $in: subtopicIds } },
+    ],
+  }).distinct('_id');
+
+  if (!datasetIds.length) return false;
+
+  const assignedTasks = await Task.find({
+    datasetId: { $in: datasetIds },
+    annotatorId: { $ne: null },
+    $or: [
+      { reviewerId: { $ne: null } },
+      { 'reviewers.0': { $exists: true } },
+    ],
+  }).select('projectId').lean();
+
+  const projectIds = [...new Set(assignedTasks.map(t => t.projectId?.toString()).filter(Boolean))];
+  if (!projectIds.length) return false;
+
+  const lockedProject = await Project.findOne({ _id: { $in: projectIds }, status: { $ne: 'completed' } }).select('_id').lean();
+  return Boolean(lockedProject);
+};
 
 router.get('/', auth, async (req, res) => {
   try {
@@ -74,9 +105,20 @@ router.put('/:id', auth, authorize('manager', 'admin'), async (req, res) => {
 
 router.delete('/:id', auth, authorize('manager', 'admin'), async (req, res) => {
   try {
-    const topic = await Topic.findByIdAndUpdate(req.params.id, { status: 'archived' }, { new: true });
+    const topic = await Topic.findById(req.params.id);
     if (!topic) return res.status(404).json({ error: 'Topic not found' });
-    res.json({ message: 'Topic archived' });
+
+    if (req.user.role === 'manager') {
+      const locked = await hasLockedAssignmentForTopic(topic._id);
+      if (locked) {
+        return res.status(400).json({
+          error: 'Topic da duoc phan cong trong project dang hoat dong. Khong the xoa.',
+        });
+      }
+    }
+
+    const archived = await Topic.findByIdAndUpdate(req.params.id, { status: 'archived' }, { new: true });
+    res.json({ message: 'Topic archived', topic: archived });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
