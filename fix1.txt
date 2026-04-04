@@ -1,9 +1,0 @@
-﻿  const [datasets, setDatasets] = useState([]);
-  const [dataLoaded, setDataLoaded] = useState(false);
-
-  useEffect(() => { if (selectedSubtopic) { setDataLoaded(false); loadLabelSets(); loadAssets(); loadDatasets(); } }, [selectedSubtopic?._id]);
-
-  const loadLabelSets = async () => { setLabelSetsLoading(true); try { const r = await axios.get(API_URL + '/api/labelsets?subtopicId=' + selectedSubtopic._id, { headers: { Authorization: 'Bearer ' + getAuthToken() } }); setLabelSets(Array.isArray(r.data) ? r.data : []); } catch { setLabelSets([]); } setLabelSetsLoading(false); checkAllLoaded(); };
-  const loadDatasets = async () => { try { const r = await axios.get(API_URL + '/api/datasets?subtopicId=' + selectedSubtopic._id, { headers: { Authorization: ''Bearer '' + getAuthToken() } }); setDatasets(Array.isArray(r.data) ? r.data : []); } catch { setDatasets([]); } checkAllLoaded(); };
-  const loadAssets = async () => { setAssetsLoading(true); try { const r = await axios.get(API_URL + '/api/subtopics/' + selectedSubtopic._id + ''/assets'', { headers: { Authorization: ''Bearer '' + getAuthToken() } }); setAssets(Array.isArray(r.data) ? r.data : []); } catch { setAssets([]); } setAssetsLoading(false); checkAllLoaded(); };
-  const checkAllLoaded = () => { if (!labelSetsLoading && !assetsLoading) setDataLoaded(true); };
