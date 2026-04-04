@@ -38,7 +38,6 @@ const AnnotatorTask = () => {
   const [selectedTextRange, setSelectedTextRange] = useState(null); // { start, end, text }
   const [showLabelDropdown, setShowLabelDropdown] = useState(false);
   const [dropdownPosition, setDropdownPosition] = useState({ x: 0, y: 0 });
-  const [showGuidelines, setShowGuidelines] = useState(false);
   const textContainerRef = useRef(null);
   const dropdownRef = useRef(null);
   const canvasRef = useRef(null);
@@ -153,7 +152,6 @@ const AnnotatorTask = () => {
     setTextSpans([]);
     setSelectedTextRange(null);
     setShowLabelDropdown(false);
-    setShowGuidelines(false);
     setLoading(true);
     fetchTask();
   }, [id]);
@@ -676,8 +674,8 @@ const AnnotatorTask = () => {
 
       <div className="px-6 pt-3">
         <div className="rounded-lg border border-blue-200 bg-gray-150/40 px-4 py-3">
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div className="md:w-[38%]">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
               <h2 className="text-base font-semibold text-white">{task?.projectId?.name || 'Project Detail'}</h2>
               <p className="text-lg text-white mt-0.5">
                 Task hiện tại: {Math.max(1, currentTaskIndex + 1)} / {Math.max(1, batchTasks.length)}
@@ -689,32 +687,9 @@ const AnnotatorTask = () => {
                 </p>
               )}
               <p className="text-lg text-white mt-0.5">Dataset: {task?.datasetId?.name || 'N/A'}</p>
-              <p className="text-lg text-white mt-0.5">Subtopic: {task?.subtopicId?.name || 'N/A'}</p>
             </div>
 
-            <div className="md:flex-1 md:px-4">
-              {task?.projectId?.guidelines && (
-                <div className="rounded-lg border border-sky-700/40 bg-sky-900/20">
-                  <button
-                    type="button"
-                    onClick={() => setShowGuidelines((v) => !v)}
-                    className="w-full flex items-center justify-between px-3 py-2 text-left"
-                  >
-                    <p className="text-xs font-semibold uppercase tracking-wide text-sky-300">Huong dan project</p>
-                    <span className="text-sky-300 text-sm">{showGuidelines ? '▲' : '▼'}</span>
-                  </button>
-                  {showGuidelines && (
-                    <div className="px-3 pb-3">
-                      <p className="whitespace-pre-wrap text-sm text-slate-200">
-                        {task.projectId.guidelines}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2 md:pt-1">
+            <div className="flex items-center gap-2">
               <button
                 onClick={() => navigate('/annotator/tasks')}
                 className="rounded-md bg-gray-100 px-2.5 py-1.5 text-xs font-medium text-blue-700 border border-blue-300 hover:bg-blue-100"
@@ -723,22 +698,6 @@ const AnnotatorTask = () => {
               </button>
             </div>
           </div>
-
-          {Array.isArray(task?.projectId?.questions) && task.projectId.questions.length > 0 && (
-            <div className="mt-3 rounded-lg border border-violet-700/40 bg-violet-900/20 p-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-violet-300">
-                Cau hoi can tra loi ({task.projectId.questions.length})
-              </p>
-              <ul className="mt-1 list-disc pl-5 text-sm text-slate-200 space-y-1">
-                {task.projectId.questions.map((q, idx) => (
-                  <li key={idx}>
-                    {q?.questionText || q?.text || q?.label || 'Cau hoi'}
-                    {q?.required !== false && <span className="ml-1 text-rose-300">*</span>}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
 
           <div className="mt-2 h-2 w-full rounded-full bg-blue-100">
             <div

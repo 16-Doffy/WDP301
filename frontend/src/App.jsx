@@ -16,7 +16,7 @@ import DatasetItemDetail from './pages/Manager/DatasetItemDetail';
 import TopicManagement from './pages/Manager/TopicManagement';
 import AnnotatorDashboard from './pages/Annotator/Dashboard';
 import AnnotatorOverview from './pages/Annotator/Overview';
-import TaskWrapper from './pages/Annotator/TaskWrapper';
+import AnnotatorTask from './pages/Annotator/Task';
 import ReviewerDashboard from './pages/Reviewer/Dashboard';
 import ReviewerTask from './pages/Reviewer/Task';
 import AdminDashboard from './pages/Admin/Dashboard';
@@ -72,7 +72,7 @@ function App() {
               <Route path="/admin" element={<AdminDashboard />} />
               <Route path="/annotator" element={<AnnotatorOverview />} />
               <Route path="/annotator/tasks" element={<AnnotatorDashboard />} />
-              <Route path="/annotator/workspace/:id" element={<TaskWrapper />} />
+              <Route path="/annotator/tasks/:id" element={<AnnotatorTask />} />
               <Route path="/reviewer" element={<ReviewerDashboard />} />
               <Route path="/reviewer/tasks" element={<ReviewerDashboard />} />
               <Route path="/reviewer/tasks/:id" element={<ReviewerTask />} />
