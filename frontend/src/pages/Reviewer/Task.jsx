@@ -1,449 +1,348 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+﻿import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
 import ReviewMediaView from './ReviewMediaView';
-import ConsensusStatus from './ConsensusStatus';
-import VotingPanel from './VotingPanel';
 import { useAuth } from '../../context/AuthContext';
+
+const getAuthToken = () => sessionStorage.getItem('token') || localStorage.getItem('token');
+const sameId = (a, b) => String(a || '') === String(b || '');
+
+const statusColor = (s) => {
+  if (s === 'approved') return 'bg-emerald-500/10 text-emerald-400';
+  if (s === 'rejected') return 'bg-rose-500/10 text-rose-400';
+  return 'bg-amber-500/10 text-amber-400';
+};
 
 const ReviewerTask = () => {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user } = useAuth();
 
   const [task, setTask] = useState(null);
-  const [batchTasks, setBatchTasks] = useState([]);
-  const [currentTaskIndex, setCurrentTaskIndex] = useState(0);
+  const [queue, setQueue] = useState([]);
+  const [queueIndex, setQueueIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
-  const [message, setMessage] = useState('');
-  const [activeTab, setActiveTab] = useState('media'); // 'media' | 'consensus' | 'history'
-  const [textContent, setTextContent] = useState('');
+  const [msg, setMsg] = useState('');
+  const [activeTab, setActiveTab] = useState('media');
 
-  const getTaskKind = (t) => {
-    const mt = (t?.dataItem?.mimeType || '').toLowerCase();
-    const fileName = (t?.dataItem?.filename || t?.dataItem?.path || '').toLowerCase();
-    if (mt.startsWith('image/') || /\.(jpg|jpeg|png|gif|bmp|webp|svg)$/i.test(fileName)) return 'image';
-    if (mt.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(fileName)) return 'audio';
-    if (mt.startsWith('text/') || /\.(txt|csv|json|xml)$/i.test(fileName)) return 'text';
-    return 'other';
-  };
+  // Active annotator IDs from URL param (comma-separated)
+  const activeAnnIds = useMemo(() => {
+    const raw = searchParams.get('anns') || '';
+    return raw ? raw.split(',').filter(Boolean) : [];
+  }, [searchParams]);
+
+  const [enabledAnns, setEnabledAnns] = useState([]);
+  useEffect(() => { setEnabledAnns(activeAnnIds); }, [activeAnnIds]);
+
+  const sameId = (a, b) => String(a || '') === String(b || '');
 
   useEffect(() => {
     setLoading(true);
-    setMessage('');
-    setTextContent('');
+    setMsg('');
     fetchTask();
   }, [id]);
 
   const fetchTask = async () => {
     try {
-      const response = await axios.get(`${API_URL}/api/tasks/${id}`);
-      const taskData = response.data;
-      setTask(taskData);
-
-      // Load batch (same dataset tasks)
-      if (taskData.datasetId) {
+      const res = await axios.get(`${API_URL}/api/tasks/${id}`);
+      setTask(res.data);
+      if (res.data.datasetId) {
         try {
-          const batchRes = await axios.get(`${API_URL}/api/reviews/pending`);
-          const pending = batchRes.data || [];
-          const batch = pending.filter(
-            (t) => (t.datasetId?._id || t.datasetId) === (taskData.datasetId?._id || taskData.datasetId)
-          );
-          if (batch.length > 0) {
-            setBatchTasks(batch);
-          }
+          const pending = await axios.get(`${API_URL}/api/reviews/pending`);
+          const all = pending.data?.pending || [];
+          const sameDs = all.filter((t) => sameId(t.datasetId?._id || t.datasetId, res.data.datasetId?._id || res.data.datasetId));
+          const myQueue = sameDs.filter((t) => {
+            if (t._id === id) return true;
+            const aid = String(t.annotatorId?._id || t.annotatorId || '');
+            return activeAnnIds.includes(aid);
+          }).sort((a, b) => new Date(a.submittedAt || 0) - new Date(b.submittedAt || 0));
+          setQueue(myQueue);
+          setQueueIndex(myQueue.findIndex((t) => sameId(t._id, id)));
         } catch (_) {}
       }
-
-      // Load text content for text tasks
-      const kind = getTaskKind(taskData);
-      if (kind === 'text' && taskData.dataItem?.path) {
-        try {
-          const baseUrl = API_URL.replace(/\/+$/, '');
-          const path = taskData.dataItem.path || '';
-          const cleanPath = path.replace(/^\/+/, '');
-          const url = taskData.dataItem.filename
-            ? baseUrl + '/' + cleanPath + '/' + taskData.dataItem.filename
-            : baseUrl + '/' + cleanPath;
-          const textRes = await axios.get(url, { responseType: 'text' });
-          setTextContent(textRes.data || '');
-        } catch (_) {}
-      }
-    } catch (error) {
-      setMessage('Error loading task: ' + (error.response?.data?.message || error.message));
+    } catch (e) {
+      setMsg('Error: ' + (e.response?.data?.message || e.message));
     } finally {
       setLoading(false);
     }
   };
 
-  const getCurrentUserReviewer = useCallback(() => {
-    if (!task?.reviewers || !user) return null;
-    return task.reviewers.find(
-      (r) => (r.reviewerId?._id || r.reviewerId?.toString()) === (user._id || user.id?.toString())
-    );
-  }, [task, user]);
+  const getMyVote = useCallback((t) => {
+    if (!user) return null;
+    const r = t.reviewers?.find((rv) => sameId(rv.reviewerId?._id || rv.reviewerId, user?._id || user?.id));
+    return r?.status || null;
+  }, [user]);
 
-  const currentVote = getCurrentUserReviewer()?.status || null;
-  const hasVoted = currentVote === 'approved' || currentVote === 'rejected';
+  const currentVote = getMyVote(task);
 
-  const handleApprove = useCallback(async ({ reviewComments }) => {
+  // Can only approve/reject when exactly 1 annotator is enabled
+  const canVote = enabledAnns.length === 1 && task?.status === 'submitted' && !currentVote;
+  const multiAnnsBlocked = enabledAnns.length > 1;
+
+  const handleApprove = useCallback(async () => {
+    if (!canVote) return;
     setProcessing(true);
     try {
-      const res = await axios.post(`${API_URL}/api/reviews/${id}/approve`, { reviewComments });
-      const updatedTask = res.data;
-      setTask(updatedTask);
-      setMessage('Vote recorded. Task status: ' + updatedTask.status);
-      setTimeout(() => setMessage(''), 3000);
-      if (updatedTask.status !== 'submitted') {
-        moveToNext();
-      }
-    } catch (error) {
-      setMessage('Error: ' + (error.response?.data?.message || error.message));
-    } finally {
-      setProcessing(false);
-    }
-  }, [id]);
+      const res = await axios.post(`${API_URL}/api/reviews/${id}/approve`, { reviewComments: '' });
+      setTask(res.data);
+      setMsg('Da approve!');
+      setTimeout(() => setMsg(''), 3000);
+      const next = queue.find((t, i) => i > queueIndex && getMyVote(t) === null && t.status === 'submitted');
+      if (next) navigate(`/reviewer/tasks/${next._id}?anns=${activeAnnIds.join(',')}`);
+    } catch (e) { setMsg('Loi: ' + (e.response?.data?.message || e.message)); }
+    finally { setProcessing(false); }
+  }, [canVote, id, queue, queueIndex, getMyVote, activeAnnIds]);
 
-  const handleReject = useCallback(async ({ reviewComments, errorCategory }) => {
+  const handleReject = useCallback(async () => {
+    if (!canVote) return;
+    const comment = prompt('Nhap ly do reject (optional):') || '';
     setProcessing(true);
     try {
-      const res = await axios.post(`${API_URL}/api/reviews/${id}/reject`, {
-        reviewComments,
-        errorCategory,
-      });
-      const updatedTask = res.data;
-      setTask(updatedTask);
-      setMessage('Vote recorded. Task status: ' + updatedTask.status);
-      setTimeout(() => setMessage(''), 3000);
-      if (updatedTask.status !== 'submitted') {
-        moveToNext();
-      }
-    } catch (error) {
-      const errors = error.response?.data?.errors;
-      if (errors && errors.length > 0) {
-        setMessage('Error: ' + errors.map((e) => e.msg).join(', '));
-      } else {
-        setMessage('Error: ' + (error.response?.data?.message || error.message));
-      }
-    } finally {
-      setProcessing(false);
-    }
-  }, [id]);
+      const res = await axios.post(`${API_URL}/api/reviews/${id}/reject`, { reviewComments: comment, errorCategory: '' });
+      setTask(res.data);
+      setMsg('Da reject!');
+      setTimeout(() => setMsg(''), 3000);
+      const next = queue.find((t, i) => i > queueIndex && getMyVote(t) === null && t.status === 'submitted');
+      if (next) navigate(`/reviewer/tasks/${next._id}?anns=${activeAnnIds.join(',')}`);
+    } catch (e) { setMsg('Loi: ' + (e.response?.data?.message || e.message)); }
+    finally { setProcessing(false); }
+  }, [canVote, id, queue, queueIndex, getMyVote, activeAnnIds]);
 
-  const moveToNext = useCallback(() => {
-    if (batchTasks.length === 0) return;
-    const nextIdx = batchTasks.findIndex(
-      (t, i) =>
-        i > currentTaskIndex &&
-        t.status === 'submitted' &&
-        !t.reviewers?.find(
-          (r) => (r.reviewerId?._id || r.reviewerId?.toString()) === (user?._id || user?.id?.toString())
-        )?.status?.match(/approved|rejected/)
-    );
-    if (nextIdx >= 0) {
-      navigate(`/reviewer/tasks/${batchTasks[nextIdx]._id}`);
-    } else {
-      const firstPending = batchTasks.findIndex((t) => t.status === 'submitted');
-      if (firstPending >= 0) {
-        navigate(`/reviewer/tasks/${batchTasks[firstPending]._id}`);
-      }
-    }
-  }, [batchTasks, currentTaskIndex, navigate, user]);
-
-  const navigateToTask = (taskId) => {
-    if (task && task._id !== taskId && task.status === 'submitted' && !hasVoted) {
-      // Cannot auto-save here since reviewer is read-only
-    }
-    navigate(`/reviewer/tasks/${taskId}`);
+  const navigateQueue = (idx) => {
+    if (idx < 0 || idx >= queue.length) return;
+    const t = queue[idx];
+    navigate(`/reviewer/tasks/${t._id}?anns=${activeAnnIds.join(',')}`);
   };
 
-  const navigateToPrevious = () => {
-    if (currentTaskIndex > 0) navigateToTask(batchTasks[currentTaskIndex - 1]._id);
+  // Toggle annotator on/off
+  const toggleAnn = (aid) => {
+    setEnabledAnns((prev) => {
+      if (prev.includes(aid)) {
+        if (prev.length === 1) return prev; // keep at least 1
+        return prev.filter((a) => a !== aid);
+      }
+      return [...prev, aid];
+    });
   };
 
-  const navigateToNext = () => {
-    if (currentTaskIndex < batchTasks.length - 1) navigateToTask(batchTasks[currentTaskIndex + 1]._id);
+  // Annotator info from queue
+  const allAnns = useMemo(() => {
+    const map = {};
+    queue.forEach((t) => {
+      const aid = String(t.annotatorId?._id || t.annotatorId || '');
+      if (!map[aid]) map[aid] = { id: aid, name: t.annotatorId?.fullName || t.annotatorId?.username || 'Annotator ' + aid.slice(-4), tasks: [] };
+      map[aid].tasks.push(t);
+    });
+    return Object.values(map);
+  }, [queue]);
+
+  const enabledAnnTasks = useMemo(() => {
+    return queue.filter((t) => enabledAnns.includes(String(t.annotatorId?._id || t.annotatorId || '')));
+  }, [queue, enabledAnns]);
+
+  // Aggregate labels from all enabled annotators (for current task and other tasks in queue)
+  const aggregatedLabels = useMemo(() => {
+    const objects = [];
+    const spans = [];
+    const segments = [];
+    enabledAnnTasks.forEach((t) => {
+      const lbls = t.labels || {};
+      if (lbls.objects) lbls.objects.forEach((o) => objects.push({ ...o, taskId: t._id }));
+      if (lbls.spans) lbls.spans.forEach((s) => spans.push({ ...s, taskId: t._id }));
+      if (lbls.segments) lbls.segments.forEach((s) => segments.push({ ...s, taskId: t._id }));
+    });
+    return { objects, spans, segments };
+  }, [enabledAnnTasks]);
+
+  if (loading) return <div className="flex min-h-screen items-center justify-center bg-slate-900"><div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-700 border-t-blue-500" /></div>;
+
+  if (!task) return <div className="flex min-h-screen items-center justify-center bg-slate-900 text-gray-400">Khong tim thay task</div>;
+
+  const getTaskKind = (t) => {
+    const mt = (t?.dataItem?.mimeType || '').toLowerCase();
+    const fn = (t?.dataItem?.filename || t?.dataItem?.path || '').toLowerCase();
+    if (mt.startsWith('image/') || /\.(jpg|jpeg|png|gif|bmp|webp|svg)$/i.test(fn)) return 'image';
+    if (mt.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(fn)) return 'audio';
+    if (mt.startsWith('text/') || /\.(txt|csv|json|xml)$/i.test(fn)) return 'text';
+    return 'other';
   };
 
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-      if (processing || hasVoted || task?.status !== 'submitted') return;
-
-      if (e.key === 'a' || e.key === 'A') {
-        e.preventDefault();
-        handleApprove({ reviewComments: '' });
-      }
-      if (e.key === 'r' || e.key === 'R') {
-        e.preventDefault();
-        // Open reject dialog via VotingPanel - trigger via ref or state
-      }
-      if (e.key === 'ArrowLeft' && currentTaskIndex > 0) {
-        e.preventDefault();
-        navigateToPrevious();
-      }
-      if (e.key === 'ArrowRight' && currentTaskIndex < batchTasks.length - 1) {
-        e.preventDefault();
-        navigateToNext();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [processing, hasVoted, task?.status, handleApprove, currentTaskIndex, batchTasks.length]);
-
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-900">
-        <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-700 border-t-blue-500" />
-      </div>
-    );
-  }
-
-  const taskWithText = textContent ? { ...task, textContent } : task;
-  const reviewers = task?.reviewers || [];
-  const totalReviewers = reviewers.length;
+  const kind = getTaskKind(task);
 
   return (
-    <div className="flex min-h-screen bg-slate-900 text-gray-200">
-      {/* Left panel - Media view */}
-      <div className="flex-1 overflow-auto p-6">
-        {/* Header */}
-        <div className="mb-4 rounded-xl border border-gray-700 bg-gray-800 p-4">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div className="min-w-0">
-              <h2 className="truncate text-lg font-bold text-gray-100">
-                {task?.projectId?.name || 'Review Task'}
-              </h2>
-              <p className="mt-0.5 text-sm text-gray-400">
-                {task?.datasetId?.name || 'Dataset'} |{' '}
-                {task?.dataItem?.originalName || task?.dataItem?.filename || 'File'}
-              </p>
-              <p className="mt-0.5 text-xs text-gray-500">
-                Annotator: {task?.annotatorId?.fullName || task?.annotatorId?.username || 'N/A'}
-              </p>
-              {task?.projectId?.deadline && (
-                <p className={`mt-0.5 text-xs font-medium ${new Date(task.projectId.deadline) < new Date() ? 'text-rose-400' : 'text-gray-500'}`}>
-                  Deadline: {new Date(task.projectId.deadline).toLocaleString('vi-VN')}
-                </p>
-              )}
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                task?.status === 'approved' ? 'bg-emerald-500/10 text-emerald-400' :
-                task?.status === 'rejected' ? 'bg-rose-500/10 text-rose-400' :
-                'bg-amber-500/10 text-amber-400'
-              }`}>
-                {task?.status?.toUpperCase()}
-              </span>
-              <button
-                onClick={() => navigate('/reviewer/tasks')}
-                className="rounded-lg border border-gray-600 bg-gray-800 px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-gray-700"
-              >
-                Back to List
+    <div className="flex min-h-screen flex-col bg-slate-900 text-gray-200">
+      {/* Top bar */}
+      <div className="flex items-center justify-between border-b border-gray-700 bg-gray-800 px-4 py-3">
+        <div className="flex items-center gap-3">
+          <button onClick={() => navigate('/reviewer/tasks')} className="rounded-lg border border-gray-600 bg-gray-700 px-3 py-1.5 text-sm text-gray-300 hover:bg-gray-600">Quay lai</button>
+          <div>
+            <h2 className="text-base font-bold text-gray-100">{task.projectId?.name || 'Review'}</h2>
+            <p className="text-xs text-gray-400">{task.datasetId?.name || ''} | {task.dataItem?.originalName || task.dataItem?.filename || ''}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className={`rounded-full px-3 py-1 text-xs font-bold uppercase ${statusColor(task.status)}`}>{task.status}</span>
+          <span className="text-xs text-gray-400">{queueIndex + 1} / {queue.length}</span>
+          <button onClick={() => navigateQueue(queueIndex - 1)} disabled={queueIndex <= 0} className="rounded border border-gray-600 bg-gray-700 px-2 py-1 text-xs text-gray-300 hover:bg-gray-600 disabled:opacity-30">Prev</button>
+          <button onClick={() => navigateQueue(queueIndex + 1)} disabled={queueIndex >= queue.length - 1} className="rounded border border-gray-600 bg-gray-700 px-2 py-1 text-xs text-gray-300 hover:bg-gray-600 disabled:opacity-30">Next</button>
+        </div>
+      </div>
+
+      {/* Annotator toggles */}
+      {allAnns.length > 0 && (
+        <div className="flex items-center gap-2 border-b border-gray-700 bg-gray-800/50 px-4 py-2 overflow-x-auto">
+          <span className="text-xs font-semibold text-gray-400 shrink-0">Annotators:</span>
+          {allAnns.map((ann) => {
+            const isEnabled = enabledAnns.includes(ann.id);
+            const isCurrentAnnotator = sameId(ann.id, task.annotatorId?._id || task.annotatorId || '');
+            return (
+              <button key={ann.id} onClick={() => toggleAnn(ann.id)}
+                className={`flex items-center gap-1.5 rounded-lg border px-3 py-1 text-xs font-medium transition shrink-0 ${isEnabled ? 'border-blue-500 bg-blue-500/10 text-blue-400' : 'border-gray-600 bg-gray-700/30 text-gray-400 hover:border-gray-500'}`}>
+                <div className={`w-1.5 h-1.5 rounded-full ${isEnabled ? 'bg-blue-400' : 'bg-gray-600'}`} />
+                {ann.name} {isCurrentAnnotator ? '(current)' : ''} ({ann.tasks.length})
               </button>
+            );
+          })}
+          {multiAnnsBlocked && (
+            <span className="ml-2 rounded bg-amber-500/10 px-2 py-1 text-xs text-amber-400">Chi bat 1 annotator de cham bai</span>
+          )}
+        </div>
+      )}
+
+      {/* Message */}
+      {msg && <div className="bg-amber-500/10 border-b border-amber-700/50 px-4 py-2 text-sm text-amber-300">{msg}</div>}
+
+      {/* Main content */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left: Media + annotations */}
+        <div className="flex-1 overflow-auto p-4">
+          {/* Guidelines */}
+          {task.projectId?.guidelines && (
+            <div className="mb-4 rounded-lg border border-blue-700/30 bg-blue-500/5 p-3">
+              <h3 className="mb-1 text-xs font-semibold text-blue-400 uppercase tracking-wider">Guidelines</h3>
+              <p className="text-sm text-gray-300">{task.projectId.guidelines}</p>
             </div>
+          )}
+
+          {/* Tabs */}
+          <div className="mb-4 flex gap-1 border-b border-gray-700">
+            {[['media', 'Media & Annotations'], ['queue', `Queue (${enabledAnnTasks.length})`]].map(([k, label]) => (
+              <button key={k} onClick={() => setActiveTab(k)}
+                className={`px-4 py-2 text-sm font-medium capitalize transition ${activeTab === k ? 'border-b-2 border-blue-500 text-blue-400' : 'text-gray-400 hover:text-gray-200'}`}>{label}</button>
+            ))}
           </div>
 
-          {/* Batch navigation */}
-          {batchTasks.length > 0 && (
-            <div className="mt-3 flex items-center gap-3">
-              <div className="flex-1">
-                <div className="h-1.5 w-full rounded-full bg-gray-700">
-                  <div
-                    className="h-1.5 rounded-full bg-blue-500 transition-all"
-                    style={{ width: `${((currentTaskIndex + 1) / batchTasks.length) * 100}%` }}
-                  />
-                </div>
-              </div>
-              <span className="text-xs text-gray-400 whitespace-nowrap">
-                {currentTaskIndex + 1} / {batchTasks.length}
-              </span>
-              <div className="flex gap-1">
-                <button
-                  onClick={navigateToPrevious}
-                  disabled={currentTaskIndex <= 0}
-                  className="rounded border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700 disabled:opacity-30"
-                >
-                  Prev
-                </button>
-                <button
-                  onClick={navigateToNext}
-                  disabled={currentTaskIndex >= batchTasks.length - 1}
-                  className="rounded border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700 disabled:opacity-30"
-                >
-                  Next
-                </button>
-              </div>
+          {/* Media */}
+          {activeTab === 'media' && (
+            <ReviewMediaView task={task} annotations={aggregatedLabels.objects || task?.labels?.objects || []} labelSets={task?.availableLabels} />
+          )}
+
+          {/* Queue */}
+          {activeTab === 'queue' && (
+            <div className="space-y-2">
+              {enabledAnnTasks.map((t) => {
+                const isMe = sameId(t._id, task._id);
+                const vote = getMyVote(t);
+                const ann = allAnns.find((a) => sameId(a.id, t.annotatorId?._id || t.annotatorId || ''));
+                return (
+                  <div key={t._id} onClick={() => !isMe && navigate(`/reviewer/tasks/${t._id}?anns=${activeAnnIds.join(',')}`)}
+                    className={`flex items-center justify-between rounded-lg border p-3 cursor-pointer transition ${isMe ? 'border-blue-500 bg-blue-500/5' : 'border-gray-700 bg-gray-800 hover:border-gray-600'}`}>
+                    <div className="flex items-center gap-3">
+                      <div className="text-sm text-gray-300">{ann?.name || '?'}</div>
+                      <div className="text-sm text-gray-400">{t.dataItem?.originalName || t.dataItem?.filename || 'Task'}</div>
+                      {t._id === task._id && <span className="rounded bg-blue-500/20 px-2 py-0.5 text-xs text-blue-400">Current</span>}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`rounded px-2 py-0.5 text-xs font-semibold ${vote === 'approved' ? 'bg-emerald-500/10 text-emerald-400' : vote === 'rejected' ? 'bg-rose-500/10 text-rose-400' : 'bg-gray-700 text-gray-400'}`}>{vote || 'pending'}</span>
+                      {isMe && <span className={`rounded px-2 py-0.5 text-xs font-semibold ${statusColor(t.status)}`}>{t.status}</span>}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
 
-        {/* Guidelines */}
-        {task?.projectId?.guidelines && (
-          <div className="mb-4 rounded-lg border border-blue-700/30 bg-blue-500/5 p-3">
-            <h3 className="mb-1 text-xs font-semibold text-blue-400 uppercase tracking-wider">Guidelines</h3>
-            <p className="text-sm text-gray-300">{task.projectId.guidelines}</p>
+        {/* Right: Vote panel */}
+        <div className="w-72 flex-shrink-0 border-l border-gray-700 bg-gray-800 p-4 overflow-y-auto space-y-4">
+          {/* Voting */}
+          <div>
+            <h3 className="text-sm font-semibold text-gray-200">Review Actions</h3>
+            <p className="mt-0.5 text-xs text-gray-500">
+              {enabledAnns.length} annotator{enabledAnns.length !== 1 ? 's' : ''} active
+            </p>
           </div>
-        )}
 
-        {/* Message */}
-        {message && (
-          <div className="mb-4 rounded-lg border border-amber-700/50 bg-amber-500/10 px-4 py-2 text-sm text-amber-300">
-            {message}
-          </div>
-        )}
-
-        {/* Tab navigation */}
-        <div className="mb-4 flex gap-1 border-b border-gray-700">
-          {['media', 'consensus', 'history'].map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-4 py-2 text-sm font-medium capitalize transition-colors ${
-                activeTab === tab
-                  ? 'border-b-2 border-blue-500 text-blue-400'
-                  : 'text-gray-400 hover:text-gray-200'
-              }`}
-            >
-              {tab === 'media' ? 'Media & Annotations' : tab === 'consensus' ? 'Vote Progress' : 'Review History'}
-            </button>
-          ))}
-        </div>
-
-        {/* Media & Annotations */}
-        {activeTab === 'media' && (
-          <ReviewMediaView task={taskWithText} annotations={task?.labels?.objects || []} />
-        )}
-
-        {/* Vote Progress */}
-        {activeTab === 'consensus' && (
-          <div className="rounded-xl border border-gray-700 bg-gray-800 p-4">
-            <ConsensusStatus reviewers={reviewers} task={{ ...task, currentUserId: user?._id || user?.id }} />
-          </div>
-        )}
-
-        {/* Review History */}
-        {activeTab === 'history' && (
-          <div className="space-y-4">
-            {/* Annotator labels summary */}
-            <div className="rounded-xl border border-gray-700 bg-gray-800 p-4">
-              <h3 className="mb-3 text-sm font-semibold text-gray-200">Annotator Annotations</h3>
-              {task?.labels?.objects && task.labels.objects.length > 0 ? (
-                <div className="space-y-2">
-                  {task.labels.objects.map((obj, idx) => (
-                    <div key={idx} className="flex items-center justify-between rounded border border-gray-700 bg-gray-900 px-3 py-2">
-                      <div className="flex items-center gap-2">
-                        <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: task?.availableLabels?.find((l) => l.name === obj.label)?.color || '#3b82f6' }} />
-                        <span className="text-sm text-gray-200">{obj.label}</span>
-                      </div>
-                      <span className="text-xs text-gray-500 font-mono">
-                        [{((obj.bbox?.[0]) || 0).toFixed(0)}, {((obj.bbox?.[1]) || 0).toFixed(0)}, {((obj.bbox?.[2]) || 0).toFixed(0)}, {((obj.bbox?.[3]) || 0).toFixed(0)}]
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-gray-500">No annotations found.</p>
-              )}
+          {multiAnnsBlocked ? (
+            <div className="rounded-lg border border-amber-700/30 bg-amber-500/5 p-3 text-sm text-amber-300">
+              Chi duoc approve/reject khi chi bat <strong>duy nhat 1 annotator</strong> de so sanh label.
             </div>
+          ) : !canVote ? (
+            <div className="rounded-lg border border-gray-700 bg-gray-900 p-3 text-sm text-gray-400">
+              {task.status !== 'submitted' ? 'Task da duoc review.' : currentVote ? 'Ban da vote: ' + currentVote : 'Khong co annotator nao duoc chon.'}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <button onClick={handleApprove} disabled={processing}
+                className="w-full rounded-lg bg-emerald-600 py-3 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50 transition">
+                Approve (A)
+              </button>
+              <button onClick={handleReject} disabled={processing}
+                className="w-full rounded-lg bg-rose-600 py-3 text-sm font-bold text-white hover:bg-rose-700 disabled:opacity-50 transition">
+                Reject (R)
+              </button>
+              <p className="text-center text-xs text-gray-500">Press A to Approve, R to Reject</p>
+            </div>
+          )}
 
-            {/* Review comments (if finalized) */}
-            {task?.reviewComments && (
-              <div className="rounded-xl border border-gray-700 bg-gray-800 p-4">
-                <h3 className="mb-2 text-sm font-semibold text-gray-200">Final Review Comment</h3>
-                <p className="text-sm text-gray-300">{task.reviewComments}</p>
-                {task?.errorCategory && (
-                  <span className="mt-2 inline-block rounded bg-rose-500/10 px-2 py-0.5 text-xs text-rose-400">
-                    {task.errorCategory}
-                  </span>
-                )}
-              </div>
-            )}
-
-            {/* Previous revision history */}
-            {task?.reviewNotes && task.reviewNotes.length > 0 && (
-              <div className="rounded-xl border border-gray-700 bg-gray-800 p-4">
-                <h3 className="mb-2 text-sm font-semibold text-gray-200">Review Notes History</h3>
-                <div className="space-y-2">
-                  {task.reviewNotes.map((note, idx) => (
-                    <div key={idx} className="rounded border border-gray-700 bg-gray-900 px-3 py-2">
-                      <p className="text-sm text-gray-300">{note.note || note.comment || JSON.stringify(note)}</p>
-                      <p className="mt-1 text-xs text-gray-500">
-                        {note.createdAt ? new Date(note.createdAt).toLocaleString('vi-VN') : ''}
-                      </p>
+          {/* Current annotator label summary */}
+          <div className="rounded-xl border border-gray-700 bg-gray-900 p-3">
+            <h4 className="mb-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">Current Labels ({aggregatedLabels.objects?.length || 0})</h4>
+            {(aggregatedLabels.objects || []).length === 0 ? (
+              <p className="text-xs text-gray-500">Khong co label</p>
+            ) : (
+              <div className="space-y-1 max-h-48 overflow-y-auto">
+                {(aggregatedLabels.objects || []).map((obj, i) => {
+                  const lbl = task.availableLabels?.find((l) => l.name === obj.label);
+                  return (
+                    <div key={i} className="flex items-center gap-2 rounded bg-gray-800 px-2 py-1">
+                      <div className="w-2 h-2 rounded-sm" style={{ backgroundColor: lbl?.color || '#3b82f6' }} />
+                      <span className="text-xs text-gray-200">{obj.label}</span>
                     </div>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
             )}
           </div>
-        )}
-      </div>
 
-      {/* Right sidebar - Voting panel */}
-      <div className="w-80 flex-shrink-0 border-l border-gray-700 bg-gray-800 p-4 overflow-y-auto">
-        <div className="mb-4">
-          <h3 className="text-sm font-semibold text-gray-200">Review Actions</h3>
-          <p className="mt-0.5 text-xs text-gray-500">{totalReviewers} reviewer(s) assigned</p>
-        </div>
-
-        <VotingPanel
-          task={task}
-          onApprove={handleApprove}
-          onReject={handleReject}
-          loading={processing}
-          hasVoted={hasVoted}
-          currentUserVote={currentVote}
-        />
-
-        {/* Quick consensus summary */}
-        <div className="mt-6 rounded-xl border border-gray-700 bg-gray-900 p-4">
-          <h4 className="mb-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">Quick Summary</h4>
-          <div className="space-y-2">
-            <div className="flex justify-between text-xs">
-              <span className="text-gray-400">Total annotations</span>
-              <span className="font-medium text-gray-200">
-                {task?.labels?.objects?.length || task?.labels?.spans?.length || task?.labels?.segments?.length || 0}
-              </span>
-            </div>
-            <div className="flex justify-between text-xs">
-              <span className="text-gray-400">Labels used</span>
-              <span className="font-medium text-gray-200">
-                {[...new Set((task?.labels?.objects || []).map((o) => o.label))].length}
-              </span>
-            </div>
-            <div className="flex justify-between text-xs">
-              <span className="text-gray-400">Reviewers voted</span>
-              <span className="font-medium text-gray-200">
-                {reviewers.filter((r) => r.status !== 'pending').length}/{totalReviewers}
-              </span>
-            </div>
-            <div className="flex justify-between text-xs">
-              <span className="text-gray-400">Status</span>
-              <span className={`font-medium ${task?.status === 'approved' ? 'text-emerald-400' : task?.status === 'rejected' ? 'text-rose-400' : 'text-amber-400'}`}>
-                {task?.status}
-              </span>
+          {/* Quick summary */}
+          <div className="rounded-xl border border-gray-700 bg-gray-900 p-3">
+            <h4 className="mb-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">Summary</h4>
+            <div className="space-y-1 text-xs">
+              <div className="flex justify-between"><span className="text-gray-400">Total labels</span><span className="text-gray-200">{aggregatedLabels.objects?.length || 0}</span></div>
+              <div className="flex justify-between"><span className="text-gray-400">Unique labels</span><span className="text-gray-200">{(new Set((aggregatedLabels.objects || []).map((o) => o.label))).size}</span></div>
+              <div className="flex justify-between"><span className="text-gray-400">Your vote</span><span className={currentVote === 'approved' ? 'text-emerald-400' : currentVote === 'rejected' ? 'text-rose-400' : 'text-gray-400'}>{currentVote || 'pending'}</span></div>
             </div>
           </div>
-        </div>
 
-        {/* Label legend */}
-        {task?.availableLabels && task.availableLabels.length > 0 && (
-          <div className="mt-4 rounded-xl border border-gray-700 bg-gray-900 p-4">
-            <h4 className="mb-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">Label Legend</h4>
-            <div className="space-y-1.5">
-              {task.availableLabels.map((label, idx) => (
-                <div key={idx} className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: label.color || '#3b82f6' }} />
-                  <span className="truncate text-xs text-gray-300">{label.name}</span>
-                </div>
-              ))}
+          {/* Label legend */}
+          {task.availableLabels && task.availableLabels.length > 0 && (
+            <div className="rounded-xl border border-gray-700 bg-gray-900 p-3">
+              <h4 className="mb-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">Label Legend</h4>
+              <div className="space-y-1">
+                {task.availableLabels.map((l) => (
+                  <div key={l.name} className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: l.color || '#3b82f6' }} />
+                    <span className="text-xs text-gray-300">{l.name}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );
