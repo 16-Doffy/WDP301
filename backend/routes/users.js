@@ -6,6 +6,83 @@ const { createActivityLog } = require('./activityLogs');
 
 const router = express.Router();
 
+// Get current user profile (all authenticated roles)
+router.get('/me', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select('-password');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    res.json({ user });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Update current user profile (all authenticated roles)
+router.put('/me', auth, [
+  body('fullName').optional().trim().isLength({ min: 1 }).withMessage('fullName is required'),
+  body('email').optional().isEmail().withMessage('Invalid email').normalizeEmail(),
+  body('specialty').optional().trim(),
+  body('currentPassword').optional().isString(),
+  body('newPassword').optional().isLength({ min: 6 }).withMessage('newPassword must be at least 6 characters'),
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const allowedFields = ['fullName', 'email', 'specialty'];
+    allowedFields.forEach((field) => {
+      if (Object.prototype.hasOwnProperty.call(req.body, field)) {
+        const val = typeof req.body[field] === 'string' ? req.body[field].trim() : req.body[field];
+        user[field] = val;
+      }
+    });
+
+    // Password change (optional)
+    if (req.body.newPassword) {
+      if (!req.body.currentPassword) {
+        return res.status(400).json({ message: 'currentPassword is required to change password' });
+      }
+      const ok = await user.comparePassword(req.body.currentPassword);
+      if (!ok) {
+        return res.status(400).json({ message: 'Current password is incorrect' });
+      }
+      user.password = req.body.newPassword;
+    }
+
+    await user.save();
+
+    // Log profile update (avoid logging raw values)
+    await createActivityLog(
+      req.user._id,
+      'profile_update',
+      'user',
+      user._id,
+      `Updated own profile`,
+      { updatedFields: Object.keys(req.body).filter((k) => k !== 'currentPassword' && k !== 'newPassword') },
+      req
+    );
+
+    const sanitized = await User.findById(user._id).select('-password');
+    res.json({ user: sanitized });
+  } catch (error) {
+    // Duplicate email/username errors
+    if (error?.code === 11000) {
+      const key = Object.keys(error.keyPattern || {})[0] || 'field';
+      return res.status(400).json({ message: `${key} already exists` });
+    }
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
 // Get all users (Admin only) or get annotators/reviewers (Manager can also access)
 router.get('/', auth, async (req, res) => {
   try {

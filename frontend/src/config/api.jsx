@@ -1,4 +1,4 @@
-// API Configuration
+﻿// API Configuration
 // Option 1: API_URL is base host (no trailing slash, no /api)
 const API_BASE_URL = (process.env.REACT_APP_API_URL || 'http://localhost:5000').replace(/\/+$/, '');
 

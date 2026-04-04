@@ -179,11 +179,11 @@ const AudioAnnotator = ({ audioUrl, labelSet = [], initialSegments = [], readOnl
         <button
           onClick={() => wavesurferRef.current?.playPause()}
           disabled={!isReady}
-          className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded disabled:opacity-50"
+          className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded disabled:opacity-50"
         >
           {isPlaying ? '⏸ Pause' : '▶ Play'}
         </button>
-        <span className="text-sm tabular-nums font-bold px-2 py-0.5 rounded" style={{ color: '#60a5fa', backgroundColor: 'rgba(59,130,246,0.15)' }}>
+        <span className="text-sm tabular-nums font-bold px-2 py-0.5 rounded" style={{ color: '#a78bfa', backgroundColor: 'rgba(124,58,237,0.15)' }}>
           {fmt(current)} / {fmt(dur)}
         </span>
         <input
@@ -193,7 +193,7 @@ const AudioAnnotator = ({ audioUrl, labelSet = [], initialSegments = [], readOnl
           step={0.1}
           value={current}
           onChange={(e) => wavesurferRef.current?.seekTo(e.target.value / (dur || 1))}
-          className="flex-1 h-1 accent-indigo-500"
+          className="flex-1 h-1 accent-purple-500"
         />
       </div>
 
@@ -259,7 +259,7 @@ const AudioAnnotator = ({ audioUrl, labelSet = [], initialSegments = [], readOnl
                 <span
                   key={l.name}
                   className="px-2 py-0.5 rounded text-xs font-bold"
-                  style={{ backgroundColor: getLabelColor(l.name, 0.3), color: getLabelColor(l.name, 1) }}
+                  style={{ backgroundColor: getLabelColor(l.name, 0.25), color: getLabelHexColor(l.name) }}
                 >
                   {l.name}
                 </span>
@@ -273,7 +273,7 @@ const AudioAnnotator = ({ audioUrl, labelSet = [], initialSegments = [], readOnl
             <select
               value={selectedLabel}
               onChange={(e) => setSelectedLabel(e.target.value)}
-              className="border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 bg-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              className="border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 bg-slate-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
             >
               {labelSet.map((l) => (
                 <option key={l.name} value={l.name}>
@@ -295,19 +295,19 @@ const AudioAnnotator = ({ audioUrl, labelSet = [], initialSegments = [], readOnl
             </div>
           )}
           {segments.map((seg) => (
-            <div key={seg.id} className="flex items-center justify-between p-3 bg-slate-800 border border-slate-700 rounded-lg hover:border-slate-600 transition-colors">
+            <div key={seg.id} className="flex items-center justify-between p-3 bg-slate-700 border border-slate-600 rounded-lg hover:border-slate-500 transition-colors">
               <div className="flex items-center gap-3">
-                <div className="w-4 h-4 rounded" style={{ backgroundColor: getLabelColor(seg.label, 1) }} />
-                <span className="text-sm font-bold tabular-nums" style={{ color: getLabelColor(seg.label, 1) }}>
+                <div className="w-4 h-4 rounded" style={{ backgroundColor: getLabelHexColor(seg.label) }} />
+                <span className="text-sm font-bold tabular-nums text-slate-300">
                   {fmt(seg.start)} - {fmt(seg.end)}
                 </span>
-                <span className="px-2 py-0.5 rounded text-xs font-bold" style={{ backgroundColor: getLabelColor(seg.label, 0.25), color: getLabelColor(seg.label, 1) }}>
+                <span className="px-2 py-0.5 rounded text-xs font-bold" style={{ backgroundColor: getLabelColor(seg.label, 0.2), color: getLabelHexColor(seg.label) }}>
                   {seg.label}
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  className="text-indigo-400 hover:text-indigo-300 text-sm px-2 py-0.5 rounded hover:bg-indigo-900/30 transition-colors"
+                  className="text-purple-400 hover:text-purple-300 text-sm px-2 py-0.5 rounded hover:bg-purple-900/30 transition-colors"
                   onClick={() => wavesurferRef.current?.play(seg.start, seg.end)}
                 >
                   ▶ Nghe

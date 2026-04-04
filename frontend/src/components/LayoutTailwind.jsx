@@ -36,11 +36,6 @@ const LayoutTailwind = () => {
         icon: <img src={datasetsIcon} alt="Datasets" className="h-5 w-5" />,
         path: '/manager/datasets',
       });
-      baseItems.push({
-        text: 'Topics',
-        icon: '🗂️',
-        path: '/manager/topics',
-      });
     }
 
     if (user.role === 'annotator') {
@@ -54,7 +49,6 @@ const LayoutTailwind = () => {
     if (user.role === 'admin') {
       baseItems.push({ text: 'Users', icon: '👤', path: '/admin/users' });
       baseItems.push({ text: 'Activity Logs', icon: '📜', path: '/admin/activity-logs' });
-      baseItems.push({ text: 'Datasets', icon: '🗂️', path: '/admin/datasets' });
     }
 
     return baseItems;
@@ -116,7 +110,11 @@ const LayoutTailwind = () => {
         </nav>
 
         <div className="border-t border-gray-800 p-3">
-          <div className="mb-3 flex items-center gap-3 rounded-lg border border-gray-800 bg-gray-900 p-2">
+          <button
+            type="button"
+            onClick={() => navigate('/profile')}
+            className="mb-3 w-full flex items-center gap-3 rounded-lg border border-gray-800 bg-gray-900 p-2 text-left hover:bg-gray-800 transition"
+          >
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-800 border border-gray-700">
               <span className="text-xs font-bold text-gray-200">
                 {user?.fullName?.split(' ').map((n) => n[0]).join('').toUpperCase() || 'U'}
@@ -126,7 +124,7 @@ const LayoutTailwind = () => {
               <p className="truncate text-sm font-semibold text-gray-200">{user?.fullName || 'User'}</p>
               <p className="truncate text-xs text-gray-400">{getRoleDisplay()}</p>
             </div>
-          </div>
+          </button>
 
           <button
             onClick={handleLogout}

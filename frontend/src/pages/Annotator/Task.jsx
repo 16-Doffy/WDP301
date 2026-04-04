@@ -38,7 +38,6 @@ const AnnotatorTask = () => {
   const [selectedTextRange, setSelectedTextRange] = useState(null); // { start, end, text }
   const [showLabelDropdown, setShowLabelDropdown] = useState(false);
   const [dropdownPosition, setDropdownPosition] = useState({ x: 0, y: 0 });
-  const [showGuidelines, setShowGuidelines] = useState(false);
   const textContainerRef = useRef(null);
   const dropdownRef = useRef(null);
   const canvasRef = useRef(null);
@@ -82,6 +81,38 @@ const AnnotatorTask = () => {
     return dataItem.filename ? `${baseUrl}/uploads/datasets/${dataItem.filename}` : '';
   };
 
+  const renderProjectGuidelines = useCallback(() => {
+    const text = (task?.projectId?.guidelines || '').trim();
+    if (!text) return null;
+
+    return (
+      <details className="mt-2 rounded-lg border border-blue-200 bg-white/70 px-3 py-2">
+        <summary className="cursor-pointer select-none text-xs font-semibold text-blue-900">
+          Hướng dẫn
+        </summary>
+        <div className="mt-2 text-sm text-slate-800 whitespace-pre-wrap leading-relaxed">
+          {text}
+        </div>
+      </details>
+    );
+  }, [task?.projectId?.guidelines]);
+
+  const renderProjectDescription = useCallback(() => {
+    const text = (task?.projectId?.description || '').trim();
+    if (!text) return null;
+
+    return (
+      <details className="mt-2 rounded-lg border border-slate-200 bg-white/70 px-3 py-2">
+        <summary className="cursor-pointer select-none text-xs font-semibold text-slate-800">
+          Mô tả project
+        </summary>
+        <div className="mt-2 text-sm text-slate-800 whitespace-pre-wrap leading-relaxed">
+          {text}
+        </div>
+      </details>
+    );
+  }, [task?.projectId?.description]);
+
   const renderTextWithSpans = () => {
     if (!textContent) return 'Không có nội dung hiển thị.';
     if (textSpans.length === 0) return textContent;
@@ -99,7 +130,7 @@ const AnnotatorTask = () => {
         });
       }
 
-      const labelInfo = task?.availableLabels?.find((l) => l.name === span.label);
+      const labelInfo = task?.projectId?.labelSet?.find((l) => l.name === span.label);
       parts.push({
         text: textContent.substring(span.start, span.end),
         isSpan: true,
@@ -153,7 +184,6 @@ const AnnotatorTask = () => {
     setTextSpans([]);
     setSelectedTextRange(null);
     setShowLabelDropdown(false);
-    setShowGuidelines(false);
     setLoading(true);
     fetchTask();
   }, [id]);
@@ -626,7 +656,7 @@ const AnnotatorTask = () => {
           <div className="flex items-center gap-2">
             <span className="text-green-800 font-bold">✓ APPROVED</span>
             {task.reviewedAt && (
-              <span className="text-green-600 text-lg">
+              <span className="text-green-600 text-sm">
                 by {task.reviewerId?.fullName || task.reviewerId?.username || 'Reviewer'} on{' '}
                 {new Date(task.reviewedAt).toLocaleString()}
               </span>
@@ -671,76 +701,40 @@ const AnnotatorTask = () => {
   };
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden overflow-x-hidden bg-gray-150 h-screen">
+    <div className="flex-1 flex flex-col overflow-hidden overflow-x-hidden bg-slate-900 text-gray-200 h-screen">
       {getStatusBadge() && <div className="px-6 pt-4">{getStatusBadge()}</div>}
 
-      <div className="px-6 pt-3">
-        <div className="rounded-lg border border-blue-200 bg-gray-150/40 px-4 py-3">
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div className="md:w-[38%]">
-              <h2 className="text-base font-semibold text-white">{task?.projectId?.name || 'Project Detail'}</h2>
-              <p className="text-lg text-white mt-0.5">
+      <div className="px-6 pt-4">
+        <div className="rounded-xl border border-gray-700 bg-gray-800 px-5 py-4 shadow-lg">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-100">{task?.projectId?.name || 'Project Detail'}</h2>
+              <p className="text-xs text-blue-600 mt-0.5">
                 Task hiện tại: {Math.max(1, currentTaskIndex + 1)} / {Math.max(1, batchTasks.length)}
                 {' '}• Đã hoàn thành: {completedInBatch}/{Math.max(1, batchTasks.length)}
               </p>
               {task?.projectId?.deadline && (
-                <p className="text-lg font-medium text-rose-500 mt-0.5">
+                <p className="text-xs font-medium text-rose-600 mt-0.5">
                   Deadline: {new Date(task.projectId.deadline).toLocaleString('vi-VN')}
                 </p>
               )}
-              <p className="text-lg text-white mt-0.5">Dataset: {task?.datasetId?.name || 'N/A'}</p>
-              <p className="text-lg text-white mt-0.5">Subtopic: {task?.subtopicId?.name || 'N/A'}</p>
+              <p className="text-xs text-blue-700 mt-0.5">Dataset: {task?.datasetId?.name || 'N/A'}</p>
+
+              {renderProjectDescription()}
+              {renderProjectGuidelines()}
             </div>
 
-            <div className="md:flex-1 md:px-4">
-              {task?.projectId?.guidelines && (
-                <div className="rounded-lg border border-sky-700/40 bg-sky-900/20">
-                  <button
-                    type="button"
-                    onClick={() => setShowGuidelines((v) => !v)}
-                    className="w-full flex items-center justify-between px-3 py-2 text-left"
-                  >
-                    <p className="text-xs font-semibold uppercase tracking-wide text-sky-300">Huong dan project</p>
-                    <span className="text-sky-300 text-sm">{showGuidelines ? '▲' : '▼'}</span>
-                  </button>
-                  {showGuidelines && (
-                    <div className="px-3 pb-3">
-                      <p className="whitespace-pre-wrap text-sm text-slate-200">
-                        {task.projectId.guidelines}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2 md:pt-1">
+            <div className="flex items-center gap-2">
               <button
                 onClick={() => navigate('/annotator/tasks')}
-                className="rounded-md bg-gray-100 px-2.5 py-1.5 text-xs font-medium text-blue-700 border border-blue-300 hover:bg-blue-100"
+                className="rounded-md bg-white px-2.5 py-1.5 text-xs font-medium text-blue-700 border border-blue-300 hover:bg-blue-100"
               >
                 Quay lại danh sách project
               </button>
             </div>
           </div>
 
-          {Array.isArray(task?.projectId?.questions) && task.projectId.questions.length > 0 && (
-            <div className="mt-3 rounded-lg border border-violet-700/40 bg-violet-900/20 p-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-violet-300">
-                Cau hoi can tra loi ({task.projectId.questions.length})
-              </p>
-              <ul className="mt-1 list-disc pl-5 text-sm text-slate-200 space-y-1">
-                {task.projectId.questions.map((q, idx) => (
-                  <li key={idx}>
-                    {q?.questionText || q?.text || q?.label || 'Cau hoi'}
-                    {q?.required !== false && <span className="ml-1 text-rose-300">*</span>}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          <div className="mt-2 h-2 w-full rounded-full bg-blue-100">
+          <div className="mt-3 h-2 w-full rounded-full bg-gray-700">
             <div
               className="h-2 rounded-full bg-blue-600 transition-all"
               style={{ width: `${Math.min(100, Math.round(batchProgress || 0))}%` }}
@@ -750,19 +744,19 @@ const AnnotatorTask = () => {
       </div>
 
       <div className="flex-1 flex overflow-hidden">
-        <div className="flex-1 flex flex-col overflow-hidden bg-gray-150/40" ref={canvasRef}>
+        <div className="flex-1 flex flex-col overflow-hidden bg-gray-100" ref={canvasRef}>
           {/* NOTE: UI phần dưới giữ nguyên như file hiện tại (không đụng vào để tránh sửa lớn). */}
-          <div className="flex-1 overflow-auto bg-gray-150/40 p-4 md:p-6">
+          <div className="flex-1 overflow-auto bg-gray-50 p-4 md:p-6">
             {getTaskKind(task) === 'image' ? (
-              <div className="mx-auto w-full max-w-6xl rounded-xl border border-slate-200 bg-gray-150/40 shadow-sm p-4 md:p-5">
+              <div className="mx-auto w-full max-w-6xl rounded-xl border border-slate-200 bg-white shadow-sm p-4 md:p-5">
                 <div className="mb-3 flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-white">Image Annotation</h3>
+                  <h3 className="text-lg font-semibold text-slate-800">Image Annotation</h3>
                   <span className="text-xs text-slate-500">{task?.dataItem?.filename || 'Image file'}</span>
                 </div>
 
                 <ImageAnnotator
                   imageUrl={buildFileUrl(task.dataItem)}
-                  labelSet={task?.availableLabels || []}
+                  labelSet={task?.projectId?.labelSet || []}
                   questions={task?.projectId?.questions || []}
                   onAnnotationsChange={handleAnnotationsChange}
                   initialAnnotations={annotations}
@@ -829,13 +823,13 @@ const AnnotatorTask = () => {
                 </div>
 
                 <div className="bg-blue-50 border border-blue-200 rounded-md p-3 text-sm text-blue-800">
-                  <strong>Hướng dẫn:</strong> Bôi đen phần văn bản bạn muốn gán nhãn, sau đó chọn nhãn từ dropdown.
+                  <strong>Mẹo thao tác:</strong> Bôi đen phần văn bản bạn muốn gán nhãn, sau đó chọn nhãn từ dropdown.
                 </div>
 
                 <div className="relative">
                   <div
                     ref={textContainerRef}
-                    className="border border-slate-300 rounded-md bg-gray-150/40 p-4 max-h-96 overflow-auto text-base text-slate-900 whitespace-pre-wrap relative select-text leading-relaxed"
+                    className="border border-slate-300 rounded-md bg-white p-4 max-h-96 overflow-auto text-base text-slate-900 whitespace-pre-wrap relative select-text leading-relaxed"
                     onMouseUp={() => {
                       if (task?.status === 'submitted' || task?.status === 'approved') return;
 
@@ -887,10 +881,10 @@ const AnnotatorTask = () => {
                     {renderTextWithSpans()}
                   </div>
 
-                  {showLabelDropdown && selectedTextRange && task?.availableLabels?.length > 0 && (
+                  {showLabelDropdown && selectedTextRange && task?.projectId?.labelSet?.length > 0 && (
                     <div
                       ref={dropdownRef}
-                      className="absolute z-50 bg-gray-150/40 border border-slate-300 rounded-lg shadow-xl p-2 min-w-[220px]"
+                      className="absolute z-50 bg-white border border-slate-300 rounded-lg shadow-xl p-2 min-w-[220px]"
                       style={{
                         left: `${dropdownPosition.x}px`,
                         top: `${dropdownPosition.y}px`,
@@ -899,7 +893,7 @@ const AnnotatorTask = () => {
                     >
                       <div className="text-sm font-semibold text-slate-800 mb-2">Chọn nhãn:</div>
                       <div className="space-y-1">
-                        {task.availableLabels.map((lbl) => (
+                        {task.projectId.labelSet.map((lbl) => (
                           <button
                             key={lbl.name}
                             onClick={() => {
@@ -916,7 +910,7 @@ const AnnotatorTask = () => {
                               setShowLabelDropdown(false);
                               window.getSelection()?.removeAllRanges();
                             }}
-                            className="w-full bg-gray-150/40 text-slate-800 text-left px-3 py-2 text-sm rounded hover:bg-blue-50 hover:text-slate-900 border border-transparent hover:border-blue-200 transition-colors"
+                            className="w-full bg-white text-slate-800 text-left px-3 py-2 text-sm rounded hover:bg-blue-50 hover:text-slate-900 border border-transparent hover:border-blue-200 transition-colors"
                             style={{ borderLeftColor: lbl.color || '#3b82f6', borderLeftWidth: '30px' }}
                           >
                             {lbl.name}
@@ -944,7 +938,7 @@ const AnnotatorTask = () => {
                     </label>
                     <div className="border rounded-md p-3 max-h-48 overflow-auto space-y-2">
                       {textSpans.map((span) => {
-                        const labelInfo = task?.availableLabels?.find((l) => l.name === span.label);
+                        const labelInfo = task?.projectId?.labelSet?.find((l) => l.name === span.label);
                         return (
                           <div
                             key={span.id}
@@ -959,7 +953,7 @@ const AnnotatorTask = () => {
                                 <span className="text-xs font-semibold text-gray-700">{span.label}</span>
                                 <span className="text-xs text-gray-500">({span.start}-{span.end})</span>
                               </div>
-                              <div className="text-xs text-gray-600 bg-gray-150/40 p-1 rounded border border-gray-200 truncate">
+                              <div className="text-xs text-gray-600 bg-white p-1 rounded border border-gray-200 truncate">
                                 "{span.text}"
                               </div>
                             </div>
@@ -984,7 +978,7 @@ const AnnotatorTask = () => {
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-gray-700">Ghi chú tổng thể (tùy chọn)</label>
                   <textarea
-                    className="w-full border border-gray-300 bg-gray-150/40 text-white placeholder:text-gray-400 rounded-md p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 rounded-md p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     rows={3}
                     placeholder="Nhập ghi chú tổng thể cho toàn bộ văn bản..."
                     value={annotationNote}
@@ -1044,7 +1038,7 @@ const AnnotatorTask = () => {
                 </div>
               </div>
             ) : getTaskKind(task) === 'audio' ? (
-              <div className="mx-auto w-full max-w-5xl space-y-4 rounded-xl border border-slate-200 bg-gray-150/40 p-4 shadow-sm">
+              <div className="mx-auto w-full max-w-5xl space-y-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                 <div className="mb-1 flex items-center justify-between">
                   <h3 className="text-lg font-semibold text-slate-800">Audio Annotation</h3>
                   <span className="text-xs font-medium text-slate-500">{task?.dataItem?.mimeType}</span>
@@ -1061,7 +1055,7 @@ const AnnotatorTask = () => {
                 </div>
                 <AudioAnnotator
                   audioUrl={buildFileUrl(task?.dataItem)}
-                  labelSet={task?.availableLabels || []}
+                  labelSet={task?.projectId?.labelSet || []}
                   initialSegments={labels?.segments || []}
                   readOnly={task?.status === 'submitted' || task?.status === 'approved'}
                   onChange={(segs) => {
@@ -1072,7 +1066,7 @@ const AnnotatorTask = () => {
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-gray-700">Ghi chú / Nhãn cho audio</label>
                   <textarea
-                    className="w-full border border-gray-300 bg-gray-150/40 text-gray-900 placeholder:text-gray-400 rounded-md p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full border border-gray-300 bg-white text-gray-900 placeholder:text-gray-400 rounded-md p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     rows={4}
                     placeholder="Nhập nhận xét hoặc nhãn..."
                     value={annotationNote}

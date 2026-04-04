@@ -2,8 +2,6 @@ const express = require('express');
 const Task = require('../models/Task');
 const Dataset = require('../models/Dataset');
 const Project = require('../models/Project');
-const LabelSet = require('../models/LabelSet');
-const Subtopic = require('../models/Subtopic');
 const { auth, authorize } = require('../middleware/auth');
 const { createActivityLog } = require('./activityLogs');
 
@@ -114,117 +112,6 @@ const normalizePath = (filePath) => {
   return normalized;
 };
 
-// Get projects overview for annotator (grouped by project + subtopic)
-router.get('/annotator-projects', auth, async (req, res) => {
-  try {
-    if (req.user.role !== 'annotator') {
-      return res.status(403).json({ message: 'Only annotators can access this endpoint' });
-    }
-
-    // Get all tasks for this annotator with full population
-    const tasks = await Task.find({ annotatorId: req.user._id })
-      .populate('projectId', 'name guidelines questions deadline status')
-      .populate('datasetId', 'name subtopicId type')
-      .populate('subtopicId', 'name description guideline taskType')
-      .sort({ createdAt: -1 });
-
-    // Group by projectId
-    const projectMap = new Map();
-
-    tasks.forEach((task) => {
-      const project = task.projectId;
-      if (!project) return;
-
-      const projectKey = project._id.toString();
-
-      if (!projectMap.has(projectKey)) {
-        projectMap.set(projectKey, {
-          projectId: project._id,
-          projectName: project.name,
-          guidelines: project.guidelines,
-          deadline: project.deadline,
-          projectStatus: project.status,
-          subtopics: new Map(),
-          datasetTypes: new Set(),
-        });
-      }
-
-      const projectEntry = projectMap.get(projectKey);
-      const dsType = task.datasetId?.type;
-      if (dsType) projectEntry.datasetTypes.add(String(dsType).toLowerCase());
-
-      // Subtopic key
-      const subtopicKey = task.subtopicId ? task.subtopicId._id.toString() : '__default__';
-      const subtopicName = task.subtopicId?.name || 'Default';
-      const subtopicDesc = task.subtopicId?.description || '';
-      const subtopicGuideline = task.subtopicId?.guideline || '';
-
-      if (!projectEntry.subtopics.has(subtopicKey)) {
-        projectEntry.subtopics.set(subtopicKey, {
-          subtopicId: task.subtopicId?._id || null,
-          subtopicName,
-          subtopicDescription: subtopicDesc,
-          subtopicGuideline,
-          taskType: task.subtopicId?.taskType || project.guidelines || 'bbox',
-          datasetId: task.datasetId?._id || task.datasetId,
-          datasetName: task.datasetId?.name || '',
-          tasks: [],
-          total: 0,
-          completed: 0,
-          submitted: 0,
-          approved: 0,
-          rejected: 0,
-          inProgress: 0,
-        });
-      }
-
-      const subtopic = projectEntry.subtopics.get(subtopicKey);
-      subtopic.tasks.push({
-        taskId: task._id,
-        status: task.status,
-        dataItem: task.dataItem,
-        labels: task.labels,
-        createdAt: task.createdAt,
-        updatedAt: task.updatedAt,
-        submittedAt: task.submittedAt,
-      });
-      subtopic.total++;
-      switch (task.status) {
-        case 'approved': subtopic.approved++; break;
-        case 'submitted': subtopic.submitted++; subtopic.approved++; break;
-        case 'completed': subtopic.completed++; break;
-        case 'rejected': subtopic.rejected++; break;
-        case 'in_progress': subtopic.inProgress++; break;
-      }
-    });
-
-    // Build response
-    const result = Array.from(projectMap.values()).map((project) => ({
-      projectId: project.projectId,
-      projectName: project.projectName,
-      guidelines: project.guidelines,
-      deadline: project.deadline,
-      projectStatus: project.projectStatus,
-      datasetTypes: Array.from(project.datasetTypes || []),
-      subtopics: Array.from(project.subtopics.values()).map((st) => ({
-        ...st,
-        progress: st.total > 0 ? Math.round(((st.completed + st.submitted + st.approved) / st.total) * 100) : 0,
-        doneCount: st.completed + st.submitted + st.approved,
-      })),
-      totalTasks: Array.from(project.subtopics.values()).reduce((sum, st) => sum + st.total, 0),
-      totalDone: Array.from(project.subtopics.values()).reduce((sum, st) => sum + st.doneCount, 0),
-    })).map((p) => ({
-      ...p,
-      overallProgress: p.totalTasks > 0 ? Math.round((p.totalDone / p.totalTasks) * 100) : 0,
-    }));
-
-    res.json(result);
-  } catch (error) {
-    console.error('Error in /annotator-projects:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
-  }
-});
-
 // Get tasks for current user
 router.get('/my-tasks', auth, async (req, res) => {
   try {
@@ -233,17 +120,6 @@ router.get('/my-tasks', auth, async (req, res) => {
     // Optional filtering by datasetId (used by Annotator batch navigation)
     if (req.query.datasetId) {
       query.datasetId = req.query.datasetId;
-    }
-
-    // Optional filtering by subtopicId
-    if (req.query.subtopicId) {
-      if (req.query.subtopicId === '__all__') {
-        // Show all subtopics (no filter)
-      } else if (req.query.subtopicId === '__none__') {
-        query.subtopicId = { $eq: null };
-      } else {
-        query.subtopicId = req.query.subtopicId;
-      }
     }
     
     if (req.user.role === 'annotator') {
@@ -270,9 +146,8 @@ router.get('/my-tasks', auth, async (req, res) => {
     }
 
     const tasks = await Task.find(query)
-      .populate('projectId', 'name guidelines questions deadline')
-      .populate('datasetId', 'name subtopicId')
-      .populate('subtopicId', 'name description guideline taskType')
+      .populate('projectId', 'name description labelSet guidelines questions deadline')
+      .populate('datasetId', 'name')
       .populate('annotatorId', 'username fullName')
       .populate('reviewerId', 'username fullName')
       .populate('reviewers.reviewerId', 'username fullName')
@@ -304,39 +179,11 @@ router.get('/my-tasks', auth, async (req, res) => {
 router.get('/:id', auth, async (req, res) => {
   try {
     const task = await Task.findById(req.params.id)
-      .populate('projectId', 'name guidelines questions managerId deadline labelSet')
-      .populate('datasetId', 'name subtopicId')
-      .populate('subtopicId', 'name description guideline taskType')
+      .populate('projectId', 'name description labelSet guidelines questions managerId deadline')
+      .populate('datasetId', 'name')
       .populate('annotatorId', 'username fullName')
       .populate('reviewerId', 'username fullName')
       .populate('reviewers.reviewerId', 'username fullName');
-
-    // Resolve availableLabels if missing (backwards compat — reviewer/reviewer may see tasks without availableLabels set)
-    if (!task.availableLabels || task.availableLabels.length === 0) {
-      const LabelSet = require('../models/LabelSet');
-      const subtopicIds = [];
-      if (task.subtopicId) {
-        const sid = task.subtopicId?._id?.toString?.() || task.subtopicId.toString?.() || task.subtopicId;
-        if (sid) subtopicIds.push(sid);
-      }
-      if (task.datasetId?.subtopicId) {
-        const sid = task.datasetId.subtopicId?._id?.toString?.() || task.datasetId.subtopicId.toString?.() || task.datasetId.subtopicId;
-        if (sid && !subtopicIds.includes(sid)) subtopicIds.push(sid);
-      }
-      if (task.projectId?.labelSet && Array.isArray(task.projectId.labelSet)) {
-        task.availableLabels = task.projectId.labelSet;
-      } else if (subtopicIds.length > 0) {
-        const lsDocs = await LabelSet.find({ subtopicId: { $in: subtopicIds } }).lean();
-        const merged = new Map();
-        lsDocs.forEach((ls) => {
-          (ls.labels || []).forEach((l) => {
-            const k = l.name || JSON.stringify(l);
-            if (!merged.has(k)) merged.set(k, l);
-          });
-        });
-        task.availableLabels = [...merged.values()];
-      }
-    }
 
     if (!task) {
       return res.status(404).json({ message: 'Task not found' });
@@ -383,6 +230,33 @@ router.get('/:id', auth, async (req, res) => {
       }
     }
 
+    // Resolve availableLabels if missing (backwards compat for reviewer/manager viewing tasks)
+    if (!task.availableLabels || task.availableLabels.length === 0) {
+      const LabelSet = require('../models/LabelSet');
+      const subtopicIds = [];
+      if (task.subtopicId) {
+        const sid = task.subtopicId?._id?.toString?.() || task.subtopicId.toString?.() || task.subtopicId;
+        if (sid) subtopicIds.push(sid);
+      }
+      if (task.datasetId?.subtopicId) {
+        const sid = task.datasetId.subtopicId?._id?.toString?.() || task.datasetId.subtopicId.toString?.() || task.datasetId.subtopicId;
+        if (sid && !subtopicIds.includes(sid)) subtopicIds.push(sid);
+      }
+      if (task.projectId?.labelSet && Array.isArray(task.projectId.labelSet)) {
+        task.availableLabels = task.projectId.labelSet;
+      } else if (subtopicIds.length > 0) {
+        const lsDocs = await LabelSet.find({ subtopicId: { $in: subtopicIds } }).lean();
+        const merged = new Map();
+        lsDocs.forEach((ls) => {
+          (ls.labels || []).forEach((l) => {
+            const k = l.name || JSON.stringify(l);
+            if (!merged.has(k)) merged.set(k, l);
+          });
+        });
+        task.availableLabels = [...merged.values()];
+      }
+    }
+
     res.json(task);
   } catch (error) {
     console.error('Error fetching task:', error);
@@ -394,7 +268,7 @@ router.get('/:id', auth, async (req, res) => {
 router.get('/:id/related', auth, async (req, res) => {
   try {
     const task = await Task.findById(req.params.id)
-      .populate('projectId', 'name guidelines questions managerId deadline')
+      .populate('projectId', 'name description labelSet guidelines questions managerId deadline')
       .populate('datasetId', 'name')
       .populate('annotatorId', 'username fullName')
       .populate('reviewerId', 'username fullName')
@@ -436,7 +310,7 @@ router.get('/:id/related', auth, async (req, res) => {
 
     const relatedTasks = await Task.find(query)
       .select('status dataItem labels annotatorId reviewedAt primaryForItem submittedAt')
-      .populate('projectId', 'name guidelines questions managerId deadline')
+      .populate('projectId', 'name description labelSet guidelines questions managerId deadline')
       .populate('datasetId', 'name')
       .populate('annotatorId', 'username fullName')
       .populate('reviewerId', 'username fullName')
@@ -609,73 +483,8 @@ router.post('/assign', auth, authorize('manager', 'admin'), async (req, res) => 
       existingTasks.map((t) => `${normalizeId(t.annotatorId)}::${t?.dataItem?.filename || ''}::${normalizePath(t?.dataItem?.path || '')}`)
     );
 
-    // Load available labels from Dataset → Subtopic(s) → LabelSet
-    const datasetSubtopicIds = Array.from(new Set([
-      ...(Array.isArray(dataset.subtopicIds) ? dataset.subtopicIds.map((id) => id?.toString?.() || String(id)) : []),
-      ...(dataset.subtopicId ? [dataset.subtopicId?.toString?.() || String(dataset.subtopicId)] : []),
-    ].filter(Boolean)));
-
-    const subtopicIdsForLabels = datasetSubtopicIds.length > 0 ? datasetSubtopicIds : [];
-    const labelSets = subtopicIdsForLabels.length > 0
-      ? await LabelSet.find({ subtopicId: { $in: subtopicIdsForLabels } })
-      : [];
-
-    const mergedLabelMap = new Map();
-    labelSets.forEach((ls) => {
-      (ls.labels || []).forEach((lbl) => {
-        const key = lbl?.name || JSON.stringify(lbl);
-        if (!mergedLabelMap.has(key)) mergedLabelMap.set(key, lbl);
-      });
-    });
-    const commonAvailableLabels = [...mergedLabelMap.values()];
-
-    const labelsBySubtopic = new Map();
-    if (subtopicIdsForLabels.length > 0) {
-      const allLabelSets = await LabelSet.find({ subtopicId: { $in: subtopicIdsForLabels } }).lean();
-      allLabelSets.forEach((ls) => {
-        const sid = ls.subtopicId?.toString?.();
-        if (!sid) return;
-        const current = labelsBySubtopic.get(sid) || new Map();
-        (ls.labels || []).forEach((lbl) => {
-          const key = lbl?.name || JSON.stringify(lbl);
-          if (!current.has(key)) current.set(key, lbl);
-        });
-        labelsBySubtopic.set(sid, current);
-      });
-    }
-
-    const subtopicPathMatchers = [];
-    if (datasetSubtopicIds.length > 0) {
-      const stDocs = await Subtopic.find({ _id: { $in: datasetSubtopicIds } }).select('_id assets.path assets.filename').lean();
-      stDocs.forEach((st) => {
-        const sid = st._id?.toString?.();
-        if (!sid) return;
-        const paths = new Set();
-        (st.assets || []).forEach((a) => {
-          if (a?.path) paths.add(normalizePath(a.path));
-          if (a?.filename) paths.add((a.filename || '').toString());
-        });
-        subtopicPathMatchers.push({ subtopicId: sid, paths });
-      });
-    }
-
     const tasks = [];
     for (const file of dataset.files) {
-      let fileSubtopicId = file.subtopicId || dataset.subtopicId || undefined;
-
-      if (!fileSubtopicId && subtopicPathMatchers.length > 0) {
-        const nPath = normalizePath(file.path || '');
-        const fname = (file.filename || '').toString();
-        const matched = subtopicPathMatchers.find((m) => m.paths.has(nPath) || (fname && m.paths.has(fname)));
-        if (matched?.subtopicId) fileSubtopicId = matched.subtopicId;
-      }
-
-      const fileSubtopicKey = fileSubtopicId?.toString?.() || (fileSubtopicId ? String(fileSubtopicId) : '');
-      const specificLabels = fileSubtopicKey && labelsBySubtopic.get(fileSubtopicKey)
-        ? [...labelsBySubtopic.get(fileSubtopicKey).values()]
-        : [];
-      const availableLabels = specificLabels.length > 0 ? specificLabels : commonAvailableLabels;
-
       for (const annotatorId of annotatorIds) {
         const key = `${normalizeId(annotatorId)}::${file.filename}::${normalizePath(file.path)}`;
         if (existingKeys.has(key)) continue;
@@ -683,7 +492,6 @@ router.post('/assign', auth, authorize('manager', 'admin'), async (req, res) => 
         const task = new Task({
           projectId,
           datasetId,
-          subtopicId: fileSubtopicId,
           annotatorId,
           dataItem: {
             filename: file.filename,
@@ -692,7 +500,6 @@ router.post('/assign', auth, authorize('manager', 'admin'), async (req, res) => 
             mimeType: file.mimeType || 'application/octet-stream'
           },
           status: 'assigned',
-          availableLabels,
           reviewers: normalizedReviewerIds.map(rid => ({
             reviewerId: rid,
             status: 'pending'
@@ -756,7 +563,7 @@ router.post('/assign', auth, authorize('manager', 'admin'), async (req, res) => 
 router.put('/:id/label', auth, authorize('annotator'), async (req, res) => {
   try {
     const task = await Task.findById(req.params.id)
-      .populate('projectId', 'deadline');
+      .populate('projectId', 'labelSet deadline');
     
     if (!task) {
       return res.status(404).json({ message: 'Task not found' });
@@ -809,9 +616,9 @@ router.put('/:id/label', auth, authorize('annotator'), async (req, res) => {
 
     // Validate labels if provided
     if (req.body.labels) {
-      // If task has availableLabels, validate that labels use valid label names
-      if (task.availableLabels && Array.isArray(task.availableLabels) && task.availableLabels.length > 0) {
-        const validLabels = task.availableLabels.map(l => l.name || l);
+      // If project has labelSet, validate that labels use valid label names
+      if (task.projectId?.labelSet && Array.isArray(task.projectId.labelSet) && task.projectId.labelSet.length > 0) {
+        const validLabels = task.projectId.labelSet.map(l => l.name || l);
 
         // Image object labels
         if (req.body.labels.objects && Array.isArray(req.body.labels.objects)) {
@@ -914,16 +721,12 @@ router.post('/:id/complete', auth, authorize('annotator'), async (req, res) => {
 // Submit batch (all tasks in a dataset) for review (Annotator)
 router.post('/submit-batch', auth, authorize('annotator'), async (req, res) => {
   try {
-    const { datasetId, subtopicId } = req.body;
-    if (!datasetId && !subtopicId) {
-      return res.status(400).json({ message: 'datasetId or subtopicId is required' });
+    const { datasetId } = req.body;
+    if (!datasetId) {
+      return res.status(400).json({ message: 'datasetId is required' });
     }
 
-    const query = { annotatorId: req.user._id };
-    if (subtopicId) query.subtopicId = subtopicId;
-    else if (datasetId) query.datasetId = datasetId;
-
-    const tasks = await Task.find(query)
+    const tasks = await Task.find({ datasetId, annotatorId: req.user._id })
       .populate('projectId', 'questions deadline');
 
     if (!tasks || tasks.length === 0) {
