@@ -7,9 +7,10 @@ import {
   Alert, Chip, CircularProgress, Stack, LinearProgress, Tabs, Tab,
   FormControl, InputLabel, Select, MenuItem, Table, TableBody,
   TableCell, TableContainer, TableHead, TableRow, Paper, Tooltip, Snackbar,
+  Checkbox, ListItemText,
 } from '@mui/material';
 import {
-  Add as AddIcon, Delete as DeleteIcon,
+  Add as AddIcon, Delete as DeleteIcon, Edit as EditIcon,
   Search as SearchIcon, Download as DownloadIcon, CheckCircle as CheckCircleIcon,
   Dataset as DatasetIcon, Visibility as VisibilityIcon, Image as ImageIcon,
   AudioFile as AudioIcon, Description as TextIcon, Summarize as StatsIcon,
@@ -88,17 +89,22 @@ const Datasets = () => {
   const [datasets, setDatasets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [selectedDs, setSelectedDs] = useState(null);
+  const [editingDs, setEditingDs] = useState(null);
   const [form, setForm] = useState({ name: '', description: '', type: 'image', subtopicId: '' });
   const [topics, setTopics] = useState([]);
   const [subtopics, setSubtopics] = useState([]);
   const [selectedTopicId, setSelectedTopicId] = useState('');
   const [selectedSubtopicId, setSelectedSubtopicId] = useState('');
+  const [selectedSubtopicIds, setSelectedSubtopicIds] = useState([]);
+  const [editTopicName, setEditTopicName] = useState('');
   const [subtopicAssets, setSubtopicAssets] = useState(null);
   const [subtopicLabels, setSubtopicLabels] = useState([]);
   const [imageCount, setImageCount] = useState(100);
   const [creating, setCreating] = useState(false);
+  const [updating, setUpdating] = useState(false);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState('all');
@@ -112,6 +118,8 @@ const Datasets = () => {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailTab, setDetailTab] = useState(0);
   const [detailItems, setDetailItems] = useState([]);
+  const [detailSubtopicSummary, setDetailSubtopicSummary] = useState([]);
+  const [detailSubtopicFilter, setDetailSubtopicFilter] = useState('__all__');
   const [detailItemsLoading, setDetailItemsLoading] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportDs, setExportDs] = useState(null);
@@ -187,8 +195,11 @@ const Datasets = () => {
 
   useEffect(() => {
     if (selectedTopicId) {
-      setSelectedSubtopicId('');
-      setForm(f => ({ ...f, subtopicId: '' }));
+      if (!editOpen) {
+        setSelectedSubtopicId('');
+        setSelectedSubtopicIds([]);
+        setForm(f => ({ ...f, subtopicId: '' }));
+      }
       setSubtopicAssets(null);
       setSubtopicLabels([]);
       loadSubtopicsForTopic(selectedTopicId);
@@ -197,16 +208,43 @@ const Datasets = () => {
       setSubtopicAssets(null);
       setSubtopicLabels([]);
     }
-  }, [selectedTopicId]);
+  }, [selectedTopicId, editOpen]);
 
-  const loadSubtopicPool = async (subtopicId) => {
+  const loadSubtopicPool = async (subtopicIds) => {
+    const ids = Array.isArray(subtopicIds) ? subtopicIds.filter(Boolean) : (subtopicIds ? [subtopicIds] : []);
+    if (!ids.length) {
+      setSubtopicAssets(null);
+      setSubtopicLabels([]);
+      return;
+    }
     try {
-      const [assetRes, labelRes] = await Promise.all([
-        axios.get(API_URL + '/api/subtopics/' + subtopicId + '/assets', { headers: { Authorization: 'Bearer ' + getAuthToken() } }),
-        axios.get(API_URL + '/api/labelsets?subtopicId=' + subtopicId, { headers: { Authorization: 'Bearer ' + getAuthToken() } }),
-      ]);
-      const assets = Array.isArray(assetRes.data) ? assetRes.data : [];
-      const labels = Array.isArray(labelRes.data) ? labelRes.data : [];
+      const responses = await Promise.all(ids.map(async (id) => {
+        const [assetRes, labelRes] = await Promise.all([
+          axios.get(API_URL + '/api/subtopics/' + id + '/assets', { headers: { Authorization: 'Bearer ' + getAuthToken() } }),
+          axios.get(API_URL + '/api/labelsets?subtopicId=' + id, { headers: { Authorization: 'Bearer ' + getAuthToken() } }),
+        ]);
+        return {
+          assets: Array.isArray(assetRes.data) ? assetRes.data : [],
+          labels: Array.isArray(labelRes.data) ? labelRes.data : [],
+        };
+      }));
+
+      const mergedAssets = responses.flatMap(r => r.assets || []);
+      const uniqueAssetsMap = new Map();
+      mergedAssets.forEach((a) => {
+        const key = a._id || a.path || a.filename || JSON.stringify(a);
+        if (!uniqueAssetsMap.has(key)) uniqueAssetsMap.set(key, a);
+      });
+      const assets = [...uniqueAssetsMap.values()];
+
+      const mergedLabels = responses.flatMap(r => r.labels || []);
+      const uniqueLabelsMap = new Map();
+      mergedLabels.forEach((l) => {
+        const key = l._id || l.name;
+        if (!uniqueLabelsMap.has(key)) uniqueLabelsMap.set(key, l);
+      });
+      const labels = [...uniqueLabelsMap.values()];
+
       const imgs = assets.filter(a => a.type === 'image').length;
       const txts = assets.filter(a => a.type === 'text').length;
       const auds = assets.filter(a => a.type === 'audio').length;
@@ -220,13 +258,13 @@ const Datasets = () => {
   };
 
   useEffect(() => {
-    if (selectedSubtopicId) {
-      loadSubtopicPool(selectedSubtopicId);
+    if (selectedSubtopicIds.length > 0) {
+      loadSubtopicPool(selectedSubtopicIds);
     } else {
       setSubtopicAssets(null);
       setSubtopicLabels([]);
     }
-  }, [selectedSubtopicId]);
+  }, [selectedSubtopicIds]);
 
   const filtered = useMemo(() => {
     let r = [...datasets];
@@ -251,6 +289,19 @@ const Datasets = () => {
     return r;
   }, [datasets, search, filterType, filterStatus, sortBy, sortOrder, statusByDs]);
 
+  const selectedTypeAssetCount = useMemo(() => {
+    if (!subtopicAssets) return 0;
+    if (form.type === 'text') return subtopicAssets.texts || 0;
+    if (form.type === 'audio') return subtopicAssets.audios || 0;
+    return subtopicAssets.images || 0;
+  }, [subtopicAssets, form.type]);
+
+  useEffect(() => {
+    if (selectedTypeAssetCount > 0 && imageCount > selectedTypeAssetCount) {
+      setImageCount(selectedTypeAssetCount);
+    }
+  }, [selectedTypeAssetCount, imageCount]);
+
   const stats = useMemo(() => {
     const vals = Object.values(statusByDs);
     return {
@@ -263,16 +314,29 @@ const Datasets = () => {
     };
   }, [statusByDs]);
 
+  const handleOpenCreate = () => {
+    setForm({ name: '', description: '', type: 'image', subtopicId: '' });
+    setSelectedTopicId('');
+    setSelectedSubtopicId('');
+    setSelectedSubtopicIds([]);
+    setSubtopics([]);
+    setSubtopicAssets(null);
+    setSubtopicLabels([]);
+    setImageCount(100);
+    setCreateOpen(true);
+  };
+
   const handleCreate = async () => {
     if (!form.name.trim()) return alert('Nhap ten dataset');
-    if (!selectedSubtopicId) return alert('Chon Topic va Subtopic');
+    if (!selectedSubtopicIds.length) return alert('Chon Topic va it nhat 1 Subtopic');
     setCreating(true);
     setError(null);
     try {
       const payload = {
         name: form.name.trim(),
         type: form.type,
-        subtopicId: selectedSubtopicId,
+        subtopicId: selectedSubtopicIds[0],
+        subtopicIds: selectedSubtopicIds,
         imageCount: imageCount,
         description: form.description.trim(),
       };
@@ -281,6 +345,7 @@ const Datasets = () => {
       setForm({ name: '', description: '', type: 'image', subtopicId: '' });
       setSelectedTopicId('');
       setSelectedSubtopicId('');
+      setSelectedSubtopicIds([]);
       setImageCount(100);
       setSubtopicAssets(null);
       setSubtopicLabels([]);
@@ -292,7 +357,7 @@ const Datasets = () => {
             highlightDsId: created._id,
             highlightDsName: created.name,
             selectedTopicId: selectedTopicId,
-            selectedSubtopicId: selectedSubtopicId,
+            selectedSubtopicId: selectedSubtopicIds[0] || '',
             autoTab: 'datasets',
           },
         });
@@ -314,12 +379,71 @@ const Datasets = () => {
     } catch (err) { alert('Loi: ' + (err.response?.data?.message || err.message)); }
   };
 
+  const handleOpenEdit = async (ds) => {
+    setEditingDs(ds);
+    setForm({ name: ds.name || '', description: ds.description || '', type: ds.type || 'image', subtopicId: ds.subtopicId || '' });
+    setSelectedTopicId('');
+    setEditTopicName('');
+    const existingSubtopicIds = Array.isArray(ds.subtopicIds) && ds.subtopicIds.length > 0
+      ? ds.subtopicIds.map(id => String(id))
+      : (ds.subtopicId ? [String(ds.subtopicId)] : []);
+    setSelectedSubtopicId(existingSubtopicIds[0] || '');
+    setSelectedSubtopicIds(existingSubtopicIds);
+    setImageCount(ds.imageCount || ds.totalItems || 100);
+    setSubtopicAssets(null);
+    setSubtopicLabels([]);
+
+    if (ds.subtopicId) {
+      try {
+        const subRes = await axios.get(API_URL + '/api/subtopics/' + ds.subtopicId, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
+        const topicId = subRes?.data?.subtopic?.topicId?._id || subRes?.data?.subtopic?.topicId || '';
+        const topicName = subRes?.data?.subtopic?.topicId?.name || '';
+        if (topicId) {
+          setSelectedTopicId(topicId);
+          setEditTopicName(topicName);
+          await loadSubtopicsForTopic(topicId);
+        }
+        await loadSubtopicPool(ds.subtopicId);
+      } catch {
+        setSelectedTopicId('');
+        setEditTopicName('');
+      }
+    }
+
+    setEditOpen(true);
+  };
+
+  const handleUpdate = async () => {
+    if (!editingDs) return;
+    if (!form.name.trim()) return alert('Nhap ten dataset');
+
+    setUpdating(true);
+    try {
+      const payload = {
+        name: form.name.trim(),
+        description: form.description?.trim() || '',
+        subtopicIds: selectedSubtopicIds,
+      };
+
+      await axios.put(API_URL + '/api/datasets/' + editingDs._id, payload, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
+      setEditOpen(false);
+      setEditingDs(null);
+      await fetchDatasets();
+      setToast({ open: true, message: 'Cap nhat dataset thanh cong', severity: 'success' });
+    } catch (err) {
+      alert('Loi cap nhat dataset: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setUpdating(false);
+    }
+  };
+
   const handleOpenDetail = async (ds) => {
     setDetailDs(ds);
     setDetailOpen(true);
     setDetailLoading(true);
     setDetailItemsLoading(true);
     setDetailTab(0);
+    setDetailSubtopicFilter('__all__');
     try {
       const [sRes, iRes] = await Promise.all([
         axios.get(API_URL + '/api/datasets/' + ds._id + '/status', { headers: { Authorization: 'Bearer ' + getAuthToken() } }),
@@ -327,6 +451,7 @@ const Datasets = () => {
       ]);
       setDetailDs(prev => ({ ...prev, statusData: sRes.data }));
       setDetailItems(iRes.data?.items || []);
+      setDetailSubtopicSummary(iRes.data?.subtopicSummary || []);
     } catch {} finally { setDetailLoading(false); setDetailItemsLoading(false); }
   };
 
@@ -380,7 +505,7 @@ const Datasets = () => {
               <Typography variant="h4" fontWeight={800} sx={{ color: '#e2e8f0', mb: 0.5 }}>Datasets</Typography>
               <Typography variant="body2" sx={{ color: '#94a3b8' }}>Quan ly bo du lieu cho AI Training</Typography>
             </Box>
-            {!isAdmin && <Button variant="contained" startIcon={<AddIcon />} onClick={() => setCreateOpen(true)} sx={btnPrimary}>Tao Dataset</Button>}
+            {!isAdmin && <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenCreate} sx={btnPrimary}>Tao Dataset</Button>}
           </Box>
         </Box>
 
@@ -488,6 +613,7 @@ const Datasets = () => {
                         </Box>
                         <Stack direction="row" spacing={1}>
                           <Button size="small" variant="outlined" startIcon={<VisibilityIcon />} onClick={() => handleOpenDetail(ds)} sx={{ flex: 1, textTransform: 'none', fontWeight: 700, borderColor: '#3b82f6', color: '#3b82f6', fontSize: '0.75rem' }}>Chi tiet</Button>
+                          {!isAdmin && <Button size="small" variant="outlined" startIcon={<EditIcon />} onClick={() => handleOpenEdit(ds)} sx={{ flex: 1, textTransform: 'none', fontWeight: 700, borderColor: '#f59e0b', color: '#f59e0b', fontSize: '0.75rem' }}>Sua</Button>}
                           <Button size="small" variant="outlined" startIcon={<DownloadIcon />} onClick={() => handleOpenExport(ds)} disabled={si.status !== 'ready'} sx={{ flex: 1, textTransform: 'none', fontWeight: 700, borderColor: si.status === 'ready' ? '#22c55e' : '#475569', color: si.status === 'ready' ? '#22c55e' : '#64748b', fontSize: '0.75rem' }}>Export</Button>
                         </Stack>
                       </CardContent>
@@ -543,6 +669,7 @@ const Datasets = () => {
                         <TableCell>
                           <Stack direction="row" spacing={0.5}>
                             <IconButton size="small" sx={{ color: '#60a5fa' }} onClick={() => handleOpenDetail(ds)}><VisibilityIcon fontSize="small" /></IconButton>
+                            {!isAdmin && <IconButton size="small" sx={{ color: '#f59e0b' }} onClick={() => handleOpenEdit(ds)}><EditIcon fontSize="small" /></IconButton>}
                             <IconButton size="small" sx={{ color: '#22c55e' }} onClick={() => handleOpenExport(ds)} disabled={si.status !== 'ready'}><DownloadIcon fontSize="small" /></IconButton>
                             {!isAdmin && <IconButton size="small" sx={{ color: '#f87171' }} onClick={() => { setSelectedDs(ds); setDeleteOpen(true); }}><DeleteIcon fontSize="small" /></IconButton>}
                           </Stack>
@@ -653,10 +780,52 @@ const Datasets = () => {
               )}
               {detailTab === 2 && (
                 <Box>
-                  <Typography variant="body2" sx={{ color: '#94a3b8', mb: 2 }}>Hien thi items ({detailItems.length})</Typography>
+                  <Typography variant="body2" sx={{ color: '#94a3b8', mb: 2 }}>
+                    Hien thi items ({detailSubtopicFilter === '__all__' ? detailItems.length : detailItems.filter(it => (it.subtopicId?.toString?.() || it.subtopicId || '__none__') === detailSubtopicFilter).length})
+                  </Typography>
+
+                  {!detailItemsLoading && detailSubtopicSummary.length > 0 && (
+                    <Box sx={{ mb: 2, p: 1.5, borderRadius: 2, border: '1px solid #334155', bgcolor: '#0f172a' }}>
+                      <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1, color: '#e2e8f0' }}>Chi tiet theo Subtopic</Typography>
+                      <Stack direction="row" spacing={1} flexWrap="wrap" gap={1}>
+                        <Chip
+                          clickable
+                          onClick={() => setDetailSubtopicFilter('__all__')}
+                          label={`Tat ca: ${detailItems.length} items`}
+                          sx={{
+                            bgcolor: detailSubtopicFilter === '__all__' ? 'rgba(34,197,94,0.2)' : 'rgba(71,85,105,0.35)',
+                            color: detailSubtopicFilter === '__all__' ? '#4ade80' : '#cbd5e1',
+                            border: detailSubtopicFilter === '__all__' ? '1px solid rgba(74,222,128,0.7)' : '1px solid rgba(148,163,184,0.45)',
+                            fontWeight: 700,
+                          }}
+                        />
+                        {detailSubtopicSummary.map((s, idx) => {
+                          const key = s.subtopicId?.toString?.() || s.subtopicId || '__none__';
+                          const active = detailSubtopicFilter === key;
+                          return (
+                            <Chip
+                              clickable
+                              onClick={() => setDetailSubtopicFilter(key)}
+                              key={s.subtopicId || idx}
+                              label={`${s.subtopicName || 'Khong ro'}: ${s.totalItems} items (OK ${s.approved}, cho ${s.pending + s.inReview}, reject ${s.rejected})`}
+                              sx={{
+                                bgcolor: active ? 'rgba(59,130,246,0.25)' : 'rgba(59,130,246,0.12)',
+                                color: active ? '#bfdbfe' : '#93c5fd',
+                                border: active ? '1px solid rgba(96,165,250,0.9)' : '1px solid rgba(59,130,246,0.4)',
+                                fontWeight: 700,
+                              }}
+                            />
+                          );
+                        })}
+                      </Stack>
+                    </Box>
+                  )}
+
                   {detailItemsLoading ? <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress /></Box> : (
                     <Grid container spacing={1.5}>
-                      {detailItems.map((item, idx) => {
+                      {detailItems
+                        .filter((item) => detailSubtopicFilter === '__all__' || (item.subtopicId?.toString?.() || item.subtopicId || '__none__') === detailSubtopicFilter)
+                        .map((item, idx) => {
                         const src = getFullImageUrl(item.path, item.imageUrl, item.filename);
                         const fn = item.originalName || item.filename || item.path || 'Unknown';
                         const isText = /\.(txt|csv|json|xml)$/i.test(fn) || item.mimeType?.startsWith('text/');
@@ -671,6 +840,9 @@ const Datasets = () => {
                                : <Box sx={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: 10 }}>No preview</Box>}
                               {anns.length > 0 && <Box sx={{ position: 'absolute', bottom: 2, right: 2, bgcolor: '#22c55e', color: '#fff', borderRadius: 1, px: 0.5, fontSize: '0.6rem', fontWeight: 700 }}>{anns.length} GN</Box>}
                             </Box>
+                            <Typography variant="caption" sx={{ color: '#94a3b8', mt: 0.5, display: 'block', textAlign: 'center', fontSize: '0.62rem' }}>
+                              {item.subtopicName || 'Khong ro subtopic'}
+                            </Typography>
                           </Grid>
                         );
                       })}
@@ -769,16 +941,35 @@ const Datasets = () => {
             </FormControl>
             {selectedTopicId && (
               <FormControl fullWidth sx={{ ...inputSx }}>
-                <InputLabel>Subtopic *</InputLabel>
-                <Select value={selectedSubtopicId} label="Subtopic *" onChange={e => setSelectedSubtopicId(e.target.value)}>
-                  <MenuItem value=""><em>Khong chon</em></MenuItem>
-                  {subtopics.map(s => <MenuItem key={s._id} value={s._id}>{s.name}</MenuItem>)}
+                <InputLabel>Subtopics *</InputLabel>
+                <Select
+                  multiple
+                  value={selectedSubtopicIds}
+                  label="Subtopics *"
+                  onChange={e => {
+                    const vals = e.target.value;
+                    const normalized = Array.isArray(vals) ? vals : [];
+                    setSelectedSubtopicIds(normalized);
+                    setSelectedSubtopicId(normalized[0] || '');
+                  }}
+                  renderValue={(selected) => {
+                    const selectedSet = new Set(selected);
+                    const names = subtopics.filter(s => selectedSet.has(s._id)).map(s => s.name);
+                    return names.length > 0 ? names.join(', ') : 'Khong chon';
+                  }}
+                >
+                  {subtopics.map(s => (
+                    <MenuItem key={s._id} value={s._id}>
+                      <Checkbox checked={selectedSubtopicIds.indexOf(s._id) > -1} />
+                      <ListItemText primary={s.name} />
+                    </MenuItem>
+                  ))}
                 </Select>
               </FormControl>
             )}
-            {selectedSubtopicId && (
+            {selectedSubtopicIds.length > 0 && (
               <Typography variant="caption" sx={{ color: '#475569', mt: 0.5, display: 'block', fontStyle: 'italic' }}>
-                Subtopic context is linked. Label sets will be auto-inherited from this subtopic.
+                Subtopic context is linked. Label sets se duoc ke thua tu subtopic dau tien duoc chon.
               </Typography>
             )}
           </Box>
@@ -811,12 +1002,12 @@ const Datasets = () => {
                   size="small"
                   type="number"
                   value={imageCount}
-                  onChange={e => setImageCount(Math.max(1, parseInt(e.target.value) || 1))}
+                  onChange={e => setImageCount(Math.max(1, Math.min(selectedTypeAssetCount || 1, parseInt(e.target.value) || 1)))}
                   sx={{ width: 100, ...inputSx, '& .MuiOutlinedInput-root': { ...inputSx['& .MuiOutlinedInput-root'], height: 36 } }}
-                  inputProps={{ min: 1, max: subtopicAssets.images }}
+                  inputProps={{ min: 1, max: selectedTypeAssetCount || 1 }}
                 />
                 <Typography variant="caption" sx={{ color: '#64748b' }}>
-                  trong tong so <strong style={{ color: '#60a5fa' }}>{subtopicAssets.images}</strong> images
+                  trong tong so <strong style={{ color: '#60a5fa' }}>{selectedTypeAssetCount}</strong> {form.type === 'text' ? 'texts' : form.type === 'audio' ? 'audios' : 'images'}
                 </Typography>
               </Box>
               {subtopicLabels.length > 0 && (
@@ -848,8 +1039,66 @@ const Datasets = () => {
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 3 }}>
           <Button onClick={() => setCreateOpen(false)} sx={btnSecondary}>Huy</Button>
-          <Button onClick={handleCreate} variant="contained" disabled={creating || !form.name.trim() || !selectedSubtopicId} sx={btnPrimary}>
+          <Button onClick={handleCreate} variant="contained" disabled={creating || !form.name.trim() || selectedSubtopicIds.length === 0} sx={btnPrimary}>
             {creating ? <CircularProgress size={20} color="inherit" /> : 'Tao Dataset'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Edit Dialog */}
+      <Dialog open={editOpen} onClose={() => setEditOpen(false)} maxWidth="md" fullWidth PaperProps={{ sx: modalSx }}>
+        <DialogTitle sx={{ fontWeight: 700 }}>Sua Dataset</DialogTitle>
+        <DialogContent>
+          <TextField fullWidth label="Ten Dataset *" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} sx={{ mt: 2, mb: 2, ...inputSx }} />
+          <FormControl fullWidth sx={{ mb: 2, ...inputSx }}>
+            <InputLabel>Loai Dataset</InputLabel>
+            <Select value={form.type} label="Loai Dataset" disabled>
+              <MenuItem value="image">Image</MenuItem><MenuItem value="text">Text</MenuItem><MenuItem value="audio">Audio</MenuItem>
+            </Select>
+          </FormControl>
+          <TextField fullWidth multiline rows={2} label="Mo ta" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} sx={{ mb: 2, ...inputSx }} />
+
+          <Box sx={{ p: 2, border: '1px solid #3b82f6', borderRadius: 2, mb: 2, bgcolor: 'rgba(59,130,246,0.05)' }}>
+            <Typography variant="subtitle2" fontWeight={700} sx={{ color: '#60a5fa', mb: 1.5 }}>Dataset Context (Taxonomy Structure)</Typography>
+            <TextField
+              fullWidth
+              label="Topic"
+              value={editTopicName || 'Khong co topic'}
+              disabled
+              sx={{ mb: 1.5, ...inputSx }}
+            />
+            <FormControl fullWidth sx={{ ...inputSx }}>
+              <InputLabel>Subtopics</InputLabel>
+              <Select
+                multiple
+                value={selectedSubtopicIds}
+                label="Subtopics"
+                onChange={e => {
+                  const vals = e.target.value;
+                  const normalized = Array.isArray(vals) ? vals : [];
+                  setSelectedSubtopicIds(normalized);
+                  setSelectedSubtopicId(normalized[0] || '');
+                }}
+                renderValue={(selected) => {
+                  const selectedSet = new Set(selected);
+                  const names = subtopics.filter(s => selectedSet.has(s._id)).map(s => s.name);
+                  return names.length > 0 ? names.join(', ') : 'Khong chon subtopic';
+                }}
+              >
+                {subtopics.map(s => (
+                  <MenuItem key={s._id} value={s._id}>
+                    <Checkbox checked={selectedSubtopicIds.indexOf(s._id) > -1} />
+                    <ListItemText primary={s.name} />
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 3 }}>
+          <Button onClick={() => setEditOpen(false)} sx={btnSecondary}>Huy</Button>
+          <Button onClick={handleUpdate} variant="contained" disabled={updating || !form.name.trim()} sx={btnPrimary}>
+            {updating ? <CircularProgress size={20} color="inherit" /> : 'Luu thay doi'}
           </Button>
         </DialogActions>
       </Dialog>

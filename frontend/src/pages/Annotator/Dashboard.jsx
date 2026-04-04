@@ -9,25 +9,55 @@ const fmtDate = (d) => {
 };
 
 const getProjStatus = (subs, allTasks) => {
+  const statuses = [];
   if (subs && subs.length > 0) {
-    // grouped structure from /annotator-projects
-    // backend uses: total, approved, doneCount (= approved tasks)
-    let total = 0, done = 0;
     subs.forEach((s) => {
-      total += s.total || 0;
-      done += s.approved || s.doneCount || 0;
+      (s.tasks || []).forEach((t) => statuses.push(t.status));
     });
-    return { total, done, pct: total ? Math.round((done / total) * 100) : 0 };
+  } else {
+    (allTasks || []).forEach((t) => statuses.push(t.status));
   }
-  // flat structure from /my-tasks
-  const total = allTasks.length;
-  const done = allTasks.filter(t => t.status === 'approved' || t.status === 'submitted').length;
-  return { total, done, pct: total ? Math.round((done / total) * 100) : 0 };
+
+  const total = statuses.length;
+  const progressDone = statuses.filter((st) => st === 'completed' || st === 'submitted' || st === 'approved').length;
+  return { total, done: progressDone, pct: total ? Math.round((progressDone / total) * 100) : 0, statuses };
+};
+
+const getDerivedProjectStatus = (project) => {
+  const now = new Date();
+  const overdue = project.deadline && new Date(project.deadline) < now;
+  const { total, statuses } = getProjStatus(project.subtopics, project.tasks || []);
+
+  if (overdue) return 'overdue';
+  if (total === 0) return 'active';
+
+  const hasSubmitted = statuses.some((s) => s === 'submitted');
+  if (hasSubmitted) return 'pending';
+
+  const hasRejectedOrRevised = statuses.some((s) => s === 'rejected' || s === 'revised');
+  if (hasRejectedOrRevised) return 'redo';
+
+  const allApproved = statuses.every((s) => s === 'approved');
+  if (allApproved) return 'completed';
+
+  return 'active';
+};
+
+const getStatusBadgeClass = (status) => {
+  if (status === 'pending') return 'bg-yellow-500/20 text-yellow-300 border border-yellow-400/50';
+  if (status === 'completed') return 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/50';
+  if (status === 'redo') return 'bg-rose-500/20 text-rose-300 border border-rose-400/50';
+  if (status === 'overdue') return 'bg-red-500/20 text-red-300 border border-red-400/50';
+  return 'bg-slate-700 text-slate-200 border border-slate-600';
 };
 
 const ProjectCard = ({ project, onOpen }) => {
   const { total, done, pct } = getProjStatus(project.subtopics, project.tasks || []);
   const overdue = project.deadline && new Date(project.deadline) < new Date();
+  const typeMap = { image: 'Image', text: 'Text', audio: 'Audio' };
+  const types = Array.isArray(project.datasetTypes) ? project.datasetTypes : [];
+  const typeLabel = types.length > 0 ? types.map((t) => typeMap[t] || t).join(' • ') : 'Unknown';
+  const derivedStatus = getDerivedProjectStatus(project);
   const next = project.subtopics
     ? project.subtopics.find((s) => (s.approved || 0) < (s.total || 0))
     : (project.tasks || []).find(t => t.status !== 'approved' && t.status !== 'submitted');
@@ -44,6 +74,15 @@ const ProjectCard = ({ project, onOpen }) => {
             {project.subtopics.length} subtopic{project.subtopics.length !== 1 ? 's' : ''}
           </span>
         </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <span className="rounded bg-slate-700 px-2 py-1 text-[11px] font-semibold text-slate-200">
+            Type: {typeLabel}
+          </span>
+          <span className={`rounded px-2 py-1 text-[11px] font-semibold ${getStatusBadgeClass(derivedStatus)}`}>
+            Status: {derivedStatus}
+          </span>
+        </div>
+
         <div className="mt-4">
           <div className="flex items-center justify-between text-sm text-gray-400 mb-2">
             <span>Progress</span>
@@ -95,6 +134,10 @@ const SubtopicRow = ({ sub, onStart }) => {
 
 const ProjectModal = ({ project, onClose, onStart }) => {
   if (!project) return null;
+  const typeMap = { image: 'Image', text: 'Text', audio: 'Audio' };
+  const types = Array.isArray(project.datasetTypes) ? project.datasetTypes : [];
+  const typeLabel = types.length > 0 ? types.map((t) => typeMap[t] || t).join(' • ') : 'Unknown';
+  const derivedStatus = getDerivedProjectStatus(project);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
       <div className="w-full max-w-2xl rounded-2xl border border-gray-700 bg-gray-900 shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -102,6 +145,11 @@ const ProjectModal = ({ project, onClose, onStart }) => {
           <div>
             <h3 className="text-xl font-bold text-gray-100">{project.projectName}</h3>
             {project.deadline && <p className={`mt-1 text-sm ${new Date(project.deadline) < new Date() ? 'text-rose-400' : 'text-gray-400'}`}>Deadline: {fmtDate(project.deadline)}</p>}
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="rounded bg-slate-800 px-2 py-1 text-[11px] font-semibold text-slate-200">Type: {typeLabel}</span>
+              <span className={`rounded px-2 py-1 text-[11px] font-semibold ${getStatusBadgeClass(derivedStatus)}`}>Status: {derivedStatus}</span>
+              <span className="rounded bg-slate-800 px-2 py-1 text-[11px] font-semibold text-slate-200">Total Subtopics: {project.subtopics?.length || 0}</span>
+            </div>
           </div>
           <button onClick={onClose} className="rounded-lg border border-gray-600 px-3 py-1 text-sm text-gray-300 hover:bg-gray-800">Dong</button>
         </div>
@@ -125,6 +173,7 @@ const AnnotatorDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [filter, setFilter] = useState('all');
+  const [typeFilter, setTypeFilter] = useState('all');
   const navigate = useNavigate();
 
   useEffect(() => { fetchProjects(); }, []);
@@ -155,12 +204,13 @@ const AnnotatorDashboard = () => {
   };
 
   const filtered = projects.filter((p) => {
-    if (filter === 'all') return true;
-    const { total, done } = getProjStatus(p.subtopics, p.tasks || []);
-    if (filter === 'completed') return done === total && total > 0;
-    if (filter === 'active') return done < total;
-    if (filter === 'overdue') return p.deadline && new Date(p.deadline) < new Date();
-    return true;
+    const status = getDerivedProjectStatus(p);
+    const typeList = Array.isArray(p.datasetTypes) ? p.datasetTypes : [];
+
+    const matchStatus = filter === 'all' ? true : status === filter;
+    const matchType = typeFilter === 'all' ? true : typeList.includes(typeFilter);
+
+    return matchStatus && matchType;
   });
 
   if (loading) return <div className="flex min-h-screen items-center justify-center bg-slate-900"><div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-700 border-t-blue-500" /></div>;
@@ -173,19 +223,44 @@ const AnnotatorDashboard = () => {
             <h1 className="text-2xl font-bold text-gray-100">My Projects</h1>
             <p className="mt-1 text-sm text-gray-400">{projects.length} project duoc phan cong</p>
           </div>
-          <div className="flex gap-2">
-            {['all', 'active', 'completed', 'overdue'].map((f) => (
-              <button key={f} onClick={() => setFilter(f)}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${filter === f ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:text-gray-200'}`}>
-                {f.charAt(0).toUpperCase() + f.slice(1)}
-              </button>
-            ))}
+          <div className="flex items-center justify-end">
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-gray-700 bg-gray-800/80 px-3 py-2">
+              <span className="text-sm font-medium text-gray-300">Bo loc:</span>
+
+              <select
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                className="rounded-md border border-gray-600 bg-slate-900 px-2.5 py-1.5 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">Tat ca trang thai</option>
+                <option value="active">Active</option>
+                <option value="pending">Pending</option>
+                <option value="completed">Completed</option>
+                <option value="redo">Redo</option>
+                <option value="overdue">Overdue</option>
+              </select>
+
+              <select
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value)}
+                className="rounded-md border border-gray-600 bg-slate-900 px-2.5 py-1.5 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-violet-500"
+              >
+                <option value="all">Tat ca loai</option>
+                <option value="image">Image</option>
+                <option value="text">Text</option>
+                <option value="audio">Audio</option>
+              </select>
+            </div>
           </div>
         </div>
         {error && <div className="rounded-xl border border-rose-700/50 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">{error}</div>}
         {filtered.length === 0 ? (
           <div className="rounded-xl border border-gray-700 bg-gray-800 p-12 text-center">
-            <p className="text-gray-400">{filter === 'all' ? 'Ban chua co project nao duoc phan cong.' : `Khong co project nao matching "${filter}".`}</p>
+            <p className="text-gray-400">
+              {filter === 'all' && typeFilter === 'all'
+                ? 'Ban chua co project nao duoc phan cong.'
+                : `Khong co project nao phu hop bo loc (status: ${filter}, type: ${typeFilter}).`}
+            </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">

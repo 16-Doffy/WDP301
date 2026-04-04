@@ -57,14 +57,33 @@ const ReviewMediaView = ({ task, annotations = [] }) => {
 
     const objects = annotations.length > 0 ? annotations : (task?.labels?.objects || []);
 
-    objects.forEach((obj, idx) => {
-      const [x1, y1, x2, y2] = obj.bbox || [0, 0, 0, 0];
-      const color = getLabelColor(obj.label);
+    const toDisplayBox = (bbox = []) => {
+      const [x1 = 0, y1 = 0, x2 = 0, y2 = 0] = bbox;
+      const maxAbs = Math.max(Math.abs(x1), Math.abs(y1), Math.abs(x2), Math.abs(y2));
 
-      const dx1 = x1 * scaleX;
-      const dy1 = y1 * scaleY;
-      const dw = (x2 - x1) * scaleX;
-      const dh = (y2 - y1) * scaleY;
+      // New annotator format: percentages (0-100)
+      const looksLikePercent = maxAbs <= 100;
+      if (looksLikePercent) {
+        return {
+          dx1: (x1 / 100) * displayWidth,
+          dy1: (y1 / 100) * displayHeight,
+          dw: ((x2 - x1) / 100) * displayWidth,
+          dh: ((y2 - y1) / 100) * displayHeight,
+        };
+      }
+
+      // Legacy format: absolute pixels based on natural image size
+      return {
+        dx1: x1 * scaleX,
+        dy1: y1 * scaleY,
+        dw: (x2 - x1) * scaleX,
+        dh: (y2 - y1) * scaleY,
+      };
+    };
+
+    objects.forEach((obj, idx) => {
+      const color = getLabelColor(obj.label);
+      const { dx1, dy1, dw, dh } = toDisplayBox(obj.bbox || [0, 0, 0, 0]);
 
       ctx.fillStyle = color + '20';
       ctx.fillRect(dx1, dy1, dw, dh);

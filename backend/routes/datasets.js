@@ -12,6 +12,47 @@ const { createActivityLog } = require('./activityLogs');
 
 const router = express.Router();
 
+const hasUnlockedAssignedProject = async ({ datasetId, subtopicIds = [], topicId = null }) => {
+  const Project = require('../models/Project');
+  const Subtopic = require('../models/Subtopic');
+
+  let datasetQuery = {};
+  if (datasetId) {
+    datasetQuery._id = datasetId;
+  } else if (subtopicIds.length > 0) {
+    datasetQuery.$or = [
+      { subtopicId: { $in: subtopicIds } },
+      { subtopicIds: { $in: subtopicIds } },
+    ];
+  } else if (topicId) {
+    const relatedSubtopicIds = await Subtopic.find({ topicId, status: 'active' }).distinct('_id');
+    datasetQuery.$or = [
+      { subtopicId: { $in: relatedSubtopicIds } },
+      { subtopicIds: { $in: relatedSubtopicIds } },
+    ];
+  } else {
+    return false;
+  }
+
+  const datasetIds = await Dataset.find(datasetQuery).distinct('_id');
+  if (datasetIds.length === 0) return false;
+
+  const assignedTasks = await Task.find({
+    datasetId: { $in: datasetIds },
+    annotatorId: { $ne: null },
+    $or: [
+      { reviewerId: { $ne: null } },
+      { 'reviewers.0': { $exists: true } },
+    ],
+  }).select('projectId').lean();
+
+  const projectIds = [...new Set(assignedTasks.map(t => t.projectId?.toString()).filter(Boolean))];
+  if (projectIds.length === 0) return false;
+
+  const lockedProject = await Project.findOne({ _id: { $in: projectIds }, status: { $ne: 'completed' } }).select('_id').lean();
+  return Boolean(lockedProject);
+};
+
 const inferFileKind = (mimeType, originalName = '') => {
   const name = (originalName || '').toLowerCase();
   const mt = (mimeType || '').toLowerCase();
@@ -289,7 +330,7 @@ router.get('/:id', auth, async (req, res) => {
 // Create dataset - supports both file upload AND subtopic pool reference
 router.post('/', auth, authorize('manager', 'admin'), upload.array('files', 100), async (req, res) => {
   try {
-    const { projectId, subtopicId, name, description, type, imageCount } = req.body;
+    const { projectId, subtopicId, subtopicIds, name, description, type, imageCount } = req.body;
     const datasetType = (type || 'image').toString().toLowerCase();
 
     if (!name || !name.trim()) {
@@ -311,27 +352,46 @@ router.post('/', auth, authorize('manager', 'admin'), upload.array('files', 100)
     let ic = 0;
     let labelsets = [];
 
+    const requestedSubtopicIdsRaw = Array.isArray(subtopicIds)
+      ? subtopicIds
+      : (typeof subtopicIds === 'string' && subtopicIds.trim()
+          ? subtopicIds.split(',').map(s => s.trim()).filter(Boolean)
+          : []);
+    const normalizedSubtopicIds = [...new Set((requestedSubtopicIdsRaw.length > 0 ? requestedSubtopicIdsRaw : (subtopicId ? [subtopicId] : [])).filter(Boolean).map(String))];
+    const primarySubtopicId = normalizedSubtopicIds[0] || null;
+
     // MODE 1: Subtopic pool reference
-    if (subtopicId && (!req.files || req.files.length === 0)) {
+    if (primarySubtopicId && (!req.files || req.files.length === 0)) {
       const Subtopic = require('../models/Subtopic');
       const LabelSet = require('../models/LabelSet');
 
-      const subtopic = await Subtopic.findById(subtopicId);
-      if (!subtopic) return res.status(404).json({ message: 'Subtopic not found' });
+      const subtopics = await Subtopic.find({ _id: { $in: normalizedSubtopicIds } }).lean();
+      if (!subtopics.length) return res.status(404).json({ message: 'Subtopic not found' });
 
       const assetLimit = parseInt(imageCount) || 100;
-      const allAssets = subtopic.assets || [];
-      const imageAssets = allAssets.filter(a => a.type === 'image').slice(0, assetLimit);
+      const typeKey = datasetType === 'image' ? 'image' : (datasetType === 'text' ? 'text' : 'audio');
 
-      const subtopicLabelsets = await LabelSet.find({ subtopicId: subtopicId }).lean();
-      labelsets = subtopicLabelsets.map(ls => ls._id);
+      const pooledAssets = subtopics
+        .flatMap(st => (st.assets || []).map(a => ({ ...a, _sourceSubtopicId: st._id })))
+        .filter(a => a.type === typeKey);
 
-      files = imageAssets.map(a => ({
+      const uniqueAssetsMap = new Map();
+      pooledAssets.forEach((a) => {
+        const key = a._id?.toString?.() || a.path || a.filename || JSON.stringify(a);
+        if (!uniqueAssetsMap.has(key)) uniqueAssetsMap.set(key, a);
+      });
+      const selectedAssets = [...uniqueAssetsMap.values()].slice(0, assetLimit);
+
+      const subtopicLabelsets = await LabelSet.find({ subtopicId: { $in: normalizedSubtopicIds } }).lean();
+      labelsets = [...new Set(subtopicLabelsets.map(ls => ls._id.toString()))];
+
+      files = selectedAssets.map(a => ({
         filename: a.filename || (a.path || '').split('/').pop(),
         originalName: a.originalName || a.filename || 'Unknown',
         path: a.path,
         mimeType: a.mimeType || a.type,
         size: a.size || 0,
+        subtopicId: a._sourceSubtopicId || primarySubtopicId,
         uploadedAt: a.uploadedAt || new Date()
       }));
       totalItems = files.length;
@@ -364,7 +424,8 @@ router.post('/', auth, authorize('manager', 'admin'), upload.array('files', 100)
           originalName: file.originalname,
           path: normalizePath(file.path),
           mimeType: file.mimetype,
-          size: file.size
+          size: file.size,
+          subtopicId: primarySubtopicId || null,
         }));
       }
 
@@ -382,7 +443,8 @@ router.post('/', auth, authorize('manager', 'admin'), upload.array('files', 100)
     const dataset = new Dataset({
       type: datasetType,
       projectId: projectId || null,
-      subtopicId: subtopicId || null,
+      subtopicId: primarySubtopicId || null,
+      subtopicIds: normalizedSubtopicIds,
       managerId: managerId,
       name: name.trim(),
       description: description?.trim() || '',
@@ -400,8 +462,8 @@ router.post('/', auth, authorize('manager', 'admin'), upload.array('files', 100)
       'dataset_create',
       'dataset',
       dataset._id,
-      `Created dataset: ${dataset.name} with ${totalItems} items from ${subtopicId ? 'subtopic pool' : 'upload'}`,
-      { datasetName: dataset.name, totalItems, subtopicId, source: subtopicId ? 'subtopic_pool' : 'upload' },
+      `Created dataset: ${dataset.name} with ${totalItems} items from ${primarySubtopicId ? 'subtopic pool' : 'upload'}`,
+      { datasetName: dataset.name, totalItems, subtopicId: primarySubtopicId, subtopicIds: normalizedSubtopicIds, source: primarySubtopicId ? 'subtopic_pool' : 'upload' },
       req
     );
 
@@ -415,7 +477,7 @@ router.post('/', auth, authorize('manager', 'admin'), upload.array('files', 100)
 // Update dataset (Manager or Admin)
 router.put('/:id', auth, authorize('manager', 'admin'), async (req, res) => {
   try {
-    const { projectId, subtopicId, name, description } = req.body;
+    const { projectId, subtopicId, subtopicIds, name, description } = req.body;
     const dataset = await Dataset.findById(req.params.id);
     
     if (!dataset) {
@@ -439,10 +501,32 @@ router.put('/:id', auth, authorize('manager', 'admin'), async (req, res) => {
       }
     }
 
+    if (req.user.role === 'manager' && (subtopicIds !== undefined || subtopicId !== undefined)) {
+      const locked = await hasUnlockedAssignedProject({ datasetId: dataset._id });
+      if (locked) {
+        return res.status(400).json({
+          message: 'Khong the sua subtopic cua dataset da duoc phan cong trong project dang hoat dong. Chi duoc sua khi project hoan thanh hoac da xoa.',
+        });
+      }
+    }
+
     if (name) dataset.name = name.trim();
     if (description !== undefined) dataset.description = description?.trim() || '';
     if (projectId !== undefined) dataset.projectId = projectId || null;
-    if (subtopicId !== undefined) dataset.subtopicId = subtopicId || null;
+
+    if (subtopicIds !== undefined) {
+      const incoming = Array.isArray(subtopicIds)
+        ? subtopicIds
+        : (typeof subtopicIds === 'string' && subtopicIds.trim()
+            ? subtopicIds.split(',').map(s => s.trim()).filter(Boolean)
+            : []);
+      const normalized = [...new Set(incoming.filter(Boolean).map(String))];
+      dataset.subtopicIds = normalized;
+      dataset.subtopicId = normalized[0] || null;
+    } else if (subtopicId !== undefined) {
+      dataset.subtopicId = subtopicId || null;
+      dataset.subtopicIds = dataset.subtopicId ? [dataset.subtopicId] : [];
+    }
 
     await dataset.save();
     res.json(dataset);
@@ -661,10 +745,11 @@ router.get('/:id/items', auth, authorize('manager', 'admin'), async (req, res) =
 
     // Get all tasks for this dataset
     const tasks = await Task.find({ datasetId: dataset._id })
-      .select('status dataItem labels annotatorId reviewedAt primaryForItem reviewerId reviewers reviewComments errorCategory reviewIssues')
+      .select('status dataItem labels annotatorId reviewedAt primaryForItem reviewerId reviewers reviewComments errorCategory reviewIssues subtopicId')
       .populate('annotatorId', 'username fullName')
       .populate('reviewerId', 'username fullName')
       .populate('reviewers.reviewerId', 'username fullName')
+      .populate('subtopicId', 'name')
       .lean();
 
     // Build items from tasks (if any exist)
@@ -698,6 +783,8 @@ router.get('/:id/items', auth, authorize('manager', 'admin'), async (req, res) =
           mimeType: task.dataItem?.mimeType || dataset.type,
           path: itemPath,
           imageUrl: itemPath || (filename ? `/uploads/datasets/${filename}` : ''),
+          subtopicId: task.subtopicId?._id || task.subtopicId || null,
+          subtopicName: task.subtopicId?.name || null,
           labelSet,
           annotations: [],
           status: 'pending',
@@ -763,6 +850,8 @@ router.get('/:id/items', auth, authorize('manager', 'admin'), async (req, res) =
           mimeType: file.mimeType || dataset.type,
           path: filePath,
           imageUrl: filePath || (filename ? `/uploads/datasets/${filename}` : ''),
+          subtopicId: file.subtopicId || null,
+          subtopicName: null,
           labelSet: availableLabels,
           annotations: [],
           status: 'pending',
@@ -771,6 +860,25 @@ router.get('/:id/items', auth, authorize('manager', 'admin'), async (req, res) =
           totalVotes: 0,
           displayLabel: 'Chưa có nhãn',
         });
+      });
+    }
+
+    // Fill subtopic names for fallback items
+    const unresolvedSubtopicIds = Array.from(new Set(
+      Array.from(itemsMap.values())
+        .map((it) => it.subtopicId?.toString?.() || it.subtopicId)
+        .filter(Boolean)
+    ));
+
+    if (unresolvedSubtopicIds.length > 0) {
+      const SubtopicModel = require('../models/Subtopic');
+      const subtopicDocs = await SubtopicModel.find({ _id: { $in: unresolvedSubtopicIds } }).select('name').lean();
+      const subtopicNameMap = new Map(subtopicDocs.map((s) => [s._id.toString(), s.name]));
+      itemsMap.forEach((it) => {
+        if (!it.subtopicName && it.subtopicId) {
+          const key = it.subtopicId?.toString?.() || String(it.subtopicId);
+          it.subtopicName = subtopicNameMap.get(key) || null;
+        }
       });
     }
 
@@ -828,12 +936,34 @@ router.get('/:id/items', auth, authorize('manager', 'admin'), async (req, res) =
       filteredItems = items.filter(item => item.status === status);
     }
 
+    const groupedBySubtopic = filteredItems.reduce((acc, item) => {
+      const key = item.subtopicId?.toString?.() || item.subtopicId || '__none__';
+      if (!acc[key]) {
+        acc[key] = {
+          subtopicId: item.subtopicId || null,
+          subtopicName: item.subtopicName || 'Khong ro subtopic',
+          totalItems: 0,
+          approved: 0,
+          rejected: 0,
+          inReview: 0,
+          pending: 0,
+        };
+      }
+      acc[key].totalItems += 1;
+      if (item.status === 'approved') acc[key].approved += 1;
+      else if (item.status === 'rejected') acc[key].rejected += 1;
+      else if (item.status === 'in_review') acc[key].inReview += 1;
+      else acc[key].pending += 1;
+      return acc;
+    }, {});
+
     res.json({
       datasetId: dataset._id,
       datasetName: dataset.name,
       type: dataset.type,
       totalItems: items.length,
       filteredCount: filteredItems.length,
+      subtopicSummary: Object.values(groupedBySubtopic),
       items: filteredItems,
     });
   } catch (error) {
@@ -953,6 +1083,15 @@ router.delete('/:id', auth, authorize('manager', 'admin'), async (req, res) => {
     // Check if user owns the dataset or is admin
     if (dataset.managerId.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
       return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    if (req.user.role === 'manager') {
+      const locked = await hasUnlockedAssignedProject({ datasetId: dataset._id });
+      if (locked) {
+        return res.status(400).json({
+          message: 'Dataset da duoc phan cong annotator/reviewer trong project dang hoat dong. Chi co the xoa khi project da hoan thanh hoac da bi xoa.',
+        });
+      }
     }
 
     // Delete files

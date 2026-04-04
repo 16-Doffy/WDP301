@@ -6,6 +6,9 @@ const { auth, authorize } = require('../middleware/auth');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const Dataset = require('../models/Dataset');
+const Project = require('../models/Project');
+const Task = require('../models/Task');
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -20,6 +23,34 @@ const storage = multer.diskStorage({
   }
 });
 const upload = multer({ storage, limits: { fileSize: 500 * 1024 * 1024 } }); // 500MB limit
+
+const hasLockedAssignmentForSubtopics = async (subtopicIds = []) => {
+  if (!Array.isArray(subtopicIds) || subtopicIds.length === 0) return false;
+
+  const datasetIds = await Dataset.find({
+    $or: [
+      { subtopicId: { $in: subtopicIds } },
+      { subtopicIds: { $in: subtopicIds } },
+    ],
+  }).distinct('_id');
+
+  if (datasetIds.length === 0) return false;
+
+  const assignedTasks = await Task.find({
+    datasetId: { $in: datasetIds },
+    annotatorId: { $ne: null },
+    $or: [
+      { reviewerId: { $ne: null } },
+      { 'reviewers.0': { $exists: true } },
+    ],
+  }).select('projectId').lean();
+
+  const projectIds = [...new Set(assignedTasks.map(t => t.projectId?.toString()).filter(Boolean))];
+  if (projectIds.length === 0) return false;
+
+  const lockedProject = await Project.findOne({ _id: { $in: projectIds }, status: { $ne: 'completed' } }).select('_id').lean();
+  return Boolean(lockedProject);
+};
 
 router.get('/', auth, async (req, res) => {
   try {
@@ -42,6 +73,16 @@ router.get('/:id', auth, async (req, res) => {
 
 router.post('/', auth, authorize('manager', 'admin'), async (req, res) => {
   try {
+    if (req.user.role === 'manager' && req.body?.topicId) {
+      const siblingIds = await Subtopic.find({ topicId: req.body.topicId }).distinct('_id');
+      const locked = await hasLockedAssignmentForSubtopics(siblingIds.map(String));
+      if (locked) {
+        return res.status(400).json({
+          error: 'Topic nay dang duoc phan cong trong project dang hoat dong. Khong the them subtopic moi.',
+        });
+      }
+    }
+
     const subtopic = new Subtopic({ ...req.body, managerId: req.user._id });
     await subtopic.save();
     res.status(201).json(subtopic);
@@ -50,16 +91,38 @@ router.post('/', auth, authorize('manager', 'admin'), async (req, res) => {
 
 router.put('/:id', auth, authorize('manager', 'admin'), async (req, res) => {
   try {
+    const existing = await Subtopic.findById(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Subtopic not found' });
+
+    if (req.user.role === 'manager') {
+      const locked = await hasLockedAssignmentForSubtopics([String(existing._id)]);
+      if (locked) {
+        return res.status(400).json({
+          error: 'Subtopic da duoc phan cong trong project dang hoat dong. Khong the sua.',
+        });
+      }
+    }
+
     const subtopic = await Subtopic.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
-    if (!subtopic) return res.status(404).json({ error: 'Subtopic not found' });
     res.json(subtopic);
   } catch (err) { res.status(400).json({ error: err.message }); }
 });
 
 router.delete('/:id', auth, authorize('manager', 'admin'), async (req, res) => {
   try {
+    const existing = await Subtopic.findById(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Subtopic not found' });
+
+    if (req.user.role === 'manager') {
+      const locked = await hasLockedAssignmentForSubtopics([String(existing._id)]);
+      if (locked) {
+        return res.status(400).json({
+          error: 'Subtopic da duoc phan cong trong project dang hoat dong. Khong the xoa.',
+        });
+      }
+    }
+
     const subtopic = await Subtopic.findByIdAndUpdate(req.params.id, { status: 'archived' }, { new: true });
-    if (!subtopic) return res.status(404).json({ error: 'Subtopic not found' });
     res.json({ message: 'Subtopic archived' });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -79,6 +142,15 @@ router.post('/:id/assets', auth, upload.array('files', 100), async (req, res) =>
   try {
     const subtopic = await Subtopic.findById(req.params.id);
     if (!subtopic) return res.status(404).json({ error: 'Subtopic not found' });
+
+    if (req.user.role === 'manager') {
+      const locked = await hasLockedAssignmentForSubtopics([String(subtopic._id)]);
+      if (locked) {
+        return res.status(400).json({
+          error: 'Subtopic da duoc phan cong trong project dang hoat dong. Khong the upload asset.',
+        });
+      }
+    }
 
     const newAssets = (req.files || []).map(file => {
       const ext = path.extname(file.originalname).toLowerCase();
@@ -110,6 +182,15 @@ router.delete('/:id/assets/:assetId', auth, async (req, res) => {
   try {
     const subtopic = await Subtopic.findById(req.params.id);
     if (!subtopic) return res.status(404).json({ error: 'Subtopic not found' });
+
+    if (req.user.role === 'manager') {
+      const locked = await hasLockedAssignmentForSubtopics([String(subtopic._id)]);
+      if (locked) {
+        return res.status(400).json({
+          error: 'Subtopic da duoc phan cong trong project dang hoat dong. Khong the xoa asset.',
+        });
+      }
+    }
 
     const asset = subtopic.assets.id(req.params.assetId);
     if (!asset) return res.status(404).json({ error: 'Asset not found' });
