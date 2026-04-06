@@ -49,6 +49,7 @@ const LayoutTailwind = () => {
 
     if (user.role === 'reviewer') {
       baseItems.push({ text: 'Review Tasks', icon: '📝', path: '/reviewer/tasks' });
+      baseItems.push({ text: 'History', icon: '📋', path: '/reviewer/history' });
     }
 
     if (user.role === 'admin') {

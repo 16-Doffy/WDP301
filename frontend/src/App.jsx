@@ -19,6 +19,7 @@ import AnnotatorOverview from './pages/Annotator/Overview';
 import AnnotatorTask from './pages/Annotator/Task';
 import ReviewerDashboard from './pages/Reviewer/Dashboard';
 import ReviewerTask from './pages/Reviewer/Task';
+import ReviewerHistory from './pages/Reviewer/History';
 import AdminDashboard from './pages/Admin/Dashboard';
 import AdminUsers from './pages/Admin/Users';
 import AdminActivityLogs from './pages/Admin/ActivityLogs';
@@ -76,6 +77,7 @@ function App() {
               <Route path="/reviewer" element={<ReviewerDashboard />} />
               <Route path="/reviewer/tasks" element={<ReviewerDashboard />} />
               <Route path="/reviewer/tasks/:id" element={<ReviewerTask />} />
+              <Route path="/reviewer/history" element={<ReviewerHistory />} />
               <Route path="/" element={<Navigate to={(() => {
                 const token = sessionStorage.getItem('token');
                 if (!token) return '/login';

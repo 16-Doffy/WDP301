@@ -53,6 +53,7 @@ export const AuthProvider = ({ children }) => {
     sessionStorage.setItem(AUTH_TOKEN_KEY, token);
     axios.defaults.headers.common.Authorization = `Bearer ${token}`;
     setUser(loggedInUser);
+    setLoading(false);
 
     return loggedInUser;
   };
@@ -64,6 +65,7 @@ export const AuthProvider = ({ children }) => {
     sessionStorage.setItem(AUTH_TOKEN_KEY, token);
     axios.defaults.headers.common.Authorization = `Bearer ${token}`;
     setUser(registeredUser);
+    setLoading(false);
 
     return registeredUser;
   };

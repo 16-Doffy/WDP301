@@ -125,7 +125,7 @@ router.get('/annotator-projects', auth, async (req, res) => {
     const tasks = await Task.find({ annotatorId: req.user._id })
       .populate('projectId', 'name guidelines questions deadline status')
       .populate('datasetId', 'name subtopicId type')
-      .populate('subtopicId', 'name description guideline taskType')
+      .populate('subtopicId', 'name description guideline taskType topicId')
       .sort({ createdAt: -1 });
 
     // Group by projectId
@@ -272,7 +272,7 @@ router.get('/my-tasks', auth, async (req, res) => {
     const tasks = await Task.find(query)
       .populate('projectId', 'name guidelines questions deadline')
       .populate('datasetId', 'name subtopicId')
-      .populate('subtopicId', 'name description guideline taskType')
+      .populate('subtopicId', 'name description guideline taskType topicId')
       .populate('annotatorId', 'username fullName')
       .populate('reviewerId', 'username fullName')
       .populate('reviewers.reviewerId', 'username fullName')
@@ -306,7 +306,7 @@ router.get('/:id', auth, async (req, res) => {
     const task = await Task.findById(req.params.id)
       .populate('projectId', 'name guidelines questions managerId deadline labelSet')
       .populate('datasetId', 'name subtopicId')
-      .populate('subtopicId', 'name description guideline taskType')
+      .populate('subtopicId', 'name description guideline taskType topicId')
       .populate('annotatorId', 'username fullName')
       .populate('reviewerId', 'username fullName')
       .populate('reviewers.reviewerId', 'username fullName');

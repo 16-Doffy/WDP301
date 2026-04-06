@@ -6,7 +6,8 @@ import { CircularProgress, Box } from '@mui/material';
 const PrivateRoute = ({ children }) => {
   const { user, loading } = useAuth();
 
-  if (loading) {
+  // If user is already set (e.g. just logged in), proceed immediately without waiting for loading
+  if (!user && loading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
         <CircularProgress />

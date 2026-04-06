@@ -1,6 +1,7 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const Task = require('../models/Task');
+const Project = require('../models/Project');
 const { auth, authorize } = require('../middleware/auth');
 const { createActivityLog } = require('./activityLogs');
 
@@ -165,50 +166,44 @@ router.get('/all', auth, authorize('reviewer', 'admin'), async (req, res) => {
     const reviewerId = req.user._id;
     const reviewerIdString = reviewerId.toString();
 
-    const pendingTasksRaw = await Task.find({
-      status: 'submitted',
-      $or: [
-        {
-          reviewers: {
-            $elemMatch: {
-              reviewerId: { $in: [reviewerId, reviewerIdString] },
-              status: 'pending',
-            },
-          },
-        },
-        { reviewerId: { $in: [reviewerId, reviewerIdString] } },
-        { reviewers: { $exists: true, $size: 0 } },
-        { reviewers: { $exists: false } },
-      ],
+    // Find ALL tasks where this reviewer is in the reviewers array (regardless of task status)
+    // This ensures reviewer sees tasks assigned to them even if not yet submitted
+    const allTasks = await Task.find({
+      'reviewers.reviewerId': { $in: [reviewerId, reviewerIdString] },
     })
       .populate('projectId', 'name labelSet guidelines questions deadline')
       .populate('datasetId', 'name')
       .populate('annotatorId', 'username fullName')
       .populate('reviewers.reviewerId', 'username fullName')
+      .populate('reviewerId', 'username fullName')
       .sort({ submittedAt: 1 });
 
-    const pendingTasks = pendingTasksRaw.filter((t) => !isTaskOverdue(t));
-
-    const reviewedTasks = await Task.find({
-      status: { $in: ['approved', 'rejected'] },
-      $or: [
-        { reviewerId: { $in: [reviewerId, reviewerIdString] } },
-        {
-          reviewers: {
-            $elemMatch: {
-              reviewerId: { $in: [reviewerId, reviewerIdString] },
-              status: { $in: ['approved', 'rejected'] },
-            },
-          },
-        },
-      ],
+    // Also find tasks where reviewerId field matches (project-level reviewer)
+    const reviewerIdTasks = await Task.find({
+      reviewerId: { $in: [reviewerId, reviewerIdString] },
     })
-      .populate('projectId', 'name labelSet guidelines questions')
+      .populate('projectId', 'name labelSet guidelines questions deadline')
       .populate('datasetId', 'name')
       .populate('annotatorId', 'username fullName')
-      .populate('reviewerId', 'username fullName')
       .populate('reviewers.reviewerId', 'username fullName')
-      .sort({ reviewedAt: -1 });
+      .populate('reviewerId', 'username fullName')
+      .sort({ submittedAt: 1 });
+
+    // Merge and deduplicate
+    const taskMap = new Map();
+    [...allTasks, ...reviewerIdTasks].forEach((t) => {
+      taskMap.set(t._id.toString(), t);
+    });
+    const mergedTasks = Array.from(taskMap.values());
+
+    // Separate into pending (still needs review) and reviewed (already decided)
+    const pendingTasks = mergedTasks.filter((t) => {
+      return ['submitted', 'assigned', 'in_progress', 'completed', 'revised'].includes(t.status);
+    });
+
+    const reviewedTasks = mergedTasks.filter((t) => {
+      return ['approved', 'rejected'].includes(t.status);
+    });
 
     res.json({ pending: pendingTasks, reviewed: reviewedTasks });
   } catch (error) {
@@ -561,6 +556,98 @@ router.post('/:id/sentences', auth, authorize('reviewer', 'admin'), async (req, 
       message: `Sentence ${index} marked as ${action}`,
       sentenceFeedbacks: task.sentenceFeedbacks,
     });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Get projects where this reviewer is assigned (via tasks or project-level reviewerId)
+router.get('/projects', auth, authorize('reviewer', 'admin'), async (req, res) => {
+  try {
+    const reviewerId = req.user._id;
+    const reviewerIdString = reviewerId.toString();
+
+    // Find tasks where reviewer is in reviewers array
+    const reviewerTasks = await Task.find({
+      'reviewers.reviewerId': { $in: [reviewerId, reviewerIdString] },
+    }).select('projectId').lean();
+
+    const projectIdsFromTasks = reviewerTasks.map((t) => t.projectId);
+
+    // Also find projects where reviewerId field matches (project-level reviewer)
+    const projectsWithReviewerId = await Project.find({
+      $or: [
+        { reviewerId: { $in: [reviewerId, reviewerIdString] } },
+        { _id: { $in: projectIdsFromTasks } },
+      ],
+    })
+      .populate('managerId', 'username fullName email')
+      .sort({ updatedAt: -1 });
+
+    res.json(projectsWithReviewerId);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Get tasks with deadline info for reviewer (due soon + overdue)
+router.get('/tasks/deadline', auth, authorize('reviewer', 'admin'), async (req, res) => {
+  try {
+    const reviewerId = req.user._id;
+    const reviewerIdString = reviewerId.toString();
+    const now = new Date();
+
+    // Tasks still not finalized (pending review, in progress, assigned, completed, revised)
+    const activeStatuses = ['submitted', 'assigned', 'in_progress', 'completed', 'revised'];
+
+    const tasks = await Task.find({
+      status: { $in: activeStatuses },
+      $or: [
+        { reviewerId: { $in: [reviewerId, reviewerIdString] } },
+        {
+          reviewers: {
+            $elemMatch: {
+              reviewerId: { $in: [reviewerId, reviewerIdString] },
+            },
+          },
+        },
+      ],
+    })
+      .populate('projectId', 'name deadline')
+      .populate('datasetId', 'name')
+      .populate('annotatorId', 'username fullName')
+      .sort({ submittedAt: 1 });
+
+    const dueSoonTasks = [];
+    const overdueTasks = [];
+
+    tasks.forEach((task) => {
+      const deadline = task.projectId?.deadline;
+      if (!deadline) {
+        // No deadline = neutral, add to due soon
+        dueSoonTasks.push(task);
+        return;
+      }
+      const deadlineDate = new Date(deadline);
+      if (Number.isNaN(deadlineDate.getTime())) {
+        dueSoonTasks.push(task);
+        return;
+      }
+
+      // overdue if deadline passed
+      if (deadlineDate < now) {
+        overdueTasks.push(task);
+      } else {
+        // due within 3 days
+        const threeDays = 3 * 24 * 60 * 60 * 1000;
+        if (deadlineDate - now <= threeDays) {
+          dueSoonTasks.push(task);
+        }
+        // otherwise don't show (far future)
+      }
+    });
+
+    res.json({ dueSoon: dueSoonTasks, overdue: overdueTasks });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }

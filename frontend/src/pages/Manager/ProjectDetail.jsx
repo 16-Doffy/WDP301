@@ -44,6 +44,7 @@ import {
   ArrowBack as ArrowBackIcon,
   Image as ImageIcon,
   AudioFile as AudioIcon,
+  Info as InfoIcon,
   Description as TextIcon,
 } from '@mui/icons-material';
 import axios from 'axios';
@@ -219,6 +220,7 @@ const ManagerProjectDetail = () => {
   const [qualityStats, setQualityStats] = useState(null);
   const [qualityDialogOpen, setQualityDialogOpen] = useState(false);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [projectInfoDialogOpen, setProjectInfoDialogOpen] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -1027,6 +1029,7 @@ const ManagerProjectDetail = () => {
             </Box>
 
             <Stack direction="row" spacing={1.5}>
+              <Button variant="contained" startIcon={<InfoIcon />} onClick={() => setProjectInfoDialogOpen(true)} sx={secondaryBtnSx}>Project Info</Button>
               <Button variant="contained" startIcon={<AssessmentIcon />} onClick={() => setQualityDialogOpen(true)} sx={secondaryBtnSx}>Analytics</Button>
               {/* <Button variant="contained" startIcon={<DownloadIcon />} onClick={() => setExportDialogOpen(true)} sx={secondaryBtnSx}>Export</Button> */}
               {/* {!isAdmin && (
@@ -1468,6 +1471,253 @@ const ManagerProjectDetail = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setApprovedItemDialogOpen(false)} sx={secondaryBtnSx}>Đóng</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Project Info Dialog */}
+      <Dialog
+        open={projectInfoDialogOpen}
+        onClose={() => setProjectInfoDialogOpen(false)}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{ sx: modalPaperSx }}
+        BackdropProps={{ sx: { backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' } }}
+      >
+        <DialogTitle sx={{ fontWeight: 700 }}>Project Information</DialogTitle>
+        <DialogContent dividers sx={{ borderColor: '#334155' }}>
+          <Grid container spacing={3}>
+            {/* Left Column - Basic Info */}
+            <Grid item xs={12} md={6}>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {/* Project Name */}
+                <Box>
+                  <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Project Name</Typography>
+                  <Typography variant="body1" fontWeight={600} color="#e2e8f0">{project?.name || 'N/A'}</Typography>
+                </Box>
+
+                {/* Project Description */}
+                <Box>
+                  <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Description</Typography>
+                  <Typography variant="body2" color="#94a3b8">{project?.description || 'No description'}</Typography>
+                </Box>
+
+                {/* Created At */}
+                <Box>
+                  <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Created At</Typography>
+                  <Typography variant="body2" color="#e2e8f0">
+                    {project?.createdAt ? new Date(project.createdAt).toLocaleString('vi-VN', {
+                      day: '2-digit', month: '2-digit', year: 'numeric',
+                      hour: '2-digit', minute: '2-digit'
+                    }) : 'N/A'}
+                  </Typography>
+                </Box>
+
+                {/* Deadline */}
+                <Box>
+                  <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Deadline</Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Typography variant="body2" color="#e2e8f0">
+                      {project?.deadline ? new Date(project.deadline).toLocaleString('vi-VN', {
+                        day: '2-digit', month: '2-digit', year: 'numeric',
+                        hour: '2-digit', minute: '2-digit'
+                      }) : 'No deadline set'}
+                    </Typography>
+                    {project?.deadline && new Date(project.deadline) < new Date() && (
+                      <Chip label="OVERDUE" size="small" sx={{ bgcolor: 'rgba(239,68,68,0.2)', color: '#f87171', fontWeight: 700, height: 20, fontSize: '0.65rem' }} />
+                    )}
+                    {project?.deadline && new Date(project.deadline) >= new Date() && (
+                      <Chip label="ACTIVE" size="small" sx={{ bgcolor: 'rgba(34,197,94,0.2)', color: '#34d399', fontWeight: 700, height: 20, fontSize: '0.65rem' }} />
+                    )}
+                  </Box>
+                </Box>
+
+                {/* Status */}
+                <Box>
+                  <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Status</Typography>
+                  <Box sx={{ mt: 0.5 }}>
+                    <Chip
+                      label={(project?.status || 'draft').toUpperCase()}
+                      sx={{
+                        bgcolor: project?.status === 'active' ? 'rgba(16,185,129,0.2)' :
+                          project?.status === 'completed' ? 'rgba(59,130,246,0.2)' :
+                          project?.status === 'archived' ? 'rgba(100,116,139,0.2)' : 'rgba(51,65,85,0.8)',
+                        color: project?.status === 'active' ? '#34d399' :
+                          project?.status === 'completed' ? '#60a5fa' :
+                          project?.status === 'archived' ? '#94a3b8' : '#94a3b8',
+                        fontWeight: 800
+                      }}
+                    />
+                  </Box>
+                </Box>
+
+                {/* Export Format */}
+                <Box>
+                  <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Export Format</Typography>
+                  <Typography variant="body2" color="#e2e8f0">{project?.exportFormat || 'JSON'}</Typography>
+                </Box>
+
+                {/* Manager */}
+                <Box>
+                  <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Manager</Typography>
+                  <Typography variant="body2" color="#e2e8f0">
+                    {project?.managerId?.fullName || project?.managerId?.username || 'N/A'}
+                    {project?.managerId?.email && (
+                      <Typography component="span" variant="caption" sx={{ color: '#64748b', display: 'block' }}>
+                        {project.managerId.email}
+                      </Typography>
+                    )}
+                  </Typography>
+                </Box>
+              </Box>
+            </Grid>
+
+            {/* Right Column - Datasets & Topics/Subtopics */}
+            <Grid item xs={12} md={6}>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {/* Datasets */}
+                <Box>
+                  <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', mb: 1, display: 'block' }}>Datasets Used</Typography>
+                  {datasets.length === 0 ? (
+                    <Typography variant="body2" sx={{ color: '#64748b' }}>No datasets linked to this project.</Typography>
+                  ) : (
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      {datasets.map((ds) => (
+                        <Paper key={ds._id} sx={{ p: 1.5, bgcolor: '#0f172a', border: '1px solid #334155', borderRadius: 2 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+                            <Typography variant="body2" fontWeight={600} color="#e2e8f0">{ds.name}</Typography>
+                            <Chip
+                              label={(ds.type || 'unknown').toUpperCase()}
+                              size="small"
+                              sx={{
+                                bgcolor: ds.type === 'image' ? 'rgba(245,158,11,0.2)' :
+                                  ds.type === 'audio' ? 'rgba(244,114,182,0.2)' :
+                                  ds.type === 'text' ? 'rgba(52,211,153,0.2)' : 'rgba(100,116,139,0.2)',
+                                color: ds.type === 'image' ? '#fbbf24' :
+                                  ds.type === 'audio' ? '#f472b6' :
+                                  ds.type === 'text' ? '#34d399' : '#94a3b8',
+                                fontWeight: 700,
+                                height: 20,
+                                fontSize: '0.65rem'
+                              }}
+                            />
+                          </Box>
+                          <Typography variant="caption" sx={{ color: '#64748b' }}>
+                            {ds.totalItems || ds.items?.length || 0} items
+                          </Typography>
+                        </Paper>
+                      ))}
+                    </Box>
+                  )}
+                </Box>
+
+                {/* Topics & Subtopics */}
+                <Box>
+                  <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', mb: 1, display: 'block' }}>Topics & Subtopics</Typography>
+                  {(() => {
+                    // Collect unique topic/subtopic info from tasks
+                    const topicMap = new Map();
+                    tasks.forEach((task) => {
+                      const subtopic = task.subtopicId;
+                      if (subtopic && subtopic._id) {
+                        const topicId = subtopic.topicId?._id || subtopic.topicId;
+                        if (!topicMap.has(topicId)) {
+                          topicMap.set(topicId, {
+                            topicId,
+                            topicName: subtopic.topicId?.name || 'Unknown Topic',
+                            subtopics: new Map()
+                          });
+                        }
+                        const topicEntry = topicMap.get(topicId);
+                        if (!topicEntry.subtopics.has(subtopic._id)) {
+                          topicEntry.subtopics.set(subtopic._id, {
+                            _id: subtopic._id,
+                            name: subtopic.name,
+                            description: subtopic.description,
+                            guideline: subtopic.guideline,
+                            taskType: subtopic.taskType
+                          });
+                        }
+                      }
+                    });
+
+                    const topicList = Array.from(topicMap.values());
+
+                    if (topicList.length === 0) {
+                      return <Typography variant="body2" sx={{ color: '#64748b' }}>No topics/subtopics linked to this project.</Typography>;
+                    }
+
+                    return (
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                        {topicList.map((topic) => (
+                          <Paper key={topic.topicId} sx={{ p: 1.5, bgcolor: '#0f172a', border: '1px solid #334155', borderRadius: 2 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                              <Chip label="TOPIC" size="small" sx={{ bgcolor: 'rgba(59,130,246,0.25)', color: '#93c5fd', fontWeight: 700, height: 20, fontSize: '0.65rem' }} />
+                              <Typography variant="body2" fontWeight={700} color="#e2e8f0">{topic.topicName}</Typography>
+                            </Box>
+                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, pl: 2 }}>
+                              {Array.from(topic.subtopics.values()).map((sub) => (
+                                <Box key={sub._id} sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <Typography variant="body2" color="#94a3b8" fontWeight={600}>- {sub.name}</Typography>
+                                    {sub.taskType && (
+                                      <Chip label={sub.taskType} size="small" sx={{ bgcolor: 'rgba(139,92,246,0.2)', color: '#a78bfa', fontWeight: 700, height: 18, fontSize: '0.6rem' }} />
+                                    )}
+                                  </Box>
+                                  {sub.description && (
+                                    <Typography variant="caption" sx={{ color: '#64748b', pl: 2 }}>{sub.description}</Typography>
+                                  )}
+                                </Box>
+                              ))}
+                            </Box>
+                          </Paper>
+                        ))}
+                      </Box>
+                    );
+                  })()}
+                </Box>
+
+                {/* Review Policy */}
+                {project?.reviewPolicy && (
+                  <Box>
+                    <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', mb: 1, display: 'block' }}>Review Policy</Typography>
+                    <Paper sx={{ p: 1.5, bgcolor: '#0f172a', border: '1px solid #334155', borderRadius: 2 }}>
+                      <Box sx={{ display: 'flex', gap: 2 }}>
+                        <Box>
+                          <Typography variant="caption" sx={{ color: '#64748b' }}>Mode</Typography>
+                          <Typography variant="body2" fontWeight={600} color="#e2e8f0" sx={{ textTransform: 'capitalize' }}>{project.reviewPolicy.mode || 'full'}</Typography>
+                        </Box>
+                        {project.reviewPolicy.mode === 'sample' && (
+                          <Box>
+                            <Typography variant="caption" sx={{ color: '#64748b' }}>Sample Rate</Typography>
+                            <Typography variant="body2" fontWeight={600} color="#e2e8f0">{(project.reviewPolicy.sampleRate * 100).toFixed(0)}%</Typography>
+                          </Box>
+                        )}
+                        <Box>
+                          <Typography variant="caption" sx={{ color: '#64748b' }}>Reviewers/item</Typography>
+                          <Typography variant="body2" fontWeight={600} color="#e2e8f0">{project.reviewPolicy.reviewersPerItem || 3}</Typography>
+                        </Box>
+                      </Box>
+                    </Paper>
+                  </Box>
+                )}
+
+                {/* Guidelines Summary */}
+                {project?.guidelines && (
+                  <Box>
+                    <Typography variant="caption" sx={{ color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', mb: 1, display: 'block' }}>Guidelines</Typography>
+                    <Paper sx={{ p: 1.5, bgcolor: '#0f172a', border: '1px solid #334155', borderRadius: 2, maxHeight: 120, overflow: 'auto' }}>
+                      <Typography variant="caption" sx={{ color: '#94a3b8', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+                        {project.guidelines}
+                      </Typography>
+                    </Paper>
+                  </Box>
+                )}
+              </Box>
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setProjectInfoDialogOpen(false)} sx={secondaryBtnSx}>Close</Button>
         </DialogActions>
       </Dialog>
     </Box>
