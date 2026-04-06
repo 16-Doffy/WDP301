@@ -100,9 +100,7 @@ const Datasets = () => {
   const [selectedSubtopicId, setSelectedSubtopicId] = useState('');
   const [selectedSubtopicIds, setSelectedSubtopicIds] = useState([]);
   const [editTopicName, setEditTopicName] = useState('');
-  const [subtopicAssets, setSubtopicAssets] = useState(null);
-  const [subtopicLabels, setSubtopicLabels] = useState([]);
-  const [imageCount, setImageCount] = useState(100);
+  const [subtopicData, setSubtopicData] = useState({});
   const [creating, setCreating] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState(null);
@@ -200,60 +198,43 @@ const Datasets = () => {
         setSelectedSubtopicIds([]);
         setForm(f => ({ ...f, subtopicId: '' }));
       }
-      setSubtopicAssets(null);
-      setSubtopicLabels([]);
+      setSubtopicData({});
       loadSubtopicsForTopic(selectedTopicId);
     } else {
       setSubtopics([]);
-      setSubtopicAssets(null);
-      setSubtopicLabels([]);
+      setSubtopicData({});
     }
   }, [selectedTopicId, editOpen]);
 
   const loadSubtopicPool = async (subtopicIds) => {
     const ids = Array.isArray(subtopicIds) ? subtopicIds.filter(Boolean) : (subtopicIds ? [subtopicIds] : []);
     if (!ids.length) {
-      setSubtopicAssets(null);
-      setSubtopicLabels([]);
+      setSubtopicData({});
       return;
     }
     try {
-      const responses = await Promise.all(ids.map(async (id) => {
+      const results = {};
+      await Promise.all(ids.map(async (id) => {
         const [assetRes, labelRes] = await Promise.all([
           axios.get(API_URL + '/api/subtopics/' + id + '/assets', { headers: { Authorization: 'Bearer ' + getAuthToken() } }),
           axios.get(API_URL + '/api/labelsets?subtopicId=' + id, { headers: { Authorization: 'Bearer ' + getAuthToken() } }),
         ]);
-        return {
-          assets: Array.isArray(assetRes.data) ? assetRes.data : [],
-          labels: Array.isArray(labelRes.data) ? labelRes.data : [],
+        const assets = Array.isArray(assetRes.data) ? assetRes.data : [];
+        const labels = Array.isArray(labelRes.data) ? labelRes.data : [];
+        const imgs = assets.filter(a => a.type === 'image').length;
+        const txts = assets.filter(a => a.type === 'text').length;
+        const auds = assets.filter(a => a.type === 'audio').length;
+        results[id] = {
+          total: assets.length,
+          images: imgs,
+          texts: txts,
+          audios: auds,
+          labels: labels,
         };
       }));
-
-      const mergedAssets = responses.flatMap(r => r.assets || []);
-      const uniqueAssetsMap = new Map();
-      mergedAssets.forEach((a) => {
-        const key = a._id || a.path || a.filename || JSON.stringify(a);
-        if (!uniqueAssetsMap.has(key)) uniqueAssetsMap.set(key, a);
-      });
-      const assets = [...uniqueAssetsMap.values()];
-
-      const mergedLabels = responses.flatMap(r => r.labels || []);
-      const uniqueLabelsMap = new Map();
-      mergedLabels.forEach((l) => {
-        const key = l._id || l.name;
-        if (!uniqueLabelsMap.has(key)) uniqueLabelsMap.set(key, l);
-      });
-      const labels = [...uniqueLabelsMap.values()];
-
-      const imgs = assets.filter(a => a.type === 'image').length;
-      const txts = assets.filter(a => a.type === 'text').length;
-      const auds = assets.filter(a => a.type === 'audio').length;
-      const vids = assets.filter(a => a.type === 'video').length;
-      setSubtopicAssets({ total: assets.length, images: imgs, texts: txts, videos: vids, audios: auds });
-      setSubtopicLabels(labels);
+      setSubtopicData(results);
     } catch {
-      setSubtopicAssets(null);
-      setSubtopicLabels([]);
+      setSubtopicData({});
     }
   };
 
@@ -261,8 +242,7 @@ const Datasets = () => {
     if (selectedSubtopicIds.length > 0) {
       loadSubtopicPool(selectedSubtopicIds);
     } else {
-      setSubtopicAssets(null);
-      setSubtopicLabels([]);
+      setSubtopicData({});
     }
   }, [selectedSubtopicIds]);
 
@@ -289,19 +269,6 @@ const Datasets = () => {
     return r;
   }, [datasets, search, filterType, filterStatus, sortBy, sortOrder, statusByDs]);
 
-  const selectedTypeAssetCount = useMemo(() => {
-    if (!subtopicAssets) return 0;
-    if (form.type === 'text') return subtopicAssets.texts || 0;
-    if (form.type === 'audio') return subtopicAssets.audios || 0;
-    return subtopicAssets.images || 0;
-  }, [subtopicAssets, form.type]);
-
-  useEffect(() => {
-    if (selectedTypeAssetCount > 0 && imageCount > selectedTypeAssetCount) {
-      setImageCount(selectedTypeAssetCount);
-    }
-  }, [selectedTypeAssetCount, imageCount]);
-
   const stats = useMemo(() => {
     const vals = Object.values(statusByDs);
     return {
@@ -320,9 +287,7 @@ const Datasets = () => {
     setSelectedSubtopicId('');
     setSelectedSubtopicIds([]);
     setSubtopics([]);
-    setSubtopicAssets(null);
-    setSubtopicLabels([]);
-    setImageCount(100);
+    setSubtopicData({});
     setCreateOpen(true);
   };
 
@@ -337,7 +302,6 @@ const Datasets = () => {
         type: form.type,
         subtopicId: selectedSubtopicIds[0],
         subtopicIds: selectedSubtopicIds,
-        imageCount: imageCount,
         description: form.description.trim(),
       };
       const cr = await axios.post(API_URL + '/api/datasets', payload, { headers: { Authorization: 'Bearer ' + getAuthToken() } });
@@ -346,13 +310,11 @@ const Datasets = () => {
       setSelectedTopicId('');
       setSelectedSubtopicId('');
       setSelectedSubtopicIds([]);
-      setImageCount(100);
-      setSubtopicAssets(null);
-      setSubtopicLabels([]);
+      setSubtopicData({});
       setCreateOpen(false);
       await fetchDatasets();
       if (created?._id) {
-        navigate('/manager/topics', {
+        navigate('/manager/projects', {
           state: {
             highlightDsId: created._id,
             highlightDsName: created.name,
@@ -389,9 +351,7 @@ const Datasets = () => {
       : (ds.subtopicId ? [String(ds.subtopicId)] : []);
     setSelectedSubtopicId(existingSubtopicIds[0] || '');
     setSelectedSubtopicIds(existingSubtopicIds);
-    setImageCount(ds.imageCount || ds.totalItems || 100);
-    setSubtopicAssets(null);
-    setSubtopicLabels([]);
+    setSubtopicData({});
 
     if (ds.subtopicId) {
       try {
@@ -974,59 +934,43 @@ const Datasets = () => {
             )}
           </Box>
 
-          {/* Data Source: Show pool info */}
-          {subtopicAssets ? (
+          {/* Subtopics Info */}
+          {selectedSubtopicIds.length > 0 && Object.keys(subtopicData).length > 0 ? (
             <Box sx={{ p: 2, border: '1px solid #334155', borderRadius: 2, mb: 2, bgcolor: '#0f172a' }}>
-              <Typography variant="subtitle2" fontWeight={700} sx={{ color: '#94a3b8', mb: 1.5 }}>Data Source (Trich xuat tu kho)</Typography>
-              <Box sx={{ display: 'flex', gap: 3, mb: 2, flexWrap: 'wrap' }}>
-                <Box sx={{ textAlign: 'center' }}>
-                  <Typography variant="h5" fontWeight={800} sx={{ color: '#60a5fa' }}>{subtopicAssets.total}</Typography>
-                  <Typography variant="caption" sx={{ color: '#64748b' }}>Tong assets</Typography>
-                </Box>
-                <Box sx={{ textAlign: 'center' }}>
-                  <Typography variant="h5" fontWeight={800} sx={{ color: '#f59e0b' }}>{subtopicAssets.images}</Typography>
-                  <Typography variant="caption" sx={{ color: '#64748b' }}>Images</Typography>
-                </Box>
-                <Box sx={{ textAlign: 'center' }}>
-                  <Typography variant="h5" fontWeight={800} sx={{ color: '#34d399' }}>{subtopicAssets.texts}</Typography>
-                  <Typography variant="caption" sx={{ color: '#64748b' }}>Texts</Typography>
-                </Box>
-                <Box sx={{ textAlign: 'center' }}>
-                  <Typography variant="h5" fontWeight={800} sx={{ color: '#f472b6' }}>{subtopicAssets.audios}</Typography>
-                  <Typography variant="caption" sx={{ color: '#64748b' }}>Audios</Typography>
-                </Box>
+              <Typography variant="subtitle2" fontWeight={700} sx={{ color: '#94a3b8', mb: 1.5 }}>Subtopics ({selectedSubtopicIds.length})</Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                {subtopics.filter(s => selectedSubtopicIds.includes(s._id)).map((sub) => {
+                  const subInfo = subtopicData[sub._id] || {};
+                  return (
+                    <Box key={sub._id} sx={{ p: 1.5, borderRadius: 1.5, border: '1px solid #334155', bgcolor: '#1e293b' }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                        <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#3b82f6' }} />
+                        <Typography variant="body2" fontWeight={700} sx={{ color: '#e2e8f0' }}>{sub.name}</Typography>
+                        <Box sx={{ flex: 1 }} />
+                        <Chip
+                          label={`${subInfo.total || 0} assets`}
+                          size="small"
+                          sx={{ bgcolor: 'rgba(96,165,250,0.15)', color: '#60a5fa', fontWeight: 700, fontSize: '0.65rem', height: 20 }}
+                        />
+                      </Box>
+                      {subInfo.labels && subInfo.labels.length > 0 && (
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+                          {subInfo.labels.map(ls => (
+                            <Chip
+                              key={ls._id}
+                              label={ls.name}
+                              size="small"
+                              sx={{ bgcolor: 'rgba(59,130,246,0.12)', color: '#93c5fd', fontWeight: 600, fontSize: '0.65rem', height: 18 }}
+                            />
+                          ))}
+                        </Box>
+                      )}
+                    </Box>
+                  );
+                })}
               </Box>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                <Typography variant="body2" sx={{ color: '#94a3b8', fontWeight: 600, minWidth: 140 }}>Lay so luong:</Typography>
-                <TextField
-                  size="small"
-                  type="number"
-                  value={imageCount}
-                  onChange={e => setImageCount(Math.max(1, Math.min(selectedTypeAssetCount || 1, parseInt(e.target.value) || 1)))}
-                  sx={{ width: 100, ...inputSx, '& .MuiOutlinedInput-root': { ...inputSx['& .MuiOutlinedInput-root'], height: 36 } }}
-                  inputProps={{ min: 1, max: selectedTypeAssetCount || 1 }}
-                />
-                <Typography variant="caption" sx={{ color: '#64748b' }}>
-                  trong tong so <strong style={{ color: '#60a5fa' }}>{selectedTypeAssetCount}</strong> {form.type === 'text' ? 'texts' : form.type === 'audio' ? 'audios' : 'images'}
-                </Typography>
-              </Box>
-              {subtopicLabels.length > 0 && (
-                <Box sx={{ mt: 2 }}>
-                  <Typography variant="caption" sx={{ color: '#64748b', mb: 0.5, display: 'block' }}>Labelsets duoc ke thua ({subtopicLabels.length}):</Typography>
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                    {subtopicLabels.map(ls => (
-                      <Chip
-                        key={ls._id}
-                        label={ls.name}
-                        size="small"
-                        sx={{ bgcolor: 'rgba(59,130,246,0.15)', color: '#60a5fa', fontWeight: 600, fontSize: '0.7rem' }}
-                      />
-                    ))}
-                  </Box>
-                </Box>
-              )}
             </Box>
-          ) : selectedSubtopicId ? (
+          ) : selectedSubtopicIds.length > 0 ? (
             <Box sx={{ p: 2, border: '1px solid #334155', borderRadius: 2, mb: 2, bgcolor: '#0f172a', textAlign: 'center' }}>
               <CircularProgress size={20} />
               <Typography variant="caption" sx={{ color: '#64748b', ml: 1 }}>Dang tai thong tin kho...</Typography>

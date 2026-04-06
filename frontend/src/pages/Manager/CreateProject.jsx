@@ -54,6 +54,9 @@ const CreateProject = () => {
   const [reviewerSearch, setReviewerSearch] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [datasetLabelsets, setDatasetLabelsets] = useState({});
+  const [loadingLabelsets, setLoadingLabelsets] = useState(false);
+  const [topics, setTopics] = useState({});
   const [notification, setNotification] = useState({
     open: false,
     message: '',
@@ -117,13 +120,67 @@ const CreateProject = () => {
     };
   }, []);
 
+  // Load labelsets when selectedDatasets changes
+  useEffect(() => {
+    if (selectedDatasets.length > 0) {
+      loadDatasetLabelsets(selectedDatasets);
+    } else {
+      setDatasetLabelsets({});
+    }
+  }, [selectedDatasets]);
+
+  const loadDatasetLabelsets = async (datasetIds) => {
+    setLoadingLabelsets(true);
+    console.log('loadDatasetLabelsets called with:', datasetIds);
+    try {
+      const results = {};
+      await Promise.all(datasetIds.map(async (dsId) => {
+        const ds = datasets.find(d => d._id === dsId) || {};
+        console.log('Dataset:', ds._id, ds.name, 'subtopicIds:', ds.subtopicIds, 'subtopicId:', ds.subtopicId);
+        const subtopicIds = ds.subtopicIds || (ds.subtopicId ? [ds.subtopicId] : []);
+        console.log('Resolved subtopicIds:', subtopicIds);
+        const subtopicInfoList = [];
+        for (const stId of subtopicIds) {
+          try {
+            const stRes = await axios.get(`${API_URL}/api/subtopics/${stId}`, { headers: getAuthHeaders() });
+            console.log('Subtopic response:', stId, stRes.data);
+            const stData = stRes.data?.subtopic || stRes.data || {};
+            const topicInfo = stData.topicId?._id ? { _id: stData.topicId._id, name: stData.topicId.name } : null;
+            const lsRes = await axios.get(`${API_URL}/api/labelsets?subtopicId=${stId}`, { headers: getAuthHeaders() });
+            console.log('Labelsets response for', stId, ':', lsRes.data);
+            const labels = Array.isArray(lsRes.data) ? lsRes.data : [];
+            subtopicInfoList.push({
+              _id: stId,
+              name: stData.name || stId,
+              topic: topicInfo,
+              labelsets: labels,
+            });
+          } catch (e) {
+            console.error('Error loading subtopic', stId, e);
+          }
+        }
+        results[dsId] = {
+          subtopicIds,
+          subtopics: subtopicInfoList,
+        };
+      }));
+      console.log('Final datasetLabelsets results:', results);
+      setDatasetLabelsets(results);
+    } catch (err) {
+      console.error('Error loadDatasetLabelsets:', err);
+      setDatasetLabelsets({});
+    } finally {
+      setLoadingLabelsets(false);
+    }
+  };
+
   const fetchDatasets = async () => {
     try {
       const response = await axios.get(`${API_URL}/api/datasets`, {
         headers: getAuthHeaders()
       });
       const allDatasets = response.data || [];
-      console.log('All datasets from API:', allDatasets);
+      console.log('All datasets from API:', JSON.stringify(allDatasets, null, 2));
       // Chỉ hiển thị datasets chưa có projectId (chưa được gán cho project nào)
       const unassignedDatasets = allDatasets.filter(ds => !ds.projectId || ds.projectId === null);
       console.log('Unassigned datasets:', unassignedDatasets);
@@ -226,7 +283,7 @@ const CreateProject = () => {
       return;
     }
     if (selectedDatasets.length === 0) {
-      showNotification('Vui lòng chọn ít nhất một dataset');
+      showNotification('Vui lòng chọn 1 dataset');
       return;
     }
     if (selectedAnnotators.length === 0) {
@@ -451,9 +508,83 @@ const CreateProject = () => {
 
             {/* Labels Info */}
             <Box sx={{ mb: 4, p: 2, borderRadius: 2, bgcolor: 'rgba(59,130,246,0.08)', border: '1px solid #3b82f6' }}>
-              <Alert severity="info">
-                Labels se tu dong lay tu Dataset → Subtopic → LabelSet. Vui long dam bao Dataset da duoc gan Subtopic co LabelSet trong <strong>Topics</strong> truoc khi tao project.
-              </Alert>
+              <Typography variant="subtitle2" fontWeight={700} sx={{ color: '#60a5fa', mb: 1.5 }}>
+                Labels tu Dataset → Subtopic → LabelSet
+              </Typography>
+              {selectedDatasets.length === 0 ? (
+                <Typography variant="caption" sx={{ color: '#94a3b8', fontStyle: 'italic' }}>
+                  Chon dataset de xem thong tin labels.
+                </Typography>
+              ) : loadingLabelsets ? (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <CircularProgress size={16} sx={{ color: '#60a5fa' }} />
+                  <Typography variant="caption" sx={{ color: '#94a3b8' }}>Dang tai labels...</Typography>
+                </Box>
+              ) : (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                  {selectedDatasets.map(dsId => {
+                    const info = datasetLabelsets[dsId] || {};
+                    const ds = datasets.find(d => d._id === dsId);
+                    return (
+                      <Box key={dsId} sx={{ p: 1.5, borderRadius: 1.5, border: '1px solid #334155', bgcolor: '#0f172a' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                          <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#22c55e' }} />
+                          <Typography variant="body2" fontWeight={700} sx={{ color: '#e2e8f0' }}>{ds?.name || dsId}</Typography>
+                          <Chip label={(ds?.type || 'image').toUpperCase()} size="small" sx={{ bgcolor: 'rgba(245,158,11,0.15)', color: '#f59e0b', fontWeight: 700, fontSize: '0.65rem', height: 18 }} />
+                        </Box>
+                        {info.subtopics && info.subtopics.length > 0 ? (
+                          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                            {info.subtopics.map((sub) => (
+                              <Box key={sub._id} sx={{ p: 1.2, borderRadius: 1, border: '1px solid #334155', bgcolor: '#1e293b' }}>
+                                {sub.topic && (
+                                  <Typography variant="caption" sx={{ color: '#a78bfa', fontWeight: 600, display: 'block', mb: 0.3 }}>
+                                    Topic: {sub.topic.name || sub.topic}
+                                  </Typography>
+                                )}
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
+                                  <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: '#3b82f6' }} />
+                                  <Typography variant="body2" fontWeight={700} sx={{ color: '#e2e8f0' }}>{sub.name}</Typography>
+                                </Box>
+                                {sub.labelsets && sub.labelsets.length > 0 ? (
+                                  <Box sx={{ pl: 1.5 }}>
+                                    {sub.labelsets.map((ls, lsIdx) => (
+                                      <Box key={ls._id || lsIdx} sx={{ mb: 0.5 }}>
+                                        <Typography variant="caption" fontWeight={600} sx={{ color: '#60a5fa' }}>
+                                          LabelSet: {ls.name}
+                                        </Typography>
+                                        {ls.labels && ls.labels.length > 0 && (
+                                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.3, pl: 1 }}>
+                                            {ls.labels.map((lbl, lIdx) => (
+                                              <Chip
+                                                key={lbl._id || lIdx}
+                                                label={lbl.name || lbl}
+                                                size="small"
+                                                sx={{ bgcolor: 'rgba(59,130,246,0.12)', color: '#93c5fd', fontWeight: 600, fontSize: '0.65rem', height: 18 }}
+                                              />
+                                            ))}
+                                          </Box>
+                                        )}
+                                      </Box>
+                                    ))}
+                                  </Box>
+                                ) : (
+                                  <Typography variant="caption" sx={{ color: '#f87171', pl: 1.5, fontStyle: 'italic' }}>
+                                    Khong co LabelSet nao
+                                  </Typography>
+                                )}
+                              </Box>
+                            ))}
+                          </Box>
+                        ) : (
+                          <Typography variant="caption" sx={{ color: '#f87171', pl: 2 }}>
+                            Khong co Subtopic nao. Dam bao Dataset da duoc gan Subtopic co LabelSet trong Topics.
+                          </Typography>
+                        )}
+                      </Box>
+                    );
+                  })}
+                </Box>
+              )}
             </Box>
 
             {/* Dataset Selection */}
@@ -486,6 +617,9 @@ const CreateProject = () => {
                         <Chip label={`${ds.totalItems || 0} files`} size="small" />
                       </Box>
                     ))}
+                    <Typography variant="caption" sx={{ color: '#94a3b8', mt: 1, display: 'block' }}>
+                      Chi 1 dataset duoc phep chon cho 1 project.
+                    </Typography>
                   </Box>
                   <Button size="small" sx={{ mt: 2, textTransform: 'none' }} onClick={() => setLockDatasets(false)}>
                     Chọn dataset khác
@@ -494,19 +628,11 @@ const CreateProject = () => {
               ) : (
                 <>
                   <FormControl fullWidth>
-                    <InputLabel>Chọn dataset (có thể chọn nhiều)</InputLabel>
+                    <InputLabel>Chọn Dataset *</InputLabel>
                     <Select
-                      multiple
-                      value={selectedDatasets.filter((id) => validDatasets.some((d) => d._id === id))}
-                      onChange={(e) => setSelectedDatasets(e.target.value)}
-                      renderValue={(selected) => {
-                        const selectedNames = selected.map(id => {
-                          const ds = validDatasets.find(d => d._id === id) || datasets.find(d => d._id === id);
-                          return ds ? `${ds.name} (${(ds.type || 'unknown').toUpperCase()})` : id;
-                        });
-                        return selectedNames.join(', ');
-                      }}
-                      label="Chọn dataset (có thể chọn nhiều)"
+                      value={selectedDatasets[0] || ''}
+                      onChange={(e) => setSelectedDatasets(e.target.value ? [e.target.value] : [])}
+                      label="Chọn Dataset *"
                     >
                       {validDatasets.length === 0 ? (
                         <MenuItem disabled>
@@ -529,11 +655,7 @@ const CreateProject = () => {
                       )}
                     </Select>
                   </FormControl>
-                  {selectedDatasets.length > 0 && (
-                    <Alert severity="info" sx={{ mt: 2 }}>
-                      Đã chọn {selectedDatasets.length} dataset(s). Tasks sẽ được tạo cho tất cả files trong các dataset này.
-                    </Alert>
-                  )}
+
                 </>
               )}
               {datasets.length === 0 && (
