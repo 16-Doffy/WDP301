@@ -1,5 +1,5 @@
-﻿import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
 import ReviewMediaView from './ReviewMediaView';
@@ -24,11 +24,16 @@ const ReviewerTask = () => {
   const [activeTab, setActiveTab] = useState('media');
   const [textContent, setTextContent] = useState('');
   const [enabledAnns, setEnabledAnns] = useState([]);
+  const [searchParams] = useSearchParams();
 
-  // Read annotator IDs from URL on mount
   const annIdsFromUrl = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     return (params.get('anns') || '').split(',').filter(Boolean);
+  }, []);
+
+  const subtopicIdFromUrl = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('subtopicId') || '';
   }, []);
 
   const getTaskKind = (t) => {
@@ -57,7 +62,12 @@ const ReviewerTask = () => {
       if (taskData.datasetId) {
         try {
           const batchRes = await axios.get(`${API_URL}/api/reviews/pending`);
-          const pending = batchRes.data || [];
+          let pending = batchRes.data || [];
+          if (subtopicIdFromUrl) {
+            pending = pending.filter(
+              (t) => sameId(t.subtopicId?._id || t.subtopicId, subtopicIdFromUrl)
+            );
+          }
           const sameDs = pending.filter(
             (t) => sameId(t.datasetId?._id || t.datasetId, taskData.datasetId?._id || taskData.datasetId)
           );
@@ -92,7 +102,6 @@ const ReviewerTask = () => {
     return r?.status || null;
   }, [user]);
 
-  // All annotators in queue
   const allAnns = useMemo(() => {
     const map = {};
     queue.forEach((t) => {
@@ -103,12 +112,10 @@ const ReviewerTask = () => {
     return Object.values(map);
   }, [queue]);
 
-  // Filter queue to only enabled annotators
   const enabledAnnTasks = useMemo(() => {
     return queue.filter((t) => enabledAnns.includes(String(t.annotatorId?._id || t.annotatorId || '')));
   }, [queue, enabledAnns]);
 
-  // Aggregate labels from enabled annotators for current task
   const aggregatedLabels = useMemo(() => {
     const objects = [];
     const spans = [];
@@ -122,7 +129,6 @@ const ReviewerTask = () => {
     return { objects, spans, segments };
   }, [enabledAnnTasks]);
 
-  // Voting rules
   const currentVote = task ? getMyVote(task) : null;
   const canVote = enabledAnns.length === 1 && task?.status === 'submitted' && !currentVote;
   const multiAnnsBlocked = enabledAnns.length > 1;
@@ -167,13 +173,16 @@ const ReviewerTask = () => {
     const nextIdx = queue.findIndex((t, i) => i > queueIndex && t.status === 'submitted' && !getMyVote(t)?.match(/approved|rejected/));
     if (nextIdx >= 0) {
       const next = queue[nextIdx];
-      navigate(`/reviewer/tasks/${next._id}?anns=${annIdsFromUrl.join(',')}`);
+      const sid = next.subtopicId?._id || next.subtopicId || '';
+      const sidParam = sid ? '&subtopicId=' + sid : '';
+      navigate(`/reviewer/tasks/${next._id}?anns=${annIdsFromUrl.join(',')}${sidParam}`);
     }
-  }, [queue, queueIndex, getMyVote, annIdsFromUrl]);
+  }, [queue, queueIndex, getMyVote, annIdsFromUrl, navigate]);
 
-  const navigateQueue = (taskId) => {
-    navigate(`/reviewer/tasks/${taskId}?anns=${annIdsFromUrl.join(',')}`);
-  };
+  const navigateQueue = useCallback((taskId, sid) => {
+    const sidParam = sid ? '&subtopicId=' + sid : '';
+    navigate(`/reviewer/tasks/${taskId}?anns=${annIdsFromUrl.join(',')}${sidParam}`);
+  }, [annIdsFromUrl, navigate]);
 
   const toggleAnn = useCallback((aid) => {
     setEnabledAnns((prev) => {
@@ -207,34 +216,37 @@ const ReviewerTask = () => {
 
   return (
     <div className="flex min-h-screen bg-slate-900 text-gray-200">
-      {/* Left panel */}
       <div className="flex-1 overflow-auto p-6">
-        {/* Header */}
         <div className="mb-4 rounded-xl border border-gray-700 bg-gray-800 p-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div className="min-w-0">
               <h2 className="truncate text-lg font-bold text-gray-100">{task?.projectId?.name || 'Review Task'}</h2>
               <p className="mt-0.5 text-sm text-gray-400">{task?.datasetId?.name || 'Dataset'} | {task?.dataItem?.originalName || task?.dataItem?.filename || 'File'}</p>
-              <p className="mt-0.5 text-xs text-gray-500">Annotator: {task?.annotatorId?.fullName || task?.annotatorId?.username || 'N/A'}</p>
+              <p className="mt-0.5 text-xs text-gray-500">Subtopic: {task?.subtopicId?.name || 'N/A'} | Annotator: {task?.annotatorId?.fullName || task?.annotatorId?.username || 'N/A'}</p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className={`rounded-full px-3 py-1 text-xs font-semibold ${task?.status === 'approved' ? 'bg-emerald-500/10 text-emerald-400' : task?.status === 'rejected' ? 'bg-rose-500/10 text-rose-400' : 'bg-amber-500/10 text-amber-400'}`}>{task?.status?.toUpperCase()}</span>
+              <span className={'rounded-full px-3 py-1 text-xs font-semibold ' + (task?.status === 'approved' ? 'bg-emerald-500/10 text-emerald-400' : task?.status === 'rejected' ? 'bg-rose-500/10 text-rose-400' : 'bg-amber-500/10 text-amber-400')}>{task?.status?.toUpperCase()}</span>
+              {subtopicIdFromUrl && (
+                <button onClick={() => navigate('/reviewer')} className="rounded-lg border border-gray-600 bg-gray-800 px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-gray-700">Tat ca Projects</button>
+              )}
               <button onClick={() => navigate('/reviewer/tasks')} className="rounded-lg border border-gray-600 bg-gray-800 px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-gray-700">Back to List</button>
             </div>
           </div>
 
-          {/* Batch nav */}
           {queue.length > 0 && (
             <div className="mt-3 flex items-center gap-3">
-              <div className="flex-1"><div className="h-1.5 w-full rounded-full bg-gray-700"><div className="h-1.5 rounded-full bg-blue-500 transition-all" style={{ width: `${((queueIndex + 1) / queue.length) * 100}%` }} /></div></div>
+              <div className="flex-1">
+                <div className="h-1.5 w-full rounded-full bg-gray-700">
+                  <div className="h-1.5 rounded-full bg-blue-500 transition-all" style={{ width: `${((queueIndex + 1) / queue.length) * 100}%` }} />
+                </div>
+              </div>
               <span className="text-xs text-gray-400 whitespace-nowrap">{queueIndex + 1} / {queue.length}</span>
-              <button onClick={() => queueIndex > 0 && navigateQueue(queue[queueIndex - 1]._id)} disabled={queueIndex <= 0} className="rounded border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700 disabled:opacity-30">Prev</button>
-              <button onClick={() => queueIndex < queue.length - 1 && navigateQueue(queue[queueIndex + 1]._id)} disabled={queueIndex >= queue.length - 1} className="rounded border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700 disabled:opacity-30">Next</button>
+              <button onClick={() => queueIndex > 0 && navigateQueue(queue[queueIndex - 1]._id, queue[queueIndex - 1].subtopicId?._id || queue[queueIndex - 1].subtopicId)} disabled={queueIndex <= 0} className="rounded border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700 disabled:opacity-30">Prev</button>
+              <button onClick={() => queueIndex < queue.length - 1 && navigateQueue(queue[queueIndex + 1]._id, queue[queueIndex + 1].subtopicId?._id || queue[queueIndex + 1].subtopicId)} disabled={queueIndex >= queue.length - 1} className="rounded border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700 disabled:opacity-30">Next</button>
             </div>
           )}
         </div>
 
-        {/* Guidelines */}
         {task?.projectId?.guidelines && (
           <div className="mb-4 rounded-lg border border-blue-700/30 bg-blue-500/5 p-3">
             <h3 className="mb-1 text-xs font-semibold text-blue-400 uppercase tracking-wider">Guidelines</h3>
@@ -242,12 +254,10 @@ const ReviewerTask = () => {
           </div>
         )}
 
-        {/* Message */}
         {message && (
           <div className="mb-4 rounded-lg border border-amber-700/50 bg-amber-500/10 px-4 py-2 text-sm text-amber-300">{message}</div>
         )}
 
-        {/* Annotator toggles */}
         {allAnns.length > 0 && (
           <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-gray-700 bg-gray-800 p-3">
             <span className="text-xs font-semibold text-gray-400">Annotators:</span>
@@ -256,8 +266,8 @@ const ReviewerTask = () => {
               const isCurrent = sameId(ann.id, task?.annotatorId?._id || task?.annotatorId || '');
               return (
                 <button key={ann.id} onClick={() => toggleAnn(ann.id)}
-                  className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition ${isEnabled ? 'border-blue-500 bg-blue-500/10 text-blue-400' : 'border-gray-600 bg-gray-700/30 text-gray-400 hover:border-gray-500'}`}>
-                  <div className={`w-2 h-2 rounded-full ${isEnabled ? 'bg-blue-400' : 'bg-gray-600'}`} />
+                  className={'flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition ' + (isEnabled ? 'border-blue-500 bg-blue-500/10 text-blue-400' : 'border-gray-600 bg-gray-700/30 text-gray-400 hover:border-gray-500')}>
+                  <div className={'w-2 h-2 rounded-full ' + (isEnabled ? 'bg-blue-400' : 'bg-gray-600')} />
                   {ann.name}{isCurrent ? ' (current)' : ''} ({ann.tasks.length})
                 </button>
               );
@@ -266,29 +276,25 @@ const ReviewerTask = () => {
           </div>
         )}
 
-        {/* Tabs */}
         <div className="mb-4 flex gap-1 border-b border-gray-700">
           {['media', 'consensus', 'history'].map((tab) => (
             <button key={tab} onClick={() => setActiveTab(tab)}
-              className={`px-4 py-2 text-sm font-medium capitalize transition-colors ${activeTab === tab ? 'border-b-2 border-blue-500 text-blue-400' : 'text-gray-400 hover:text-gray-200'}`}>
+              className={'px-4 py-2 text-sm font-medium capitalize transition-colors ' + (activeTab === tab ? 'border-b-2 border-blue-500 text-blue-400' : 'text-gray-400 hover:text-gray-200')}>
               {tab === 'media' ? 'Media & Annotations' : tab === 'consensus' ? 'Vote Progress' : 'Review History'}
             </button>
           ))}
         </div>
 
-        {/* Media */}
         {activeTab === 'media' && (
           <ReviewMediaView task={taskWithText} annotations={aggregatedLabels.objects || task?.labels?.objects || []} />
         )}
 
-        {/* Consensus */}
         {activeTab === 'consensus' && (
           <div className="rounded-xl border border-gray-700 bg-gray-800 p-4">
             <ConsensusStatus reviewers={reviewers} task={{ ...task, currentUserId: user?._id || user?.id }} />
           </div>
         )}
 
-        {/* History */}
         {activeTab === 'history' && (
           <div className="space-y-4">
             <div className="rounded-xl border border-gray-700 bg-gray-800 p-4">
@@ -333,12 +339,12 @@ const ReviewerTask = () => {
         )}
       </div>
 
-      {/* Right sidebar */}
       <div className="w-80 flex-shrink-0 border-l border-gray-700 bg-gray-800 p-4 overflow-y-auto">
         <div className="mb-4">
           <h3 className="text-sm font-semibold text-gray-200">Review Actions</h3>
           <p className="mt-0.5 text-xs text-gray-500">{totalReviewers} reviewer(s) assigned</p>
           {allAnns.length > 0 && <p className="mt-0.5 text-xs text-gray-500">{enabledAnns.length} annotator(s) active</p>}
+          {subtopicIdFromUrl && <p className="mt-0.5 text-xs text-blue-400">Dang xem subtopic</p>}
         </div>
 
         {multiAnnsBlocked ? (
@@ -356,7 +362,6 @@ const ReviewerTask = () => {
           />
         )}
 
-        {/* Label summary */}
         <div className="mt-6 rounded-xl border border-gray-700 bg-gray-900 p-4">
           <h4 className="mb-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">Labels ({aggregatedLabels.objects?.length || 0})</h4>
           {(aggregatedLabels.objects || []).length > 0 ? (
@@ -374,17 +379,15 @@ const ReviewerTask = () => {
           ) : <p className="text-xs text-gray-500">Khong co label</p>}
         </div>
 
-        {/* Quick summary */}
         <div className="mt-6 rounded-xl border border-gray-700 bg-gray-900 p-4">
           <h4 className="mb-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">Quick Summary</h4>
           <div className="space-y-2">
             <div className="flex justify-between text-xs"><span className="text-gray-400">Total annotations</span><span className="font-medium text-gray-200">{aggregatedLabels.objects?.length || 0}</span></div>
             <div className="flex justify-between text-xs"><span className="text-gray-400">Labels used</span><span className="font-medium text-gray-200">{(new Set((aggregatedLabels.objects || []).map((o) => o.label))).size}</span></div>
-            <div className="flex justify-between text-xs"><span className="text-gray-400">Your vote</span><span className={`font-medium ${currentVote === 'approved' ? 'text-emerald-400' : currentVote === 'rejected' ? 'text-rose-400' : 'text-gray-400'}`}>{currentVote || 'pending'}</span></div>
+            <div className="flex justify-between text-xs"><span className="text-gray-400">Your vote</span><span className={'font-medium ' + (currentVote === 'approved' ? 'text-emerald-400' : currentVote === 'rejected' ? 'text-rose-400' : 'text-gray-400')}>{currentVote || 'pending'}</span></div>
           </div>
         </div>
 
-        {/* Label legend */}
         {task?.availableLabels && task.availableLabels.length > 0 && (
           <div className="mt-6 rounded-xl border border-gray-700 bg-gray-900 p-4">
             <h4 className="mb-2 text-xs font-semibold text-gray-400 uppercase tracking-wider">Label Legend</h4>
