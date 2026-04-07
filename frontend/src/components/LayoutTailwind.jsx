@@ -76,6 +76,18 @@ const LayoutTailwind = () => {
     return roleMap[user?.role] || 'User';
   };
 
+  // Hide sidebar on workspace pages for more screen space
+  const isAnnotatorWorkspace = location.pathname.startsWith('/annotator/workspace');
+  const isReviewerWorkspace = location.pathname.startsWith('/reviewer/workspace');
+
+  if (isAnnotatorWorkspace || isReviewerWorkspace) {
+    return (
+      <div className="min-h-screen bg-slate-900 text-gray-200">
+        <Outlet />
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-screen bg-slate-900 text-gray-200">
       <aside className="w-64 bg-gray-900 border-r border-gray-800 flex flex-col">

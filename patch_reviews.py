@@ -1,0 +1,74 @@
+import os
+
+f = r'c:\Users\PC\Downloads\wdp\WDP301\backend\routes\reviews.js'
+content = open(f, 'r', encoding='utf-8').read()
+
+patch = '''
+
+// Get project review stats
+router.get('/projects/:id/stats', auth, authorize('reviewer', 'admin'), async (req, res) => {
+  try {
+    const projectId = req.params.id;
+    const reviewerId = req.user._id;
+    const reviewerIdString = reviewerId.toString();
+    const tasks = await Task.find({
+      projectId: projectId,
+      '$or': [
+        { reviewers: { '$elemMatch': { reviewerId: { '$in': [reviewerId, reviewerIdString] } } } },
+        { reviewerId: { '$in': [reviewerId, reviewerIdString] } },
+      ],
+    });
+    let total = 0, pending = 0, approved = 0, rejected = 0, reviewed = 0;
+    tasks.forEach((t) => {
+      total++;
+      if (t.status === 'submitted') pending++;
+      else if (t.status === 'approved') { approved++; reviewed++; }
+      else if (t.status === 'rejected') { rejected++; reviewed++; }
+    });
+    res.json({ total, pending, approved, rejected, reviewed });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Get project subtopics breakdown
+router.get('/projects/:id/subtopics', auth, authorize('reviewer', 'admin'), async (req, res) => {
+  try {
+    const projectId = req.params.id;
+    const reviewerId = req.user._id;
+    const reviewerIdString = reviewerId.toString();
+    const tasks = await Task.find({
+      projectId: projectId,
+      '$or': [
+        { reviewers: { '$elemMatch': { reviewerId: { '$in': [reviewerId, reviewerIdString] } } } },
+        { reviewerId: { '$in': [reviewerId, reviewerIdString] } },
+      ],
+    }).populate('subtopicId', 'name guideline');
+    const subMap = new Map();
+    tasks.forEach((t) => {
+      const subId = t.subtopicId ? t.subtopicId._id.toString() : 'unknown';
+      if (!subMap.has(subId)) {
+        subMap.set(subId, {
+          subtopicId: subId,
+          subtopicName: t.subtopicId ? t.subtopicId.name : 'Subtopic',
+          guideline: t.subtopicId ? t.subtopicId.guideline : '',
+          total: 0, pending: 0, approved: 0, rejected: 0
+        });
+      }
+      const sub = subMap.get(subId);
+      sub.total++;
+      if (t.status === 'submitted') sub.pending++;
+      else if (t.status === 'approved') sub.approved++;
+      else if (t.status === 'rejected') sub.rejected++;
+    });
+    res.json(Array.from(subMap.values()));
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+'''
+
+new_content = content.replace("module.exports = router;", patch + "module.exports = router;")
+open(f, 'w', encoding='utf-8').write(new_content)
+print('Done: ' + str(len(new_content)) + ' bytes')
