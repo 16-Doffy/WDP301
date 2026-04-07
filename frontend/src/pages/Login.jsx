@@ -65,10 +65,10 @@ const Login = () => {
       const token = sessionStorage.getItem('token');
       const payload = token ? JSON.parse(atob(token.split('.')[1])) : {};
       const role = payload?.role;
-      if (role === 'annotator') navigate('/annotator');
-      else if (role === 'reviewer') navigate('/reviewer');
-      else if (role === 'admin') navigate('/admin');
-      else navigate('/dashboard');
+      if (role === 'annotator') window.location.href = '/annotator';
+      else if (role === 'reviewer') window.location.href = '/reviewer';
+      else if (role === 'admin') window.location.href = '/admin';
+      else window.location.href = '/dashboard';
     } catch (err) {
       setError(err.response?.data?.message || 'Đăng nhập thất bại');
     } finally {

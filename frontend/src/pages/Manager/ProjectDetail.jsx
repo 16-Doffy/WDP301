@@ -483,7 +483,7 @@ const ManagerProjectDetail = () => {
       }
       const g = groupsMap.get(key);
       g.tasks.push(t);
-      if (['submitted', 'approved'].includes(t.status)) g.done += 1;
+      if (t.status === 'approved') g.done += 1;
       if (t.status === 'approved') g.approved += 1;
       if (t.status === 'rejected') g.rejected += 1;
     });
@@ -731,7 +731,7 @@ const ManagerProjectDetail = () => {
 
   const overallProgress =
     tasks.length > 0
-      ? Math.round((tasks.filter((t) => ['submitted', 'approved'].includes(t.status)).length / tasks.length) * 100)
+      ? Math.round((tasks.filter((t) => t.status === 'approved').length / tasks.length) * 100)
       : 0;
 
   const renderOverview = () => (
