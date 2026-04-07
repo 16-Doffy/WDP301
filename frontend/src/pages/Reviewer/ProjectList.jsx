@@ -150,20 +150,18 @@ const ReviewerProjectList = () => {
     setLoading(true);
     setError('');
     try {
-      const res = await axios.get(`${API_URL}/api/reviews/projects`);
-      const projectList = res.data || [];
+      const [projectsRes, allStatsRes] = await Promise.all([
+        axios.get(`${API_URL}/api/reviews/projects`),
+        axios.get(`${API_URL}/api/reviews/projects/all-stats`),
+      ]);
+      const projectList = projectsRes.data || [];
+      const statsMap = {};
+      (allStatsRes.data?.stats || []).forEach((s) => { statsMap[s.projectId] = s; });
 
-      // Enrich with review stats per project
-      const enriched = await Promise.all(
-        projectList.map(async (p) => {
-          try {
-            const statsRes = await axios.get(`${API_URL}/api/reviews/projects/${p._id}/stats`);
-            return { ...p, stats: statsRes.data || {} };
-          } catch {
-            return { ...p, stats: { total: 0, pending: 0, approved: 0, rejected: 0, reviewed: 0 } };
-          }
-        })
-      );
+      const enriched = projectList.map((p) => ({
+        ...p,
+        stats: statsMap[p._id] || { total: 0, pending: 0, approved: 0, rejected: 0, reviewed: 0 },
+      }));
 
       setProjects(enriched);
     } catch (err) {

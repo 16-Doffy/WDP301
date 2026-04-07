@@ -22,10 +22,11 @@ const applyMajorityDecision = (task) => {
   const decidedCount = approveCount + rejectCount;
   const totalReviewers = votes.length;
 
+  // No reviewers assigned — finalize immediately based on single reviewer field
   if (totalReviewers === 0) {
     return {
       finalized: true,
-      finalStatus: task.status || 'submitted',
+      finalStatus: task.status === 'rejected' ? 'rejected' : 'approved',
       winningVote: task.status === 'rejected' ? 'rejected' : 'approved',
       approveCount,
       rejectCount,
@@ -34,9 +35,10 @@ const applyMajorityDecision = (task) => {
     };
   }
 
-  // Require all assigned reviewers to vote before finalizing.
-  // This ensures manager-assigned reviewers all see and can grade the task.
-  if (decidedCount < totalReviewers) {
+  // Need at least a majority (> 50%) of reviewers to vote before finalizing.
+  // e.g. 3 reviewers → need 2 votes, 2 reviewers → need 2 votes, 1 reviewer → need 1 vote.
+  const majorityNeeded = Math.floor(totalReviewers / 2) + 1;
+  if (decidedCount < majorityNeeded) {
     return {
       finalized: false,
       finalStatus: 'submitted',
@@ -45,9 +47,11 @@ const applyMajorityDecision = (task) => {
       rejectCount,
       decidedCount,
       totalReviewers,
+      majorityNeeded,
     };
   }
 
+  // Majority reached — decide by vote count
   if (approveCount > rejectCount) {
     return {
       finalized: true,
@@ -710,6 +714,53 @@ router.get('/projects/:id/subtopics', auth, authorize('reviewer', 'admin'), asyn
       else if (t.status === 'rejected') sub.rejected++;
     });
     res.json(Array.from(subMap.values()));
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Get stats for all projects assigned to this reviewer (batch — avoid N+1)
+router.get('/projects/all-stats', auth, authorize('reviewer', 'admin'), async (req, res) => {
+  try {
+    const reviewerId = req.user._id;
+    const reviewerIdString = reviewerId.toString();
+
+    const tasks = await Task.find({
+      $or: [
+        { reviewers: { $elemMatch: { reviewerId: { $in: [reviewerId, reviewerIdString] } } } },
+        { reviewerId: { $in: [reviewerId, reviewerIdString] } },
+      ],
+    }).select('projectId').lean();
+
+    const projectIds = [...new Set(tasks.map((t) => t.projectId?.toString()).filter(Boolean))];
+
+    if (projectIds.length === 0) {
+      return res.json({ stats: [] });
+    }
+
+    // Aggregate stats per project in a single pass
+    const allTasks = await Task.find({
+      projectId: { $in: projectIds },
+      $or: [
+        { reviewers: { $elemMatch: { reviewerId: { $in: [reviewerId, reviewerIdString] } } } },
+        { reviewerId: { $in: [reviewerId, reviewerIdString] } },
+      ],
+    }).select('projectId status').lean();
+
+    const statsMap = {};
+    allTasks.forEach((t) => {
+      const pid = t.projectId?.toString();
+      if (!pid) return;
+      if (!statsMap[pid]) {
+        statsMap[pid] = { projectId: pid, total: 0, pending: 0, approved: 0, rejected: 0, reviewed: 0 };
+      }
+      statsMap[pid].total++;
+      if (t.status === 'submitted') statsMap[pid].pending++;
+      else if (t.status === 'approved') { statsMap[pid].approved++; statsMap[pid].reviewed++; }
+      else if (t.status === 'rejected') { statsMap[pid].rejected++; statsMap[pid].reviewed++; }
+    });
+
+    res.json({ stats: Object.values(statsMap) });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }

@@ -57,7 +57,7 @@ function App() {
             <Route path='/login' element={<Login />} />
             <Route path='/register' element={<Register />} />
             <Route element={<PrivateRoute><LayoutTailwind /></PrivateRoute>}>
-              <Route path='/dashboard' element={<Navigate to={getRoleRedirect()} replace />} />
+              <Route path='/dashboard' element={<ManagerDashboard />} />
               <Route path='/manager/projects' element={<ManagerProjects />} />
               <Route path='/manager/projects/create' element={<CreateProject />} />
               <Route path='/manager/projects/:id' element={<ManagerProjectDetail />} />
@@ -74,7 +74,7 @@ function App() {
               <Route path='/annotator/tasks' element={<AnnotatorProjectList />} />
               <Route path='/annotator/projects/:projectId' element={<AnnotatorProjectDetail />} />
               <Route path='/annotator/workspace/:subtopicId' element={<Workspace />} />
-              <Route path='/reviewer' element={<ReviewerProjectList />} />
+              <Route path='/reviewer' element={<ReviewerDashboard />} />
               <Route path='/reviewer/tasks' element={<ReviewerProjectList />} />
               <Route path='/reviewer/projects/:projectId' element={<ReviewerProjectDetailPage />} />
               <Route path='/reviewer/workspace/:projectId' element={<ReviewerWorkspace />} />

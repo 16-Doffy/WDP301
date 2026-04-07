@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
+import { useAuth } from '../../context/AuthContext';
 
 const StatCard = ({ title, value, hint }) => (
   <div className="rounded-xl border border-gray-700 bg-gray-800 p-6 shadow-lg transition hover:border-gray-600">
@@ -16,6 +17,8 @@ const AnnotatorOverview = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const userName = user?.fullName || user?.username || 'Annotator';
 
   useEffect(() => {
     const fetchData = async () => {
@@ -56,7 +59,7 @@ const AnnotatorOverview = () => {
         <div className="rounded-xl border border-gray-700 bg-gray-800 p-6 shadow-lg">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-gray-100">Hello, Annotator</h1>
+              <h1 className="text-2xl font-bold text-gray-100">Hello, {userName}</h1>
               <p className="mt-1 text-sm text-gray-400">Tong quan khoi luong cong viec.</p>
             </div>
             <button onClick={() => navigate('/annotator/tasks')}

@@ -22,6 +22,24 @@ export const AuthProvider = ({ children }) => {
 
     if (tabToken) {
       axios.defaults.headers.common.Authorization = `Bearer ${tabToken}`;
+      // Decode user from JWT directly — instant, no API call needed
+      try {
+        const payload = JSON.parse(atob(tabToken.split('.')[1]));
+        if (payload && payload._id) {
+          setUser({
+            _id: payload._id,
+            email: payload.email,
+            role: payload.role,
+            username: payload.username,
+            fullName: payload.fullName,
+          });
+          setLoading(false);
+          return;
+        }
+      } catch {
+        // Fall through to API fetch if decode fails
+      }
+      // Fallback: verify token with server
       fetchUser();
     } else {
       delete axios.defaults.headers.common.Authorization;
