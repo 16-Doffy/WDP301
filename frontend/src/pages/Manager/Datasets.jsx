@@ -20,7 +20,7 @@ import axios from 'axios';
 import { API_URL } from '../../config/api';
 import { getTopics, getSubtopics } from '../../services/TopicService';
 
-const getAuthToken = () => sessionStorage.getItem('token') || localStorage.getItem('token');
+const getAuthToken = () => sessionStorage.getItem('token');
 
 const getFullImageUrl = (path, imageUrl, filename) => {
   const base = API_URL.replace(/\/+$/, '');

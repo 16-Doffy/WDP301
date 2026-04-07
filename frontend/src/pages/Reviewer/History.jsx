@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
 
-const getAuthToken = () => sessionStorage.getItem('token') || localStorage.getItem('token');
+const getAuthToken = () => sessionStorage.getItem('token');
 
 const fmtDate = (d) => {
   if (!d) return '-';

@@ -5,7 +5,7 @@ import axios from 'axios';
 import { API_URL } from '../../config/api';
 import { useAuth } from '../../context/AuthContext';
 
-const getAuthToken = () => sessionStorage.getItem('token') || localStorage.getItem('token');
+const getAuthToken = () => sessionStorage.getItem('token');
 
 const formatDate = (dateStr) => {
   if (!dateStr) return 'N/A';

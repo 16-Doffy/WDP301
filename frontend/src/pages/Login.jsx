@@ -59,7 +59,6 @@ const Login = () => {
     setLoading(true);
 
     try {
-      localStorage.removeItem('token');
       sessionStorage.removeItem('token');
       await login(email, password);
       const token = sessionStorage.getItem('token');

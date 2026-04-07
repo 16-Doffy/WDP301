@@ -7,7 +7,7 @@ import ConsensusStatus from './ConsensusStatus';
 import VotingPanel from './VotingPanel';
 import { useAuth } from '../../context/AuthContext';
 
-const getAuthToken = () => sessionStorage.getItem('token') || localStorage.getItem('token');
+const getAuthToken = () => sessionStorage.getItem('token');
 const sameId = (a, b) => String(a || '') === String(b || '');
 
 const ReviewerTask = () => {

@@ -4,7 +4,7 @@ import axios from 'axios';
 import { API_URL } from '../../config/api';
 import { useAuth } from '../../context/AuthContext';
 
-const getAuthToken = () => sessionStorage.getItem('token') || localStorage.getItem('token');
+const getAuthToken = () => sessionStorage.getItem('token');
 const sameId = (a, b) => String(a || '') === String(b || '');
 
 const statusColor = (s) => {

@@ -326,7 +326,7 @@ const DatasetItemDetail = () => {
     const fetchItem = async () => {
       try {
         setLoading(true);
-        const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+        const token = sessionStorage.getItem('token');
         const resp = await axios.get(`${API_URL}/api/datasets/${datasetId}/items`, {
           headers: { Authorization: 'Bearer ' + token },
         });

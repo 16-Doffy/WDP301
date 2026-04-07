@@ -4,7 +4,7 @@ import { Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, Folder as Folde
 import axios from 'axios';
 import { API_URL } from '../../config/api';
 
-const getAuthToken = () => sessionStorage.getItem('token') || localStorage.getItem('token');
+const getAuthToken = () => sessionStorage.getItem('token');
 
 const panelSx = { borderRadius: 3, boxShadow: '0 16px 32px rgba(0,0,0,0.35)', background: '#1e293b', border: '1px solid #334155', color: '#e2e8f0' };
 const inputSx = { '& .MuiOutlinedInput-root': { bgcolor: '#0f172a', color: '#e2e8f0', borderRadius: '10px', '& fieldset': { borderColor: '#475569' }, '&:hover fieldset': { borderColor: '#64748b' }, '&.Mui-focused fieldset': { borderColor: '#3b82f6' } }, '& .MuiInputLabel-root': { color: '#94a3b8' }, '& .MuiSvgIcon-root': { color: '#94a3b8' } };

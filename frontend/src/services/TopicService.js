@@ -2,7 +2,7 @@ import { API_URL } from '../config/api';
 const BASE = API_URL + '/api/topics';
 const SBASE = API_URL + '/api/subtopics';
 const LBASE = API_URL + '/api/labelsets';
-const getToken = () => sessionStorage.getItem('token') || localStorage.getItem('token');
+const getToken = () => sessionStorage.getItem('token');
 const headers = () => ({ 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getToken() });
 
 const handleResponse=(r)=>{if(!r.ok)return r.json().then(function(e){var err=new Error(e.message||e.error||String.fromCharCode(82,101,113,117,101,115,116,32,102,97,105,108,101,100));err.response=e;throw err;});return r.json();};

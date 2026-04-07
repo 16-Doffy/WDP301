@@ -81,7 +81,6 @@ function App() {
               <Route path='/reviewer/tasks/:id' element={<ReviewerTask />} />
               <Route path='/reviewer/history' element={<ReviewerHistory />} />
               <Route path='/' element={<Navigate to={getRoleRedirect()} replace />} />
-              <Route path='/dashboard' element={<ManagerDashboard />} />
             </Route>
             <Route path='*' element={<Navigate to='/dashboard' replace />} />
           </Routes>
