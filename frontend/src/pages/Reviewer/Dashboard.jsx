@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+﻿import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
@@ -180,7 +180,7 @@ const ReviewerDashboard = () => {
           </div>
           <div className="rounded-xl border border-rose-700/30 bg-rose-500/5 p-4 text-center">
             <p className="text-xl font-bold text-rose-400">{projectGroups.filter(p => p.overdue).length}</p>
-            <p className="text-xs text-gray-400">Project Quá Hạn</p>
+            <p className="text-xs text-gray-400">Project Qu├í Hß║ín</p>
           </div>
         </div>
 
@@ -271,7 +271,7 @@ const ReviewerDashboard = () => {
                         <div className="flex items-center gap-2">
                           <span className="text-lg">{queueVisible ? String.fromCharCode(9650) : String.fromCharCode(9654)}</span>
                           <h4 className="text-sm font-semibold text-gray-200">Review Queue ({qTasks.length} tasks)</h4>
-                          {selTasks > 0 && <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-xs text-blue-400">{selTasks} Project cần Review</span>}
+                          {selTasks > 0 && <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-xs text-blue-400">{selTasks} Project cß║ºn Review</span>}
                         </div>
                         {qTasks.length > 0 && <button onClick={(e) => { e.stopPropagation(); openReview(pg); }} className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 transition">Review tu day</button>}
                       </button>

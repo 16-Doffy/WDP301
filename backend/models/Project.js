@@ -52,7 +52,15 @@ const projectSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['draft', 'active', 'completed', 'archived'],
+    enum: [
+      'draft',           // Chua bat dau
+      'active',         // Dang hoat dong
+      'in_review',      // Dang duoc review (co task submitted)
+      'waiting_rework', // Co task bi reject, cho annotator lam lai
+      'finalizing',     // Dang tinh toan finalize
+      'completed',      // Da hoan thanh
+      'archived'        // Da dong
+    ],
     default: 'draft'
   },
   deadline: {
@@ -63,10 +71,21 @@ const projectSchema = new mongoose.Schema({
     enum: ['YOLO', 'VOC', 'COCO', 'JSON', 'CSV'],
     default: 'JSON'
   },
+
+  // === REVIEW SUMMARY FIELDS ===
+  totalTasks: {
+    type: Number,
+    default: 0
+  },
+  reviewedTasks: {
+    type: Number,
+    default: 0
+  },
+
   projectReview: {
     status: {
       type: String,
-      enum: ['pending', 'approved', 'rejected'],
+      enum: ['pending', 'in_review', 'approved', 'rejected', 'expired'],
       default: 'pending'
     },
     reviewedBy: {
@@ -77,8 +96,29 @@ const projectSchema = new mongoose.Schema({
     comment: {
       type: String,
       default: ''
+    },
+    approvalRate: {
+      type: Number,
+      default: 0
+    },
+    approvedTasks: {
+      type: Number,
+      default: 0
+    },
+    rejectedTasks: {
+      type: Number,
+      default: 0
+    },
+    expiredTasks: {
+      type: Number,
+      default: 0
+    },
+    pendingTasks: {
+      type: Number,
+      default: 0
     }
   },
+
   createdAt: {
     type: Date,
     default: Date.now

@@ -6,6 +6,8 @@ const { auth, authorize } = require('../middleware/auth');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const unzipper = require('unzipper');
+const mime = require('mime-types');
 const Dataset = require('../models/Dataset');
 const Project = require('../models/Project');
 const Task = require('../models/Task');
@@ -50,6 +52,99 @@ const hasLockedAssignmentForSubtopics = async (subtopicIds = []) => {
 
   const lockedProject = await Project.findOne({ _id: { $in: projectIds }, status: { $ne: 'completed' } }).select('_id').lean();
   return Boolean(lockedProject);
+};
+
+// Infer file kind
+const inferFileKind = (mimeType, originalName = '') => {
+  const name = (originalName || '').toLowerCase();
+  const mt = (mimeType || '').toLowerCase();
+  if (mt.startsWith('image/')) return 'image';
+  if (mt.startsWith('audio/')) return 'audio';
+  if (mt.startsWith('text/')) return 'text';
+  if (mt === 'application/json' || name.endsWith('.json')) return 'text';
+  if (mt === 'application/xml' || name.endsWith('.xml')) return 'text';
+  if (mt === 'text/csv' || name.endsWith('.csv')) return 'text';
+  if (name.endsWith('.mp3') || name.endsWith('.wav') || name.endsWith('.m4a') || name.endsWith('.ogg')) return 'audio';
+  if (name.endsWith('.mp4') || name.endsWith('.m4v') || mt === 'video/mp4') return 'audio';
+  return 'other';
+};
+
+// Check if file is archive
+const isArchiveUpload = (file) => {
+  if (!file) return false;
+  const ext = path.extname(file.originalname || '').toLowerCase();
+  const mt = (file.mimetype || '').toLowerCase();
+  return (
+    ext === '.zip' ||
+    mt === 'application/zip' ||
+    mt === 'application/x-zip-compressed'
+  );
+};
+
+// Extract ZIP and collect image files
+const extractZipAndCollectFiles = async ({ zipPath, destRoot, subtopicId, maxFiles = 2000 }) => {
+  if (!fs.existsSync(destRoot)) fs.mkdirSync(destRoot, { recursive: true });
+
+  const directory = await unzipper.Open.file(zipPath);
+  const extracted = [];
+
+  const candidates = directory.files.filter(f => f.type === 'File');
+  if (candidates.length > maxFiles) {
+    throw new Error(`ZIP chua qua nhieu file (${candidates.length}). Gioi han la ${maxFiles}.`);
+  }
+
+  for (const entry of directory.files) {
+    if (entry.type !== 'File') continue;
+
+    const entryPath = (entry.path || '').toString();
+    if (!entryPath || entryPath.includes('__MACOSX') || entryPath.split('/').some(p => p.startsWith('.'))) {
+      const s = await entry.stream();
+      s.autodrain();
+      continue;
+    }
+
+    const baseName = path.basename(entryPath);
+    const guessedMime = mime.lookup(baseName) || 'application/octet-stream';
+    const kind = inferFileKind(guessedMime, baseName);
+
+    // Skip non-image files
+    if (kind !== 'image') {
+      const s = await entry.stream();
+      s.autodrain();
+      continue;
+    }
+
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(baseName);
+    const safeOutName = `${uniqueSuffix}${ext}`;
+    const outPath = path.join(destRoot, safeOutName);
+
+    await new Promise(async (resolve, reject) => {
+      try {
+        const readStream = await entry.stream();
+        const writeStream = fs.createWriteStream(outPath);
+        readStream.pipe(writeStream);
+        writeStream.on('finish', resolve);
+        writeStream.on('error', reject);
+        readStream.on('error', reject);
+      } catch (e) {
+        reject(e);
+      }
+    });
+
+    extracted.push({
+      filename: safeOutName,
+      originalName: baseName,
+      path: '/uploads/subtopics/' + subtopicId + '/' + safeOutName,
+      mimeType: guessedMime,
+      size: fs.statSync(outPath).size,
+      type: 'image',
+      uploadedBy: null,
+      uploadedAt: new Date()
+    });
+  }
+
+  return extracted;
 };
 
 router.get('/', auth, async (req, res) => {
@@ -137,7 +232,7 @@ router.get('/:id/assets', auth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// POST /api/subtopics/:id/assets - Upload assets to a subtopic
+// POST /api/subtopics/:id/assets - Upload assets to a subtopic (supports ZIP extraction)
 router.post('/:id/assets', auth, upload.array('files', 100), async (req, res) => {
   try {
     const subtopic = await Subtopic.findById(req.params.id);
@@ -152,28 +247,50 @@ router.post('/:id/assets', auth, upload.array('files', 100), async (req, res) =>
       }
     }
 
-    const newAssets = (req.files || []).map(file => {
-      const ext = path.extname(file.originalname).toLowerCase();
-      let assetType = 'other';
-      if (/^\.(jpg|jpeg|png|gif|bmp|webp|svg)$/i.test(ext)) assetType = 'image';
-      else if (/^\.(txt|csv|json|xml|log)$/i.test(ext)) assetType = 'text';
-      else if (/^\.(mp4|avi|mov|wmv|flv|webm)$/i.test(ext)) assetType = 'video';
-      else if (/^\.(mp3|wav|ogg|flac|aac)$/i.test(ext)) assetType = 'audio';
-      return {
-        filename: file.filename,
-        originalName: file.originalname,
-        path: '/uploads/subtopics/' + req.params.id + '/' + file.filename,
-        mimeType: file.mimetype,
-        size: file.size,
-        type: assetType,
-        uploadedBy: req.user._id,
-        uploadedAt: new Date()
-      };
-    });
+    const allNewAssets = [];
 
-    subtopic.assets.push(...newAssets);
+    for (const file of (req.files || [])) {
+      if (isArchiveUpload(file)) {
+        // Extract ZIP - only extract image files
+        const extractDir = path.join(__dirname, '../uploads/subtopics', subtopic._id.toString());
+        try {
+          const extracted = await extractZipAndCollectFiles({
+            zipPath: file.path,
+            destRoot: extractDir,
+            subtopicId: subtopic._id.toString(),
+          });
+          allNewAssets.push(...extracted);
+        } finally {
+          // Clean up ZIP file after extraction
+          if (file.path && fs.existsSync(file.path)) {
+            try { fs.unlinkSync(file.path); } catch (e) {}
+          }
+        }
+      } else {
+        // Regular file upload
+        const ext = path.extname(file.originalname).toLowerCase();
+        let assetType = 'other';
+        if (/^\.(jpg|jpeg|png|gif|bmp|webp|svg)$/i.test(ext)) assetType = 'image';
+        else if (/^\.(txt|csv|json|xml|log)$/i.test(ext)) assetType = 'text';
+        else if (/^\.(mp4|avi|mov|wmv|flv|webm)$/i.test(ext)) assetType = 'video';
+        else if (/^\.(mp3|wav|ogg|flac|aac)$/i.test(ext)) assetType = 'audio';
+
+        allNewAssets.push({
+          filename: file.filename,
+          originalName: file.originalname,
+          path: '/uploads/subtopics/' + subtopic._id.toString() + '/' + file.filename,
+          mimeType: file.mimetype,
+          size: file.size,
+          type: assetType,
+          uploadedBy: req.user._id,
+          uploadedAt: new Date()
+        });
+      }
+    }
+
+    subtopic.assets.push(...allNewAssets);
     await subtopic.save();
-    res.status(201).json({ message: 'Upload thanh cong', assets: newAssets });
+    res.status(201).json({ message: 'Upload thanh cong', assets: allNewAssets });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
