@@ -21,8 +21,8 @@ import Workspace from './pages/Annotator/Workspace';
 import ReviewerProjectList from './pages/Reviewer/ProjectList';
 import ReviewerProjectDetailPage from './pages/Reviewer/ProjectDetail';
 import ReviewerWorkspace from './pages/Reviewer/Workspace';
-import ReviewerDashboard from './pages/Reviewer/Dashboard';
 import ReviewerTask from './pages/Reviewer/Task';
+import ReviewerOverview from './pages/Reviewer/Overview';
 import ReviewerHistory from './pages/Reviewer/History';
 import AdminDashboard from './pages/Admin/Dashboard';
 import AdminUsers from './pages/Admin/Users';
@@ -74,13 +74,14 @@ function App() {
               <Route path='/annotator/tasks' element={<AnnotatorProjectList />} />
               <Route path='/annotator/projects/:projectId' element={<AnnotatorProjectDetail />} />
               <Route path='/annotator/workspace/:subtopicId' element={<Workspace />} />
-              <Route path='/reviewer' element={<ReviewerDashboard />} />
+              <Route path='/reviewer' element={<ReviewerOverview />} />
               <Route path='/reviewer/tasks' element={<ReviewerProjectList />} />
               <Route path='/reviewer/projects/:projectId' element={<ReviewerProjectDetailPage />} />
               <Route path='/reviewer/workspace/:projectId' element={<ReviewerWorkspace />} />
               <Route path='/reviewer/tasks/:id' element={<ReviewerTask />} />
               <Route path='/reviewer/history' element={<ReviewerHistory />} />
               <Route path='/' element={<Navigate to={getRoleRedirect()} replace />} />
+              <Route path='/dashboard' element={<ManagerDashboard />} />
             </Route>
             <Route path='*' element={<Navigate to='/dashboard' replace />} />
           </Routes>

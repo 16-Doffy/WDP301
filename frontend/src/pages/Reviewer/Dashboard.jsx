@@ -1,35 +1,23 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+﻿import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
 import { useAuth } from '../../context/AuthContext';
 
-const getAuthToken = () => sessionStorage.getItem('token');
+const getAuthToken = () => sessionStorage.getItem('token') || localStorage.getItem('token');
 const sameId = (a, b) => String(a || '') === String(b || '');
 
 const statusColor = (s) => {
-  if (s === 'approved') return 'bg-emerald-500/10 text-emerald-400';
-  if (s === 'rejected') return 'bg-rose-500/10 text-rose-400';
-  if (s === 'submitted') return 'bg-amber-500/10 text-amber-400';
-  if (s === 'in_progress') return 'bg-blue-500/10 text-blue-400';
-  return 'bg-gray-700/50 text-gray-400';
-};
-
-const statusLabel = (s) => {
-  if (s === 'approved') return 'Approved';
-  if (s === 'rejected') return 'Rejected';
-  if (s === 'submitted') return 'Pending';
-  return s;
+  if (s === 'approved') return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30';
+  if (s === 'rejected') return 'bg-rose-500/10 text-rose-400 border-rose-500/30';
+  if (s === 'submitted') return 'bg-amber-500/10 text-amber-400 border-amber-500/30';
+  if (s === 'in_progress') return 'bg-blue-500/10 text-blue-400 border-blue-500/30';
+  return 'bg-gray-700/50 text-gray-400 border-gray-600/30';
 };
 
 const fmtDate = (d) => {
   if (!d) return '-';
   return new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
-};
-
-const fmtDateTime = (d) => {
-  if (!d) return '-';
-  return new Date(d).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 };
 
 const fmtRelative = (d) => {
@@ -52,15 +40,12 @@ const fmtRelative = (d) => {
 const ReviewerDashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const [allTasks, setAllTasks] = useState({ pending: [], reviewed: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [expandedSubtopics, setExpandedSubtopics] = useState({});
   const [selectedAnnotators, setSelectedAnnotators] = useState({});
   const [expandedProjects, setExpandedProjects] = useState({});
-
-  const filterSubtopicId = searchParams.get('subtopicId');
+  const [showQueue, setShowQueue] = useState({});
 
   useEffect(() => { fetchData(); }, []);
 
@@ -92,21 +77,11 @@ const ReviewerDashboard = () => {
           projectId: pid,
           name: t.projectId?.name || 'Unknown',
           deadline: t.projectId?.deadline || null,
-          subtopics: {},
           tasks: [],
         };
       }
       projMap[pid].tasks.push(t);
-
-      const sid = t.subtopicId?._id || t.subtopicId || 'unknown';
-      const sname = t.subtopicId?.name || 'Subtopic';
-      const sguideline = t.subtopicId?.guideline || '';
-      if (!projMap[pid].subtopics[sid]) {
-        projMap[pid].subtopics[sid] = { id: sid, name: sname, guideline: sguideline, tasks: [] };
-      }
-      projMap[pid].subtopics[sid].tasks.push(t);
     });
-
     return Object.values(projMap).map((pg) => {
       const byAnno = {};
       pg.tasks.forEach((t) => {
@@ -119,28 +94,13 @@ const ReviewerDashboard = () => {
       const submitted = pg.tasks.filter((t) => t.status === 'submitted').length;
       const approved = pg.tasks.filter((t) => t.status === 'approved').length;
       const rejected = pg.tasks.filter((t) => t.status === 'rejected').length;
+      const assigned = pg.tasks.filter((t) => ['assigned', 'in_progress', 'completed', 'revised'].includes(t.status)).length;
       const overdue = pg.deadline && new Date(pg.deadline) < new Date();
-
-      const subtopicList = Object.values(pg.subtopics).map((st) => ({
-        ...st,
-        submitted: st.tasks.filter((t) => t.status === 'submitted').length,
-        approved: st.tasks.filter((t) => t.status === 'approved').length,
-        rejected: st.tasks.filter((t) => t.status === 'rejected').length,
-      }));
-
-      return { ...pg, subtopicList, annotators, submitted, approved, rejected, overdue };
+      return { ...pg, annotators, submitted, approved, rejected, assigned, overdue };
     });
   }, [allTasks]);
 
   const toggleProject = (pid) => setExpandedProjects((p) => ({ ...p, [pid]: !p[pid] }));
-
-  const toggleSubtopic = (pid, sid) => {
-    setExpandedSubtopics((prev) => {
-      const cur = prev[pid] ? new Set(prev[pid]) : new Set();
-      if (cur.has(sid)) cur.delete(sid); else cur.add(sid);
-      return { ...prev, [pid]: cur };
-    });
-  };
 
   const toggleAnnotator = (pid, aid) => {
     setSelectedAnnotators((p) => {
@@ -148,23 +108,12 @@ const ReviewerDashboard = () => {
       if (cur.has(aid)) cur.delete(aid); else cur.add(aid);
       return { ...p, [pid]: Array.from(cur) };
     });
+    if (!showQueue[pid]) setShowQueue((p) => ({ ...p, [pid]: true }));
   };
 
-  const openSubtopicReview = (pg, subtopic, sel) => {
-    if (sel.length === 0) { alert('Chon it nhat 1 annotator'); return; }
-    const anns = sel.join(',');
-    const eligible = subtopic.tasks
-      .filter((t) => {
-        const aid = String(t.annotatorId?._id || t.annotatorId || '');
-        if (!sel.includes(aid)) return false;
-        return t.status === 'submitted' && (!getMyVote(t) || getMyVote(t) === 'pending');
-      })
-      .sort((a, b) => new Date(a.submittedAt || 0) - new Date(b.submittedAt || 0));
-    if (eligible.length === 0) { alert('Khong co task nao de review'); return; }
-    navigate('/reviewer/tasks/' + eligible[0]._id + '?anns=' + anns + '&subtopicId=' + subtopic.id);
-  };
+  const toggleQueue = (pid) => setShowQueue((p) => ({ ...p, [pid]: !p[pid] }));
 
-  const openProjectReview = (pg) => {
+  const openReview = (pg) => {
     const sel = selectedAnnotators[pg.projectId] || [];
     if (sel.length === 0) { alert('Chon it nhat 1 annotator'); return; }
     const anns = sel.join(',');
@@ -176,16 +125,29 @@ const ReviewerDashboard = () => {
       })
       .sort((a, b) => new Date(a.submittedAt || 0) - new Date(b.submittedAt || 0));
     if (eligible.length === 0) { alert('Khong co task nao de review'); return; }
-    const first = eligible[0];
-    const sid = first.subtopicId?._id || first.subtopicId || '';
-    navigate('/reviewer/tasks/' + first._id + '?anns=' + anns + (sid ? '&subtopicId=' + sid : ''));
+    navigate('/reviewer/tasks/' + eligible[0]._id + '?anns=' + anns);
   };
 
-  if (loading) return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-900">
-      <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-700 border-t-blue-500" />
-    </div>
-  );
+  const queueTasks = (pg) => {
+    const sel = selectedAnnotators[pg.projectId] || [];
+    if (sel.length === 0) return pg.tasks;
+    return pg.tasks.filter((t) => {
+      const aid = String(t.annotatorId?._id || t.annotatorId || '');
+      return sel.includes(aid);
+    });
+  };
+
+  const queueTasksSorted = (pg) => {
+    return queueTasks(pg).sort((a, b) => {
+      const sa = getMyVote(a);
+      const sb = getMyVote(b);
+      if (sa === 'pending' && sb !== 'pending') return -1;
+      if (sa !== 'pending' && sb === 'pending') return 1;
+      return new Date(a.submittedAt || 0) - new Date(b.submittedAt || 0);
+    });
+  };
+
+  if (loading) return <div className="flex min-h-screen items-center justify-center bg-slate-900"><div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-700 border-t-blue-500" /></div>;
 
   return (
     <div className="min-h-screen bg-slate-900 p-6 text-gray-200">
@@ -193,17 +155,8 @@ const ReviewerDashboard = () => {
         <div className="mb-6 flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-100">Review Dashboard</h1>
-            <p className="mt-1 text-sm text-gray-400">
-              {filterSubtopicId
-                ? 'Dang xem chi tiet subtopic'
-                : 'Tong hop project va task cho reviewer'}
-            </p>
+            <p className="mt-1 text-sm text-gray-400">Tong hop project va task cho reviewer</p>
           </div>
-          {filterSubtopicId && (
-            <button onClick={() => navigate('/reviewer')} className="rounded-lg border border-gray-600 bg-gray-800 px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-gray-700">
-              Tat ca Project
-            </button>
-          )}
         </div>
 
         {error && <div className="mb-4 rounded-lg border border-rose-700/50 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">{error}</div>}
@@ -225,9 +178,9 @@ const ReviewerDashboard = () => {
             <p className="text-xl font-bold text-rose-400">{projectGroups.reduce((s, p) => s + p.rejected, 0)}</p>
             <p className="text-xs text-gray-400">Rejected</p>
           </div>
-          <div className="rounded-xl border border-gray-700 bg-gray-800 p-4 text-center">
-            <p className="text-xl font-bold text-gray-100">{projectGroups.reduce((s, p) => s + p.subtopicList.length, 0)}</p>
-            <p className="text-xs text-gray-400">Subtopic</p>
+          <div className="rounded-xl border border-rose-700/30 bg-rose-500/5 p-4 text-center">
+            <p className="text-xl font-bold text-rose-400">{projectGroups.filter(p => p.overdue).length}</p>
+            <p className="text-xs text-gray-400">Project Qu├í Hß║ín</p>
           </div>
         </div>
 
@@ -236,21 +189,15 @@ const ReviewerDashboard = () => {
         ) : projectGroups.map((pg) => {
           const expanded = expandedProjects[pg.projectId];
           const sel = selectedAnnotators[pg.projectId] || [];
-          const visibleSubtopics = filterSubtopicId
-            ? pg.subtopicList.filter((st) => sameId(st.id, filterSubtopicId))
-            : pg.subtopicList;
-          const autoExpandedSubs = filterSubtopicId
-            ? new Set([filterSubtopicId])
-            : (expandedSubtopics[pg.projectId] || new Set());
+          const queueVisible = showQueue[pg.projectId];
+          const qTasks = queueTasksSorted(pg);
+          const selTasks = sel.length > 0 ? qTasks.filter((t) => t.status === 'submitted' && (!getMyVote(t) || getMyVote(t) === 'pending')).length : 0;
 
           return (
             <div key={pg.projectId} className="mb-4 rounded-xl border border-gray-700 bg-gray-800 overflow-hidden">
-              <div
-                className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-700/30"
-                onClick={() => !filterSubtopicId && toggleProject(pg.projectId)}
-              >
+              <div className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-700/30" onClick={() => toggleProject(pg.projectId)}>
                 <div className="flex items-center gap-3">
-                  {!filterSubtopicId && <div className="text-2xl">{expanded ? '▼' : '▶'}</div>}
+                  <div className="text-2xl">{expanded ? String.fromCharCode(9650) : String.fromCharCode(9654)}</div>
                   <div>
                     <h3 className="text-lg font-bold text-gray-100">{pg.name}</h3>
                     <div className="flex items-center gap-3 mt-1">
@@ -267,9 +214,6 @@ const ReviewerDashboard = () => {
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="flex gap-2">
-                    <span className="rounded-full bg-gray-700/50 px-2 py-0.5 text-xs font-semibold text-gray-400">
-                      {pg.subtopicList.length} subtopics
-                    </span>
                     {pg.submitted > 0 && (
                       <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-semibold text-amber-400">{pg.submitted} pending</span>
                     )}
@@ -279,26 +223,27 @@ const ReviewerDashboard = () => {
                     {pg.rejected > 0 && (
                       <span className="rounded-full bg-rose-500/10 px-2 py-0.5 text-xs font-semibold text-rose-400">{pg.rejected} rejected</span>
                     )}
+                    {pg.assigned > 0 && (
+                      <span className="rounded-full bg-gray-700/50 px-2 py-0.5 text-xs font-semibold text-gray-400">{pg.assigned} assigned</span>
+                    )}
                   </div>
                   <span className="text-xs text-gray-500">{pg.annotators.length} annotator{pg.annotators.length !== 1 ? 's' : ''}</span>
                 </div>
               </div>
 
-              {(expanded || filterSubtopicId) && (
+              {expanded && (
                 <div className="border-t border-gray-700">
-                  <div className="p-4 border-b border-gray-700/50">
+                  <div className="p-4 border-b border-gray-700">
                     <div className="flex items-center justify-between mb-3">
                       <h4 className="text-sm font-semibold text-gray-300">Chon Annotator de Review:</h4>
                       <div className="flex gap-2">
                         {sel.length > 0 && (
-                          <button onClick={() => openProjectReview(pg)} className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 transition">
-                            Review Full ({pg.subtopicList.length} subtopics)
+                          <button onClick={() => openReview(pg)} className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 transition">
+                            Review ({selTasks})
                           </button>
                         )}
-                        <button onClick={() => setSelectedAnnotators((p) => ({ ...p, [pg.projectId]: pg.annotators.map((a) => a.annotatorId) }))}
-                          className="rounded-lg border border-gray-600 px-2 py-1 text-xs text-gray-400 hover:text-white hover:border-gray-500">All</button>
-                        <button onClick={() => setSelectedAnnotators((p) => ({ ...p, [pg.projectId]: [] }))}
-                          className="rounded-lg border border-gray-600 px-2 py-1 text-xs text-gray-400 hover:text-white">Clear</button>
+                        <button onClick={(e) => { e.stopPropagation(); setSelectedAnnotators((p) => ({ ...p, [pg.projectId]: pg.annotators.map((a) => a.annotatorId) })); }} className="rounded-lg border border-gray-600 px-2 py-1 text-xs text-gray-400 hover:text-white hover:border-gray-500">All</button>
+                        <button onClick={(e) => { e.stopPropagation(); setSelectedAnnotators((p) => ({ ...p, [pg.projectId]: [] })); }} className="rounded-lg border border-gray-600 px-2 py-1 text-xs text-gray-400 hover:text-white">Clear</button>
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -307,8 +252,7 @@ const ReviewerDashboard = () => {
                         const submitted = a.tasks.filter((t) => t.status === 'submitted').length;
                         const total = a.tasks.length;
                         return (
-                          <button key={a.annotatorId}
-                            onClick={() => toggleAnnotator(pg.projectId, a.annotatorId)}
+                          <button key={a.annotatorId} onClick={(e) => { e.stopPropagation(); toggleAnnotator(pg.projectId, a.annotatorId); }}
                             className={'flex items-center gap-2 rounded-lg border px-3 py-2 text-sm transition ' + (isSel ? 'border-blue-500 bg-blue-500/10 text-blue-400' : 'border-gray-600 bg-gray-700/30 text-gray-300 hover:border-gray-500')}>
                             <div className={'w-2 h-2 rounded-full ' + (isSel ? 'bg-blue-400' : 'bg-gray-600')} />
                             <div>
@@ -321,125 +265,57 @@ const ReviewerDashboard = () => {
                     </div>
                   </div>
 
-                  <div className="p-4">
-                    <h4 className="text-sm font-semibold text-gray-300 mb-3">
-                      {filterSubtopicId ? 'Subtopic hien tai' : 'Chi tiet theo Subtopic:'}
-                    </h4>
-                    <div className="space-y-2">
-                      {visibleSubtopics.map((st) => {
-                        const isSubExpanded = autoExpandedSubs.has(st.id);
-                        const subSelTasks = sel.length > 0
-                          ? st.tasks.filter((t) => {
-                              const aid = String(t.annotatorId?._id || t.annotatorId || '');
-                              if (!sel.includes(aid)) return false;
-                              return t.status === 'submitted' && (!getMyVote(t) || getMyVote(t) === 'pending');
-                            }).length
-                          : 0;
+                  {sel.length > 0 && (
+                    <div>
+                      <button onClick={() => toggleQueue(pg.projectId)} className="flex w-full items-center justify-between p-4 hover:bg-gray-700/20 transition">
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg">{queueVisible ? String.fromCharCode(9650) : String.fromCharCode(9654)}</span>
+                          <h4 className="text-sm font-semibold text-gray-200">Review Queue ({qTasks.length} tasks)</h4>
+                          {selTasks > 0 && <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-xs text-blue-400">{selTasks} Project cß║ºn Review</span>}
+                        </div>
+                        {qTasks.length > 0 && <button onClick={(e) => { e.stopPropagation(); openReview(pg); }} className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 transition">Review tu day</button>}
+                      </button>
 
-                        return (
-                          <div key={st.id} className="rounded-lg border border-gray-700 bg-gray-900/50 overflow-hidden">
-                            <div
-                              className="flex items-center justify-between p-3 cursor-pointer hover:bg-gray-800/50 transition"
-                              onClick={() => toggleSubtopic(pg.projectId, st.id)}
-                            >
-                              <div className="flex items-center gap-3 min-w-0">
-                                <div className="text-lg shrink-0">{isSubExpanded ? '▼' : '▶'}</div>
-                                <div className="min-w-0">
-                                  <p className="text-sm font-semibold text-gray-100 truncate">{st.name}</p>
-                                  {st.guideline && (
-                                    <p className="text-xs text-gray-500 truncate mt-0.5">{st.guideline}</p>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2 shrink-0">
-                                <span className="rounded-full bg-gray-700/50 px-2 py-0.5 text-xs text-gray-400">{st.tasks.length} task</span>
-                                {st.submitted > 0 && (
-                                  <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-semibold text-amber-400">{st.submitted} pending</span>
-                                )}
-                                {st.approved > 0 && (
-                                  <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-semibold text-emerald-400">{st.approved}</span>
-                                )}
-                                {st.rejected > 0 && (
-                                  <span className="rounded-full bg-rose-500/10 px-2 py-0.5 text-xs font-semibold text-rose-400">{st.rejected}</span>
-                                )}
-                                {sel.length > 0 && subSelTasks > 0 && (
-                                  <button
-                                    onClick={(e) => { e.stopPropagation(); openSubtopicReview(pg, st, sel); }}
-                                    className="rounded-lg bg-blue-600 px-2 py-1 text-xs font-semibold text-white hover:bg-blue-700 transition"
-                                  >
-                                    Review ({subSelTasks})
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-
-                            {isSubExpanded && (
-                              <div className="border-t border-gray-700/50 max-h-80 overflow-y-auto">
-                                {st.tasks.length === 0 ? (
-                                  <div className="p-4 text-center text-sm text-gray-500">Khong co task</div>
-                                ) : (
-                                  <table className="w-full text-sm">
-                                    <thead className="bg-gray-900 text-gray-400 sticky top-0">
-                                      <tr>
-                                        <th className="px-4 py-2 text-left text-xs font-semibold">Task</th>
-                                        <th className="px-4 py-2 text-left text-xs font-semibold">Annotator</th>
-                                        <th className="px-4 py-2 text-left text-xs font-semibold">Submitted</th>
-                                        <th className="px-4 py-2 text-left text-xs font-semibold">Status</th>
-                                        <th className="px-4 py-2 text-left text-xs font-semibold">Your Vote</th>
-                                        <th className="px-4 py-2 text-right text-xs font-semibold"></th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {st.tasks
-                                        .sort((a, b) => new Date(a.submittedAt || 0) - new Date(b.submittedAt || 0))
-                                        .map((t) => {
-                                          const vote = getMyVote(t);
-                                          const annName = pg.annotators.find((a) => sameId(a.annotatorId, t.annotatorId?._id || t.annotatorId))?.annotatorName || '?';
-                                          const isEligible = sel.includes(String(t.annotatorId?._id || t.annotatorId || '')) &&
-                                            t.status === 'submitted' && (!vote || vote === 'pending');
-
-                                          return (
-                                            <tr key={t._id} className="border-t border-gray-700/30 hover:bg-gray-800/20 transition">
-                                              <td className="px-4 py-2.5 text-gray-200 text-sm max-w-[200px] truncate">
-                                                {t.dataItem?.originalName || t.dataItem?.filename || 'Task ' + t._id.slice(-4)}
-                                              </td>
-                                              <td className="px-4 py-2.5 text-gray-300 text-sm">{annName}</td>
-                                              <td className="px-4 py-2.5 text-gray-400 text-xs">{fmtDateTime(t.submittedAt)}</td>
-                                              <td className="px-4 py-2.5">
-                                                <span className={'rounded px-2 py-0.5 text-xs font-semibold ' + statusColor(t.status)}>
-                                                  {statusLabel(t.status)}
-                                                </span>
-                                              </td>
-                                              <td className="px-4 py-2.5">
-                                                <span className={'rounded px-2 py-0.5 text-xs font-semibold ' +
-                                                  (vote === 'approved' ? 'bg-emerald-500/10 text-emerald-400' :
-                                                   vote === 'rejected' ? 'bg-rose-500/10 text-rose-400' :
-                                                   'bg-gray-700 text-gray-400')}>
-                                                  {vote || 'pending'}
-                                                </span>
-                                              </td>
-                                              <td className="px-4 py-2.5 text-right">
-                                                <button
-                                                  onClick={() => navigate('/reviewer/tasks/' + t._id + '?anns=' + sel.join(',') + '&subtopicId=' + st.id)}
-                                                  className={'rounded-lg border px-3 py-1 text-xs transition ' +
-                                                    (isEligible ? 'border-blue-500/50 text-blue-400 hover:bg-blue-500/10' : 'border-gray-600 text-gray-400 hover:bg-gray-700')}
-                                                >
-                                                  {isEligible ? 'Review' : 'Xem'}
-                                                </button>
-                                              </td>
-                                            </tr>
-                                          );
-                                        })}
-                                    </tbody>
-                                  </table>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
+                      {queueVisible && (
+                        <div className="max-h-96 overflow-y-auto">
+                          {qTasks.length === 0 ? (
+                            <div className="p-6 text-center text-sm text-gray-500">Khong co task nao</div>
+                          ) : (
+                            <table className="w-full text-sm">
+                              <thead className="bg-gray-900 text-gray-400 sticky top-0">
+                                <tr>
+                                  <th className="px-4 py-2 text-left text-xs font-semibold">Annotator</th>
+                                  <th className="px-4 py-2 text-left text-xs font-semibold">Task</th>
+                                  <th className="px-4 py-2 text-left text-xs font-semibold">Submitted</th>
+                                  <th className="px-4 py-2 text-left text-xs font-semibold">Status</th>
+                                  <th className="px-4 py-2 text-left text-xs font-semibold">Your Vote</th>
+                                  <th className="px-4 py-2 text-right text-xs font-semibold"></th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {qTasks.map((t) => {
+                                  const vote = getMyVote(t);
+                                  const annName = pg.annotators.find((a) => sameId(a.annotatorId, t.annotatorId?._id || t.annotatorId))?.annotatorName || '?';
+                                  return (
+                                    <tr key={t._id} className="border-t border-gray-700/50 hover:bg-gray-700/20 transition">
+                                      <td className="px-4 py-3 text-gray-300">{annName}</td>
+                                      <td className="px-4 py-3 text-gray-300">{t.dataItem?.originalName || t.dataItem?.filename || 'Task ' + t._id.slice(-4)}</td>
+                                      <td className="px-4 py-3 text-gray-400">{t.submittedAt ? new Date(t.submittedAt).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'N/A'}</td>
+                                      <td className="px-4 py-3"><span className={'rounded border px-2 py-0.5 text-xs font-semibold ' + statusColor(t.status)}>{t.status}</span></td>
+                                      <td className="px-4 py-3"><span className={'rounded px-2 py-0.5 text-xs font-semibold ' + (vote === 'approved' ? 'bg-emerald-500/10 text-emerald-400' : vote === 'rejected' ? 'bg-rose-500/10 text-rose-400' : 'bg-gray-700 text-gray-400')}>{vote || 'pending'}</span></td>
+                                      <td className="px-4 py-3 text-right">
+                                        <button onClick={() => navigate('/reviewer/tasks/' + t._id + '?anns=' + sel.join(','))} className="rounded-lg border border-blue-500/50 px-3 py-1 text-xs text-blue-400 hover:bg-blue-500/10 transition">Review</button>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  </div>
+                  )}
                 </div>
               )}
             </div>

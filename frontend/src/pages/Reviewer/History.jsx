@@ -1,38 +1,67 @@
-import React, { useEffect, useState } from 'react';
+
+import React, { useEffect, useState, useMemo } from 'react';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
-import { useAuth } from '../../context/AuthContext';
 
-const getAuthToken = () => sessionStorage.getItem('token');
-const sameId = (a, b) => String(a || '') === String(b || '');
+const getAuthToken = () => sessionStorage.getItem('token') || localStorage.getItem('token');
 
-const fmtDate = (d) => {
+// Format date: 07/04/2026 14:30
+const fmtShortDate = (d) => {
   if (!d) return '-';
-  return new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return new Date(d).toLocaleString('vi-VN', {
+    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'
+  });
 };
 
-const statusBadge = (s) => {
-  if (s === 'approved') return 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30';
-  if (s === 'rejected') return 'bg-rose-500/10 text-rose-400 border border-rose-500/30';
-  return 'bg-gray-700/50 text-gray-300 border border-gray-600/30';
+// Get file type label
+const getFileType = (filename) => {
+  if (!filename) return '';
+  const ext = filename.split('.').pop().toLowerCase();
+  const map = {
+    jpg: 'image', jpeg: 'image', png: 'image', gif: 'image', bmp: 'image', webp: 'image', svg: 'image',
+    mp3: 'audio', wav: 'audio', ogg: 'audio',
+    mp4: 'video', mov: 'video', avi: 'video',
+    txt: 'text', csv: 'text', json: 'text'
+  };
+  return map[ext] || 'file';
+};
+
+// Get avatar color from name
+const stringToColor = (str) => {
+  if (!str) return '#6b7280';
+  const colors = ['#3b82f6', '#ef4444', '#22c55e', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#6366f1', '#14b8a6'];
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  return colors[Math.abs(hash) % colors.length];
+};
+
+// Get annotator initials
+const getInitials = (name) => {
+  if (!name) return '?';
+  return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
 };
 
 const ReviewerHistory = () => {
-  const { user } = useAuth();
   const [reviewedTasks, setReviewedTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [filter, setFilter] = useState('all');
-  const [expandedTask, setExpandedTask] = useState(null);
+
+  // Filter states
+  const [search, setSearch] = useState('');
+  const [decisionFilter, setDecisionFilter] = useState('all');
+  const [projectFilter, setProjectFilter] = useState('all');
+  const [sortOrder, setSortOrder] = useState('newest');
 
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const res = await axios.get(API_URL + '/api/reviews/reviewed', { headers: { Authorization: 'Bearer ' + getAuthToken() } });
+        const res = await axios.get(API_URL + '/api/reviews/reviewed', {
+          headers: { Authorization: 'Bearer ' + getAuthToken() }
+        });
         setReviewedTasks(res.data || []);
       } catch (err) {
-        setError(err.response?.data?.message || 'Failed to load data');
+        setError(err.response?.data?.message || 'Khong tai duoc du lieu');
       } finally {
         setLoading(false);
       }
@@ -40,190 +69,329 @@ const ReviewerHistory = () => {
     fetchData();
   }, []);
 
-  const groupedByProject = reviewedTasks.reduce((acc, t) => {
-    const pid = t.projectId?._id || t.projectId || 'unknown';
-    if (!acc[pid]) {
-      acc[pid] = { projectId: pid, name: t.projectId?.name || 'Unknown Project', tasks: [] };
+  // Build unique project list
+  const projects = useMemo(() => {
+    const map = {};
+    reviewedTasks.forEach(t => {
+      const pid = t.projectId?._id || t.projectId;
+      if (pid) map[pid] = t.projectId?.name || 'Unknown';
+    });
+    return Object.entries(map).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [reviewedTasks]);
+
+  // Stats
+  const total = reviewedTasks.length;
+  const approvedCount = reviewedTasks.filter(t => t.status === 'approved').length;
+  const rejectedCount = reviewedTasks.filter(t => t.status === 'rejected').length;
+
+  // Filter + sort
+  const filtered = useMemo(() => {
+    let result = [...reviewedTasks];
+
+    // Search: item name, annotator name, project name
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      result = result.filter(t => {
+        const itemName = (t.dataItem?.filename || t.dataItem?.originalName || '').toLowerCase();
+        const annotName = (t.annotatorId?.fullName || t.annotatorId?.username || '').toLowerCase();
+        const projName = (t.projectId?.name || '').toLowerCase();
+        return itemName.includes(q) || annotName.includes(q) || projName.includes(q);
+      });
     }
-    acc[pid].tasks.push(t);
-    return acc;
-  }, {});
 
-  const filtered = reviewedTasks.filter((t) => {
-    if (filter === 'all') return true;
-    return t.status === filter;
-  });
+    // Decision filter
+    if (decisionFilter !== 'all') {
+      result = result.filter(t => t.status === decisionFilter);
+    }
 
-  const approved = reviewedTasks.filter((t) => t.status === 'approved').length;
-  const rejected = reviewedTasks.filter((t) => t.status === 'rejected').length;
-  const pending = reviewedTasks.filter((t) => t.status === 'submitted').length;
+    // Project filter
+    if (projectFilter !== 'all') {
+      result = result.filter(t => {
+        const pid = t.projectId?._id || t.projectId;
+        return pid === projectFilter;
+      });
+    }
 
-  const getMyVote = (task) => {
-    if (!user || !task) return null;
-    const r = task.reviewers?.find((rev) => sameId(rev.reviewerId?._id || rev.reviewerId, user?._id || user?.id));
-    return r?.status || null;
+    // Sort
+    result.sort((a, b) => {
+      const dateA = new Date(a.reviewedAt || a.submittedAt || 0);
+      const dateB = new Date(b.reviewedAt || b.submittedAt || 0);
+      return sortOrder === 'newest' ? dateB - dateA : dateA - dateB;
+    });
+
+    return result;
+  }, [reviewedTasks, search, decisionFilter, projectFilter, sortOrder]);
+
+  const handleViewDetail = (task) => {
+    window.location.href = '/reviewer/workspace/' + (task.projectId?._id || task.projectId) + '?taskId=' + task._id;
   };
 
-  if (loading) return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-900">
-      <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-700 border-t-blue-500" />
-    </div>
-  );
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-900">
+        <div className="h-12 w-12 animate-spin rounded-full border-4 border-gray-700 border-t-blue-500" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-900 p-6 text-gray-200">
-      <div className="mx-auto w-full max-w-7xl space-y-6">
-        <div className="rounded-xl border border-gray-700 bg-gray-800 p-6 shadow-lg">
-          <h1 className="text-2xl font-bold text-gray-100">Lich Su Cham Bai</h1>
-          <p className="mt-1 text-sm text-gray-400">Lich su cac task ban da cham (approved/rejected)</p>
+      <div className="mx-auto w-full max-w-7xl space-y-5">
+
+        {/* Header */}
+        <div className="rounded-xl border border-gray-700 bg-gray-800 p-5">
+          <h1 className="text-xl font-bold text-gray-100">Lịch Sử Chấm Bài</h1>
+          <p className="mt-1 text-sm text-gray-400">Xem lại các quyết định đã chấm</p>
         </div>
 
+        {/* Error */}
         {error && (
-          <div className="rounded-xl border border-rose-700/50 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">{error}</div>
+          <div className="rounded-xl border border-rose-700/50 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+            {error}
+          </div>
         )}
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="rounded-xl border border-gray-700 bg-gray-800 p-4 text-center cursor-pointer hover:bg-gray-700/30 transition" onClick={() => setFilter('all')}>
-            <p className="text-2xl font-bold text-gray-100">{reviewedTasks.length}</p>
-            <p className="mt-1 text-xs text-gray-400">Tat Ca</p>
-          </div>
-          <div className="rounded-xl border border-amber-700/30 bg-amber-500/5 p-4 text-center cursor-pointer hover:bg-amber-500/10 transition" onClick={() => setFilter('submitted')}>
-            <p className="text-2xl font-bold text-amber-400">{pending}</p>
-            <p className="mt-1 text-xs text-gray-400">Cho Xac Nhan</p>
-          </div>
-          <div className="rounded-xl border border-emerald-700/30 bg-emerald-500/5 p-4 text-center cursor-pointer hover:bg-emerald-500/10 transition" onClick={() => setFilter('approved')}>
-            <p className="text-2xl font-bold text-emerald-400">{approved}</p>
+        {/* Stats Row */}
+        <div className="grid grid-cols-3 gap-4">
+          <button
+            onClick={() => { setDecisionFilter('all'); setProjectFilter('all'); }}
+            className={`rounded-xl border p-4 text-center cursor-pointer transition-all ${
+              decisionFilter === 'all' && projectFilter === 'all'
+                ? 'border-violet-500/50 bg-violet-500/10'
+                : 'border-gray-700 bg-gray-800 hover:bg-gray-700/30'
+            }`}
+          >
+            <p className="text-2xl font-bold text-gray-100">{total}</p>
+            <p className="mt-1 text-xs text-gray-400">Tất cả</p>
+          </button>
+          <button
+            onClick={() => { setDecisionFilter('approved'); setProjectFilter('all'); }}
+            className={`rounded-xl border p-4 text-center cursor-pointer transition-all ${
+              decisionFilter === 'approved'
+                ? 'border-emerald-500/50 bg-emerald-500/10'
+                : 'border-emerald-700/30 bg-emerald-500/5 hover:bg-emerald-500/10'
+            }`}
+          >
+            <p className="text-2xl font-bold text-emerald-400">{approvedCount}</p>
             <p className="mt-1 text-xs text-gray-400">Approved</p>
-          </div>
-          <div className="rounded-xl border border-rose-700/30 bg-rose-500/5 p-4 text-center cursor-pointer hover:bg-rose-500/10 transition" onClick={() => setFilter('rejected')}>
-            <p className="text-2xl font-bold text-rose-400">{rejected}</p>
+          </button>
+          <button
+            onClick={() => { setDecisionFilter('rejected'); setProjectFilter('all'); }}
+            className={`rounded-xl border p-4 text-center cursor-pointer transition-all ${
+              decisionFilter === 'rejected'
+                ? 'border-rose-500/50 bg-rose-500/10'
+                : 'border-rose-700/30 bg-rose-500/5 hover:bg-rose-500/10'
+            }`}
+          >
+            <p className="text-2xl font-bold text-rose-400">{rejectedCount}</p>
             <p className="mt-1 text-xs text-gray-400">Rejected</p>
+          </button>
+        </div>
+
+        {/* Filter Row */}
+        <div className="rounded-xl border border-gray-700 bg-gray-800 p-4">
+          <div className="flex flex-wrap gap-3 items-center">
+            {/* Search */}
+            <div className="relative flex-1 min-w-[200px]">
+              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                type="text"
+                placeholder="Tim item, annotator, project..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full rounded-lg border border-gray-700 bg-gray-900 pl-9 pr-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-violet-500/50"
+              />
+            </div>
+
+            {/* Decision Filter */}
+            <select
+              value={decisionFilter}
+              onChange={(e) => setDecisionFilter(e.target.value)}
+              className="rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-violet-500/50"
+            >
+              <option value="all">Tat ca trang thai</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+            </select>
+
+            {/* Project Filter */}
+            <select
+              value={projectFilter}
+              onChange={(e) => setProjectFilter(e.target.value)}
+              className="rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-violet-500/50"
+            >
+              <option value="all">Tat ca project</option>
+              {projects.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+
+            {/* Sort */}
+            <select
+              value={sortOrder}
+              onChange={(e) => setSortOrder(e.target.value)}
+              className="rounded-lg border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-violet-500/50"
+            >
+              <option value="newest">Moi nhat</option>
+              <option value="oldest">Cu nhat</option>
+            </select>
+
+            {/* Clear filters */}
+            {(search || decisionFilter !== 'all' || projectFilter !== 'all') && (
+              <button
+                onClick={() => { setSearch(''); setDecisionFilter('all'); setProjectFilter('all'); }}
+                className="rounded-lg border border-gray-600 px-3 py-2 text-xs text-gray-400 hover:text-white hover:border-gray-500 transition-all"
+              >
+                Xoa loc
+              </button>
+            )}
           </div>
         </div>
 
+        {/* Table */}
         <div className="rounded-xl border border-gray-700 bg-gray-800 overflow-hidden">
           {filtered.length === 0 ? (
-            <div className="py-12 text-center text-gray-500">Chua co lich su cham bai</div>
+            <div className="py-16 text-center">
+              <div className="mb-3 text-4xl opacity-20">
+                <svg className="w-12 h-12 mx-auto text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+              </div>
+              <p className="text-gray-500 text-sm">Khong co lich su cham bai</p>
+            </div>
           ) : (
-            <div className="divide-y divide-gray-700/50">
-              {Object.values(groupedByProject).map((pg) => {
-                const pgFiltered = pg.tasks.filter((t) => filter === 'all' || t.status === filter);
-                if (pgFiltered.length === 0) return null;
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-900/50 text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                    <th className="px-4 py-3 text-left">Item</th>
+                    <th className="px-4 py-3 text-left">Project</th>
+                    <th className="px-4 py-3 text-left">Subtopic</th>
+                    <th className="px-4 py-3 text-left">Annotator</th>
+                    <th className="px-4 py-3 text-left">Quyet dinh</th>
+                    <th className="px-4 py-3 text-left">Feedback</th>
+                    <th className="px-4 py-3 text-left">Thoi gian</th>
+                    <th className="px-4 py-3 text-right">Han dong</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((t, idx) => {
+                    const itemName = t.dataItem?.filename || t.dataItem?.originalName || 'Unknown';
+                    const itemType = getFileType(itemName);
+                    const annotName = t.annotatorId?.fullName || t.annotatorId?.username || 'Unknown';
+                    const projName = t.projectId?.name || '-';
+                    const subName = t.subtopicId?.name || '-';
+                    const isApproved = t.status === 'approved';
+                    const feedback = t.reviewComments;
+                    const reviewTime = t.reviewedAt || t.submittedAt;
 
-                return (
-                  <div key={pg.projectId}>
-                    <div className="px-6 py-4 bg-gray-900/50 border-b border-gray-700">
-                      <div className="flex items-center justify-between">
-                        <h3 className="text-sm font-bold text-gray-100">{pg.name}</h3>
-                        <div className="flex items-center gap-3">
-                          <span className="text-xs text-gray-400">{pgFiltered.length} task</span>
-                          <span className="rounded bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-400">{pgFiltered.filter((t) => t.status === 'approved').length} approved</span>
-                          <span className="rounded bg-rose-500/10 px-2 py-0.5 text-xs text-rose-400">{pgFiltered.filter((t) => t.status === 'rejected').length} rejected</span>
-                        </div>
-                      </div>
-                    </div>
+                    return (
+                      <tr
+                        key={t._id}
+                        className={`border-t border-gray-700/50 transition-colors hover:bg-gray-800/40 ${
+                          idx % 2 === 0 ? 'bg-gray-800/20' : ''
+                        }`}
+                      >
+                        {/* Item */}
+                        <td className="px-4 py-3">
+                          <p className="font-medium text-gray-200 text-sm max-w-[180px] truncate" title={itemName}>
+                            {itemName}
+                          </p>
+                          <p className="text-[10px] text-gray-500 uppercase tracking-wider mt-0.5">{itemType}</p>
+                        </td>
 
-                    <div className="divide-y divide-gray-700/30">
-                      {pgFiltered.map((t) => {
-                        const isExpanded = expandedTask === t._id;
-                        const vote = getMyVote(t);
-                        return (
-                          <div key={t._id} className="hover:bg-gray-800/30 transition">
-                            <div className="flex items-center justify-between px-6 py-3 cursor-pointer" onClick={() => setExpandedTask(isExpanded ? null : t._id)}>
-                              <div className="flex items-center gap-4 min-w-0">
-                                <div className="text-gray-500">{isExpanded ? String.fromCharCode(9660) : String.fromCharCode(9654)}</div>
-                                <div className="min-w-0">
-                                  <p className="text-sm font-medium text-gray-100 truncate">{t.dataItem?.originalName || t.dataItem?.filename || 'Task'}</p>
-                                  <p className="text-xs text-gray-500">Subtopic: {t.subtopicId?.name || 'N/A'} | Annotator: {t.annotatorId?.fullName || t.annotatorId?.username || 'N/A'}</p>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-4 shrink-0">
-                                <span className={'rounded px-2 py-0.5 text-xs font-semibold ' + statusBadge(t.status)}>{t.status}</span>
-                                <span className="text-xs text-gray-500">{fmtDate(t.reviewedAt || t.submittedAt)}</span>
-                              </div>
+                        {/* Project */}
+                        <td className="px-4 py-3">
+                          <span className="text-gray-300 text-sm">{projName}</span>
+                        </td>
+
+                        {/* Subtopic */}
+                        <td className="px-4 py-3">
+                          <span className="text-gray-400 text-sm">{subName}</span>
+                        </td>
+
+                        {/* Annotator */}
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <div
+                              className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0"
+                              style={{ backgroundColor: stringToColor(annotName) }}
+                              title={annotName}
+                            >
+                              {getInitials(annotName)}
                             </div>
-
-                            {isExpanded && (
-                              <div className="px-6 pb-4 bg-gray-900/30">
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
-                                  <div className="rounded-lg border border-gray-700 bg-gray-900 p-4">
-                                    <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Thong Tin Task</h4>
-                                    <div className="space-y-2 text-sm">
-                                      <div className="flex justify-between"><span className="text-gray-400">Task ID</span><span className="text-gray-200 font-mono text-xs">{t._id}</span></div>
-                                      <div className="flex justify-between"><span className="text-gray-400">Dataset</span><span className="text-gray-200">{t.datasetId?.name || '-'}</span></div>
-                                      <div className="flex justify-between"><span className="text-gray-400">Subtopic</span><span className="text-gray-200">{t.subtopicId?.name || '-'}</span></div>
-                                      <div className="flex justify-between"><span className="text-gray-400">Annotator</span><span className="text-gray-200">{t.annotatorId?.fullName || t.annotatorId?.username || '-'}</span></div>
-                                      <div className="flex justify-between"><span className="text-gray-400">File</span><span className="text-gray-200 text-xs truncate max-w-[200px]">{t.dataItem?.originalName || t.dataItem?.filename || '-'}</span></div>
-                                      <div className="flex justify-between"><span className="text-gray-400">Labels</span><span className="text-gray-200">{(t.labels?.objects?.length || 0)} objects</span></div>
-                                    </div>
-                                  </div>
-
-                                  <div className="rounded-lg border border-gray-700 bg-gray-900 p-4">
-                                    <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Review Chi Tiet</h4>
-                                    <div className="space-y-2 text-sm">
-                                      <div className="flex justify-between"><span className="text-gray-400">Your Vote</span><span className={'font-semibold ' + (vote === 'approved' ? 'text-emerald-400' : vote === 'rejected' ? 'text-rose-400' : 'text-gray-400')}>{vote || 'pending'}</span></div>
-                                      <div className="flex justify-between"><span className="text-gray-400">Final Status</span><span className={'font-semibold ' + (t.status === 'approved' ? 'text-emerald-400' : t.status === 'rejected' ? 'text-rose-400' : 'text-amber-400')}>{t.status}</span></div>
-                                      <div className="flex justify-between"><span className="text-gray-400">Reviewed At</span><span className="text-gray-200">{fmtDate(t.reviewedAt)}</span></div>
-                                      <div className="flex justify-between"><span className="text-gray-400">Submitted At</span><span className="text-gray-200">{fmtDate(t.submittedAt)}</span></div>
-                                      {t.reviewComments && (
-                                        <div className="pt-2 border-t border-gray-700">
-                                          <p className="text-xs text-gray-400 mb-1">Feedback</p>
-                                          <p className="text-gray-200 text-sm">{t.reviewComments}</p>
-                                        </div>
-                                      )}
-                                      {t.errorCategory && (
-                                        <div className="flex justify-between"><span className="text-gray-400">Error Category</span><span className="text-rose-400 text-xs">{t.errorCategory}</span></div>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-
-                                {t.reviewNotes && t.reviewNotes.length > 0 && (
-                                  <div className="mt-4 rounded-lg border border-gray-700 bg-gray-900 p-4">
-                                    <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Review Notes</h4>
-                                    <div className="space-y-2">
-                                      {t.reviewNotes.map((note, idx) => (
-                                        <div key={idx} className="rounded border border-gray-700 bg-gray-800 px-3 py-2">
-                                          <p className="text-sm text-gray-200">{note.note || note.comment || JSON.stringify(note)}</p>
-                                          <p className="mt-1 text-xs text-gray-500">{note.createdBy?.fullName || note.createdBy?.username || 'Reviewer'} - {fmtDate(note.createdAt)}</p>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-
-                                {t.reviewers && t.reviewers.length > 0 && (
-                                  <div className="mt-4 rounded-lg border border-gray-700 bg-gray-900 p-4">
-                                    <h4 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">All Reviewer Votes</h4>
-                                    <div className="space-y-2">
-                                      {t.reviewers.map((r, idx) => (
-                                        <div key={idx} className="flex items-center justify-between rounded bg-gray-800 px-3 py-2">
-                                          <span className="text-sm text-gray-200">{r.reviewerId?.fullName || r.reviewerId?.username || 'Reviewer'}</span>
-                                          <span className={'rounded px-2 py-0.5 text-xs font-semibold ' + (r.status === 'approved' ? 'bg-emerald-500/10 text-emerald-400' : r.status === 'rejected' ? 'bg-rose-500/10 text-rose-400' : 'bg-gray-700 text-gray-400')}>{r.status || 'pending'}</span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-
-                                <div className="mt-4 flex justify-end">
-                                  <button onClick={() => { window.location.href = '/reviewer/tasks/' + t._id; }}
-                                    className="rounded-lg border border-blue-500/50 px-4 py-2 text-sm text-blue-400 hover:bg-blue-500/10 transition font-medium">
-                                    Xem Chi Tiet Day Du
-                                  </button>
-                                </div>
-                              </div>
-                            )}
+                            <span className="text-gray-300 text-sm truncate max-w-[120px]" title={annotName}>
+                              {annotName}
+                            </span>
                           </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
+                        </td>
+
+                        {/* Decision */}
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${
+                            isApproved
+                              ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                              : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
+                          }`}>
+                            {isApproved ? (
+                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                              </svg>
+                            ) : (
+                              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            )}
+                            {isApproved ? 'Approved' : 'Rejected'}
+                          </span>
+                        </td>
+
+                        {/* Feedback */}
+                        <td className="px-4 py-3 max-w-[180px]">
+                          {feedback ? (
+                            <span className="text-gray-400 text-xs line-clamp-1" title={feedback}>
+                              {feedback.length > 40 ? feedback.slice(0, 40) + '...' : feedback}
+                            </span>
+                          ) : (
+                            <span className="text-gray-600 text-xs">-</span>
+                          )}
+                        </td>
+
+                        {/* Reviewed At */}
+                        <td className="px-4 py-3">
+                          <span className="text-gray-400 text-xs">{fmtShortDate(reviewTime)}</span>
+                        </td>
+
+                        {/* Action */}
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            onClick={() => handleViewDetail(t)}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-violet-500/40 bg-violet-500/10 px-3 py-1.5 text-xs text-violet-400 hover:bg-violet-500/20 hover:border-violet-500/60 transition-all"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            </svg>
+                            Xem lai
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
+
+        {/* Summary footer */}
+        {filtered.length > 0 && (
+          <div className="text-center text-xs text-gray-500">
+            Hien thi {filtered.length} / {total} ban ghi
+          </div>
+        )}
       </div>
     </div>
   );

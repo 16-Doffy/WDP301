@@ -81,9 +81,14 @@ router.get('/pending', auth, authorize('reviewer', 'admin'), async (req, res) =>
   try {
     const reviewerId = req.user._id;
     const reviewerIdString = reviewerId.toString();
+    const { subtopicId } = req.query;
+
+    // Build base query
+    const baseQuery = { status: 'submitted' };
+    if (subtopicId) baseQuery.subtopicId = subtopicId;
 
     const tasks = await Task.find({
-      status: 'submitted',
+      ...baseQuery,
       $or: [
         {
           reviewers: {
@@ -96,16 +101,16 @@ router.get('/pending', auth, authorize('reviewer', 'admin'), async (req, res) =>
         {
           $and: [
             {
-          $and: [
-            { reviewerId: { $in: [reviewerId, reviewerIdString] } },
-            {
-              $or: [
-                { reviewers: { $exists: false } },
-                { reviewers: { $size: 0 } },
+              $and: [
+                { reviewerId: { $in: [reviewerId, reviewerIdString] } },
+                {
+                  $or: [
+                    { reviewers: { $exists: false } },
+                    { reviewers: { $size: 0 } },
+                  ],
+                },
               ],
             },
-          ],
-        },
             {
               $or: [
                 { reviewers: { $exists: false } },
@@ -122,6 +127,7 @@ router.get('/pending', auth, authorize('reviewer', 'admin'), async (req, res) =>
       .populate('datasetId', 'name')
       .populate('annotatorId', 'username fullName')
       .populate('reviewers.reviewerId', 'username fullName')
+      .populate('subtopicId', 'name guideline')
       .sort({ submittedAt: 1 });
 
     const actionableTasks = tasks.filter((t) => !isTaskOverdue(t));
@@ -156,6 +162,7 @@ router.get('/reviewed', auth, authorize('reviewer', 'admin'), async (req, res) =
       .populate('datasetId', 'name')
       .populate('annotatorId', 'username fullName')
       .populate('reviewerId', 'username fullName')
+      .populate('subtopicId', 'name guideline')
       .sort({ reviewedAt: -1 });
 
     res.json(tasks);

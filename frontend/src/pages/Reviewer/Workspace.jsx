@@ -1,5 +1,5 @@
-﻿import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+﻿import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
 import { Dialog, DialogTitle, DialogContent, DialogActions, Button, Typography } from '@mui/material';
@@ -71,7 +71,8 @@ const updateItemStatus = (item) => {
   else { item.status = 'partially_reviewed'; }
 };
 
-const ReviewQueuePanel = ({ items, currentItemId, onSelect }) => (
+// Panel hien thi Review Queue khi da loc theo subtopic (chi hien items cua subtopic do)
+const ReviewQueueFlatPanel = ({ items, currentItemId, onSelect }) => (
   <div className="h-full flex flex-col bg-gray-900 border-r border-gray-700">
     <div className="p-3 border-b border-gray-700 shrink-0">
       <h3 className="text-sm font-bold text-gray-200">Review Queue</h3>
@@ -116,6 +117,110 @@ const ReviewQueuePanel = ({ items, currentItemId, onSelect }) => (
     </div>
   </div>
 );
+
+// Panel Review Queue khi xem FULL (khong loc subtopic): group theo subtopic, click expand moi hien items
+const ReviewQueueGroupedPanel = ({ items, currentItemId, onSelect }) => {
+  const [expandedSubtopics, setExpandedSubtopics] = useState({});
+
+  // Group items by subtopic
+  const grouped = useMemo(() => {
+    const groups = {};
+    items.forEach((item) => {
+      const subId = item.subtopicId || '__none__';
+      const subName = item.subtopicName || 'Khong phan loai';
+      if (!groups[subId]) {
+        groups[subId] = { subtopicId: subId, subtopicName: subName, items: [], expanded: !!expandedSubtopics[subId] };
+      }
+      groups[subId].items.push(item);
+    });
+    return Object.values(groups);
+  }, [items, expandedSubtopics]);
+
+  const toggleSubtopic = (subId) => {
+    setExpandedSubtopics(prev => ({ ...prev, [subId]: !prev[subId] }));
+  };
+
+  const totalPending = items.filter(i => i.status === 'pending_review' || i.status === 'partially_reviewed').length;
+
+  return (
+    <div className="h-full flex flex-col bg-gray-900 border-r border-gray-700">
+      <div className="p-3 border-b border-gray-700 shrink-0">
+        <h3 className="text-sm font-bold text-gray-200">Review Queue</h3>
+        <p className="text-xs text-gray-500 mt-0.5">
+          {items.length} item &mdash; {totalPending} can review
+        </p>
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        {grouped.length === 0 ? (
+          <div className="p-4 text-center text-gray-500 text-xs">Khong co item</div>
+        ) : grouped.map((group) => {
+          const pendingInGroup = group.items.filter(i => i.status === 'pending_review' || i.status === 'partially_reviewed').length;
+          return (
+            <div key={group.subtopicId}>
+              {/* Subtopic header - click de expand/collapse */}
+              <div
+                onClick={() => toggleSubtopic(group.subtopicId)}
+                className={`flex items-center gap-2 px-3 py-2 cursor-pointer transition-all border-l-2 border-transparent hover:bg-gray-800/60 hover:border-gray-600 ${
+                  group.expanded ? 'border-violet-500 bg-violet-600/10' : ''
+                }`}
+              >
+                <svg
+                  className={`w-3 h-3 text-gray-400 shrink-0 transition-transform ${group.expanded ? 'rotate-90' : ''}`}
+                  fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+                <div className="min-w-0 flex-1">
+                  <p className={`text-xs font-semibold truncate ${group.expanded ? 'text-violet-300' : 'text-gray-200'}`}>
+                    {group.subtopicName}
+                  </p>
+                  <p className="text-[10px] text-gray-500">
+                    {group.items.length} item &mdash; {pendingInGroup} can review
+                  </p>
+                </div>
+                {pendingInGroup > 0 && (
+                  <span className="w-2 h-2 rounded-full bg-yellow-400 shrink-0" />
+                )}
+              </div>
+
+              {/* Items ben trong subtopic - chi hien khi expand */}
+              {group.expanded && (
+                <div className="ml-4 border-l border-gray-700/50">
+                  {group.items.map((item) => {
+                    const cfg = ITEM_STATUS[item.status] || ITEM_STATUS.pending_review;
+                    const isActive = item.itemId === currentItemId;
+                    return (
+                      <div key={item.itemId} onClick={() => onSelect(item)}
+                        className={`group flex items-center gap-2 px-3 py-1.5 cursor-pointer transition-all border-l-2 ${
+                          isActive ? 'bg-violet-600/15 border-violet-500' : 'border-transparent hover:bg-gray-800/60 hover:border-gray-600'
+                        }`}>
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dot}`} />
+                        <div className="min-w-0 flex-1">
+                          <p className={`text-[11px] font-medium truncate ${isActive ? 'text-violet-300' : 'text-gray-300'}`}>
+                            {item.filename || item.itemId?.slice(-8) || 'Item'}
+                          </p>
+                        </div>
+                        <div className="flex -space-x-0.5">
+                          {(item.submissions || []).slice(0, 3).map((sub) => (
+                            <span key={sub.submissionId}
+                              className="w-3.5 h-3.5 rounded-full flex items-center justify-center text-[8px] font-bold shrink-0 text-white border border-gray-900"
+                              style={{ backgroundColor: sub.color || '#3b82f6' }}>
+                              {(sub.annotatorName || '?')[0].toUpperCase()}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
 
 // ===== IMAGE PANEL =====
 // Bbox from ImageAnnotator: percentage coords [x1,y1,x2,y2] (0-100)
@@ -430,6 +535,7 @@ const ReviewPanel = ({ item, activeSubmission, submissions, visibleAnnotators, o
 
 const ReviewerWorkspace = () => {
   const { projectId } = useParams();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const subtopicFilter = searchParams.get('subtopicId');
 
@@ -453,7 +559,7 @@ const ReviewerWorkspace = () => {
       const params = {};
       if (subtopicFilter) params.subtopicId = subtopicFilter;
       const res = await axios.get(`${API_URL}/api/reviews/pending`, { params });
-      const taskList = (res.data || []).filter(t => !projectId || t.projectId?._id === projectId);
+      const taskList = res.data || [];
 
       const itemMap = new Map();
       taskList.forEach((task) => {
@@ -585,6 +691,8 @@ const ReviewerWorkspace = () => {
   const pendingCount = items.filter(i => i.status === 'pending_review' || i.status === 'partially_reviewed').length;
   const reviewedCount = items.filter(i => i.status === 'fully_reviewed' || i.status === 'finalized').length;
 
+  const isFilteredMode = !!subtopicFilter;
+
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-900">
@@ -609,7 +717,13 @@ const ReviewerWorkspace = () => {
 
   return (
     <div className="flex h-screen bg-slate-900 overflow-hidden">
-      <div className="w-60 shrink-0"><ReviewQueuePanel items={items} currentItemId={currentItemId} onSelect={handleItemSelect} /></div>
+      <div className="w-60 shrink-0">
+        {isFilteredMode ? (
+          <ReviewQueueFlatPanel items={items} currentItemId={currentItemId} onSelect={handleItemSelect} />
+        ) : (
+          <ReviewQueueGroupedPanel items={items} currentItemId={currentItemId} onSelect={handleItemSelect} />
+        )}
+      </div>
 
       <div className="flex-1 flex flex-col min-w-0">
         <div className="shrink-0 border-b border-gray-700 bg-gray-900/80 px-3 py-2">

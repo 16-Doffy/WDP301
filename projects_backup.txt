@@ -10,39 +10,6 @@ const { createActivityLog } = require('./activityLogs');
 
 const router = express.Router();
 
-
-
-// REVIEWER PROJECT FINALIZE FUNCTIONS
-const calculateApprovalRate = async (projectId) => {
-  const project = await Project.findById(projectId);
-  if (!project) throw new Error('Project not found');
-  const tasks = await Task.find({ projectId }).select('status');
-  const totalTasks = tasks.length;
-  const approvedTasks = tasks.filter(t => t.status === 'approved').length;
-  const rejectedTasks = tasks.filter(t => t.status === 'rejected').length;
-  const expiredTasks = tasks.filter(t => t.status === 'expired').length;
-  const submittedTasks = tasks.filter(t => t.status === 'submitted').length;
-  // waiting_rework = annotator dang sua lai sau reject
-  // revised = annotator da sua xong, dang cho submit
-  // rejected = reviewer da reject roi, chua duoc sua lai
-  const waitingReworkTasks = tasks.filter(t => ['waiting_rework','revised'].includes(t.status)).length;
-  const pendingTasks = tasks.filter(t => ['assigned','in_progress'].includes(t.status)).length;
-  const reviewedTasks = approvedTasks + rejectedTasks + expiredTasks;
-  const approvalRate = totalTasks > 0 ? Math.round((approvedTasks / totalTasks) * 10000) / 100 : 0;
-  return { totalTasks, approvedTasks, rejectedTasks, expiredTasks, submittedTasks, waitingReworkTasks, pendingTasks, reviewedTasks, approvalRate, deadline: project.deadline };
-};
-
-const canFinalizeProject = async (projectId) => {
-  const stats = await calculateApprovalRate(projectId);
-  const project = await Project.findById(projectId);
-  const deadlinePassed = project.deadline && new Date() >= new Date(project.deadline);
-  const allReviewed = stats.submittedTasks === 0 && stats.pendingTasks === 0 && stats.waitingReworkTasks === 0;
-  if (!allReviewed && !deadlinePassed) return { canFinalize: false, reason: 'still_has_unreviewed', message: 'Con '+stats.submittedTasks+' task chua duoc review, '+stats.waitingReworkTasks+' task dang cho rework, '+stats.pendingTasks+' task chua assign', stats };
-  if (!deadlinePassed && stats.submittedTasks > 0) return { canFinalize: false, reason: 'still_has_submitted', message: stats.submittedTasks+' task dang cho reviewer cham.', stats };
-  if (!deadlinePassed && stats.waitingReworkTasks > 0) return { canFinalize: false, reason: 'has_rework_pending', message: stats.waitingReworkTasks+' task dang cho annotator sua lai.', stats };
-  return { canFinalize: true, reason: 'ready', message: 'Project da san sang de finalize', stats, suggestedAction: stats.approvalRate >= 70 ? 'APPROVE' : 'REJECT' };
-};
-
 const computeProjectReviewSnapshot = async (projectId) => {
   const tasks = await Task.find({ projectId }).select('status');
 
@@ -404,57 +371,337 @@ router.get('/:id/quality', auth, authorize('manager', 'admin'), async (req, res)
 });
 
 // Reviewer project-level decision (approve/reject after task review)
-// REVIEW SUMMARY
-router.get('/:id/review-summary', auth, authorize('reviewer','admin','manager'), async (req, res) => {
+router.post('/:id/review-decision', auth, authorize('reviewer', 'admin'), async (req, res) => {
   try {
+    const { status, comment } = req.body;
+    if (!['approved', 'rejected'].includes(status)) {
+      return res.status(400).json({ message: 'status must be approved or rejected' });
+    }
+
     const project = await Project.findById(req.params.id);
     if (!project) return res.status(404).json({ message: 'Project not found' });
-    if (req.user.role === 'manager' && project.managerId.toString() !== req.user._id.toString()) return res.status(403).json({ message: 'Not authorized' });
-    const stats = await calculateApprovalRate(project._id);
-    const canFinalize = await canFinalizeProject(project._id);
-    res.json({ project: { _id: project._id, name: project.name, status: project.status, deadline: project.deadline, projectReview: project.projectReview }, stats, canFinalize });
-  } catch (error) { res.status(500).json({ message: 'Server error', error: error.message }); }
+
+    const snapshot = await computeProjectReviewSnapshot(project._id);
+    if (snapshot.actionableLeft > 0) {
+      return res.status(400).json({
+        message: 'Cannot finalize project decision yet. Some tasks are still pending/submitted.',
+        snapshot,
+      });
+    }
+
+    project.projectReview = {
+      status,
+      reviewedBy: req.user._id,
+      reviewedAt: new Date(),
+      comment: (comment || '').trim(),
+    };
+    await project.save();
+
+    await project.populate('projectReview.reviewedBy', 'username fullName');
+
+    res.json({
+      message: `Project marked as ${status}`,
+      project,
+      projectReviewSnapshot: snapshot,
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
 });
 
-// APPROVE PROJECT
-router.post('/:id/approve', auth, authorize('reviewer','admin'), async (req, res) => {
+// Export project data (Manager only)
+router.get('/:id/export', auth, authorize('manager', 'admin'), async (req, res) => {
   try {
-    const { comment } = req.body;
-    const project = await Project.findById(req.params.id);
-    if (!project) return res.status(404).json({ message: 'Project not found' });
-    const check = await canFinalizeProject(project._id);
-    if (!check.canFinalize) return res.status(400).json({ message: check.message, reason: check.reason, stats: check.stats });
-    if (check.stats.approvalRate < 70) return res.status(400).json({ message: 'Approval rate '+check.stats.approvalRate+'% < 70%. Khong du dieu kien approve.', stats: check.stats, suggestedAction: 'REJECT' });
-    project.projectReview = { status: 'approved', reviewedBy: req.user._id, reviewedAt: new Date(), comment: (comment||'').trim(), approvalRate: check.stats.approvalRate, approvedTasks: check.stats.approvedTasks, rejectedTasks: check.stats.rejectedTasks, expiredTasks: check.stats.expiredTasks||0, pendingTasks: check.stats.pendingTasks||0 };
-    project.totalTasks = check.stats.totalTasks;
-    project.reviewedTasks = check.stats.reviewedTasks;
-    project.status = 'completed';
-    await project.save();
-    await project.populate('projectReview.reviewedBy', 'username fullName');
-    await createActivityLog(req.user._id, 'project_approved', 'project', project._id, 'Approved project: '+project.name, { approvalRate: check.stats.approvalRate, approvedTasks: check.stats.approvedTasks, totalTasks: check.stats.totalTasks }, req);
-    res.json({ message: 'Project approved voi approval rate '+check.stats.approvalRate+'%', project, stats: check.stats });
-  } catch (error) { res.status(500).json({ message: 'Server error', error: error.message }); }
-});
+    const { format = 'json' } = req.query;
+    const project = await Project.findById(req.params.id).select('name description managerId');
+    
+    if (!project) {
+      return res.status(404).json({ message: 'Project not found' });
+    }
 
-// REJECT PROJECT
-router.post('/:id/reject', auth, authorize('reviewer','admin'), async (req, res) => {
-  try {
-    const { comment } = req.body;
-    const project = await Project.findById(req.params.id);
-    if (!project) return res.status(404).json({ message: 'Project not found' });
-    const check = await canFinalizeProject(project._id);
-    if (!check.canFinalize) return res.status(400).json({ message: check.message, reason: check.reason, stats: check.stats });
-    if (check.stats.approvalRate >= 70) return res.status(400).json({ message: 'Approval rate '+check.stats.approvalRate+'% >= 70%. Ban nen approve project.', stats: check.stats, suggestedAction: 'APPROVE' });
-    await Task.updateMany({ projectId: project._id, status: 'submitted' }, { $set: { status: 'expired' } });
-    project.projectReview = { status: 'rejected', reviewedBy: req.user._id, reviewedAt: new Date(), comment: (comment||'').trim(), approvalRate: check.stats.approvalRate, approvedTasks: check.stats.approvedTasks, rejectedTasks: check.stats.rejectedTasks, expiredTasks: (check.stats.expiredTasks||0)+check.stats.submittedTasks, pendingTasks: check.stats.pendingTasks||0 };
-    project.totalTasks = check.stats.totalTasks;
-    project.reviewedTasks = check.stats.reviewedTasks;
-    project.status = 'completed';
-    await project.save();
-    await project.populate('projectReview.reviewedBy', 'username fullName');
-    await createActivityLog(req.user._id, 'project_rejected', 'project', project._id, 'Rejected project: '+project.name, { approvalRate: check.stats.approvalRate, approvedTasks: check.stats.approvedTasks, totalTasks: check.stats.totalTasks }, req);
-    res.json({ message: 'Project rejected voi approval rate '+check.stats.approvalRate+'%', project, stats: check.stats });
-  } catch (error) { res.status(500).json({ message: 'Server error', error: error.message }); }
+    // Authorization check - Manager can only export their own projects, Admin can export all
+    if (req.user.role === 'manager' && project.managerId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+    // Admin can export any project (no additional check needed)
+
+    // Get all tasks in the project to check completion status
+    const allTasks = await Task.find({
+      projectId: project._id
+    });
+
+    // Check if all tasks are approved (required for export)
+    const totalTasks = allTasks.length;
+    const approvedTasks = allTasks.filter(t => t.status === 'approved');
+    const pendingTasks = allTasks.filter(t => t.status === 'submitted' || t.status === 'in_progress' || t.status === 'assigned');
+    const rejectedTasks = allTasks.filter(t => t.status === 'rejected');
+
+    if (totalTasks === 0) {
+      return res.status(400).json({ message: 'No tasks found in this project.' });
+    }
+
+    if (approvedTasks.length === 0) {
+      return res.status(400).json({ 
+        message: 'No approved tasks to export. Please wait for reviewer to approve tasks.'
+      });
+    }
+
+    // Check if all tasks are approved (strict requirement)
+    if (pendingTasks.length > 0 || rejectedTasks.length > 0) {
+      return res.status(400).json({ 
+        message: 'Cannot export: Not all tasks have been approved. All tasks must be approved before export.',
+        stats: {
+          total: totalTasks,
+          approved: approvedTasks.length,
+          pending: pendingTasks.length,
+          rejected: rejectedTasks.length
+        }
+      });
+    }
+
+    // Get approved tasks with populated data
+    const tasks = await Task.find({
+      projectId: project._id,
+      status: 'approved'
+    })
+      .populate('annotatorId', 'username fullName');
+
+    // Build projectLabels from task availableLabels (all tasks should have the same labels)
+    const projectLabels = [];
+    const labelNameSet = new Set();
+    for (const task of tasks) {
+      if (task.availableLabels && Array.isArray(task.availableLabels)) {
+        for (const lbl of task.availableLabels) {
+          if (!labelNameSet.has(lbl.name)) {
+            labelNameSet.add(lbl.name);
+            projectLabels.push(lbl);
+          }
+        }
+      }
+    }
+
+    let exportData;
+    let contentType;
+    let filename;
+
+    switch (format.toUpperCase()) {
+      case 'YOLO':
+        // YOLO format: class_id center_x center_y width height (normalized)
+        const yoloFiles = tasks.map(task => {
+          if (!task.labels?.objects || !Array.isArray(task.labels.objects) || task.labels.objects.length === 0) {
+            return null;
+          }
+          
+          const imagePath = task.dataItem?.path || '';
+          const annotations = task.labels.objects.map(obj => {
+            const [x1, y1, x2, y2] = obj.bbox || [0, 0, 0, 0];
+            const labelIndex = projectLabels.findIndex(l => l.name === obj.label);
+            
+            if (labelIndex === -1) {
+              return null;
+            }
+            
+            const centerX = ((x1 + x2) / 2) / 100;
+            const centerY = ((y1 + y2) / 2) / 100;
+            const width = Math.abs(x2 - x1) / 100;
+            const height = Math.abs(y2 - y1) / 100;
+            
+            return `${labelIndex} ${centerX.toFixed(6)} ${centerY.toFixed(6)} ${width.toFixed(6)} ${height.toFixed(6)}`;
+          }).filter(Boolean);
+          
+          if (!annotations || annotations.length === 0) {
+            return null;
+          }
+          
+          return `${imagePath}\n${annotations.join('\n')}`;
+        }).filter(Boolean);
+        
+        if (yoloFiles.length === 0) {
+          return res.status(400).json({ message: 'No valid annotations found in approved tasks for YOLO export.' });
+        }
+        
+        exportData = yoloFiles.join('\n\n');
+        contentType = 'text/plain';
+        filename = `project_${project._id}_yolo_${Date.now()}.txt`;
+        break;
+
+      case 'VOC':
+        // Pascal VOC XML format
+        const vocData = tasks.map(task => {
+          if (!task.labels?.objects || !Array.isArray(task.labels.objects) || task.labels.objects.length === 0) {
+            return null;
+          }
+          
+          const objects = task.labels.objects.map(obj => {
+            const [x1, y1, x2, y2] = obj.bbox || [0, 0, 0, 0];
+            // Escape XML special characters in label name
+            const escapedLabel = (obj.label || 'unknown')
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/"/g, '&quot;')
+              .replace(/'/g, '&apos;');
+            
+            return `    <object>
+      <name>${escapedLabel}</name>
+      <bndbox>
+        <xmin>${Math.round(x1)}</xmin>
+        <ymin>${Math.round(y1)}</ymin>
+        <xmax>${Math.round(x2)}</xmax>
+        <ymax>${Math.round(y2)}</ymax>
+      </bndbox>
+    </object>`;
+          }).join('\n');
+          
+          if (!objects) return null;
+          
+          // Escape XML special characters in filename and path
+          const escapedFilename = (task.dataItem?.filename || 'unknown')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&apos;');
+          const escapedPath = (task.dataItem?.path || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&apos;');
+          
+          return `  <image>
+    <filename>${escapedFilename}</filename>
+    <path>${escapedPath}</path>
+${objects}
+  </image>`;
+        }).filter(Boolean);
+        
+        if (vocData.length === 0) {
+          return res.status(400).json({ message: 'No valid annotations found in approved tasks for VOC export.' });
+        }
+        
+        // Escape XML special characters in project name
+        const escapedProjectName = (project.name || 'Project')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&apos;');
+        
+        exportData = `<?xml version="1.0" encoding="UTF-8"?>
+<annotation>
+  <project>${escapedProjectName}</project>
+${vocData.join('\n')}
+</annotation>`;
+        
+        contentType = 'application/xml';
+        filename = `project_${project._id}_voc_${Date.now()}.xml`;
+        break;
+
+      case 'COCO':
+        // COCO JSON format
+        const cocoData = {
+          info: {
+            description: project.description || '',
+            version: '1.0',
+            year: new Date().getFullYear()
+          },
+          images: tasks.map((task, idx) => ({
+            id: idx + 1,
+            file_name: task.dataItem?.filename || 'unknown',
+            width: 0, // Would need actual image dimensions
+            height: 0
+          })),
+          annotations: [],
+          categories: projectLabels.map((label, idx) => ({
+            id: idx + 1,
+            name: label.name,
+            supercategory: 'object'
+          }))
+        };
+
+        tasks.forEach((task, taskIdx) => {
+          if (task.labels?.objects && Array.isArray(task.labels.objects)) {
+            task.labels.objects.forEach((obj, objIdx) => {
+              const [x1, y1, x2, y2] = obj.bbox || [0, 0, 0, 0];
+              const labelIndex = projectLabels.findIndex(l => l.name === obj.label);
+              cocoData.annotations.push({
+                id: (taskIdx + 1) * 1000 + objIdx + 1,
+                image_id: taskIdx + 1,
+                category_id: labelIndex >= 0 ? labelIndex + 1 : 1,
+                bbox: [x1, y1, Math.abs(x2 - x1), Math.abs(y2 - y1)],
+                area: Math.abs(x2 - x1) * Math.abs(y2 - y1),
+                iscrowd: 0
+              });
+            });
+          }
+        });
+
+        exportData = JSON.stringify(cocoData, null, 2);
+        contentType = 'application/json';
+        filename = `project_${project._id}_coco_${Date.now()}.json`;
+        break;
+
+      case 'CSV':
+        // CSV format
+        const csvRows = ['Image,Label,X1,Y1,X2,Y2,Annotator'];
+        tasks.forEach(task => {
+          if (task.labels?.objects && Array.isArray(task.labels.objects)) {
+            task.labels.objects.forEach(obj => {
+              const [x1, y1, x2, y2] = obj.bbox || [0, 0, 0, 0];
+              csvRows.push(`${task.dataItem?.filename || 'unknown'},${obj.label},${x1},${y1},${x2},${y2},${task.annotatorId?.username || 'unknown'}`);
+            });
+          }
+        });
+        exportData = csvRows.join('\n');
+        contentType = 'text/csv';
+        filename = `project_${project._id}_csv_${Date.now()}.csv`;
+        break;
+
+      default: // JSON
+        exportData = JSON.stringify({
+          project: {
+            id: project._id,
+            name: project.name,
+            description: project.description,
+            exportFormat: project.exportFormat || 'JSON'
+          },
+          tasks: tasks.map(task => ({
+            id: task._id,
+            image: task.dataItem?.filename || 'unknown',
+            path: task.dataItem?.path || '',
+            annotations: task.labels?.objects || [],
+            annotator: task.annotatorId?.username || 'unknown',
+            reviewedAt: task.reviewedAt
+          }))
+        }, null, 2);
+        contentType = 'application/json';
+        filename = `project_${project._id}_json_${Date.now()}.json`;
+    }
+
+    // Ensure exportData is not null or undefined
+    if (exportData === null || exportData === undefined) {
+      return res.status(400).json({ message: 'Failed to generate export data. Please check your project data.' });
+    }
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(exportData);
+
+    // Log export activity
+    await createActivityLog(
+      req.user._id,
+      'project_export',
+      'project',
+      project._id,
+      `Exported project data in ${format.toUpperCase()} format`,
+      { format: format.toUpperCase(), tasksCount: tasks.length },
+      req
+    );
+  } catch (error) {
+    console.error('Export error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
 });
 
 module.exports = router;

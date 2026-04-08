@@ -11,19 +11,17 @@ const getFullImageUrl = (dataItem) => {
   const baseUrl = API_URL.replace(/\/+$/, '');
 
   const directUrl = dataItem?.url || dataItem?.imageUrl || '';
-  if (typeof directUrl === 'string' && /^https?:\/\//i.test(directUrl)) return directUrl;
-
-  const rawPath = (dataItem?.path || directUrl || '').replace(/\\/g, '/');
-  const cleanPath = rawPath.replace(/^\/+/, '');
-
-  if (cleanPath) {
-    if (dataItem?.filename && cleanPath.endsWith(dataItem.filename)) {
-      return `${baseUrl}/${cleanPath}`;
-    }
-    return dataItem?.filename ? `${baseUrl}/${cleanPath}/${dataItem.filename}` : `${baseUrl}/${cleanPath}`;
+  if (directUrl && /^https?:\/\//i.test(directUrl)) return directUrl;
+  const filename = dataItem?.originalName || dataItem?.filename || '';
+  const rawPath = (dataItem?.path || directUrl || '').replace(/\\/g, '/').replace(/^\/+/, '');
+  if (rawPath) {
+    const parts = rawPath.split('/');
+    const last = parts[parts.length - 1];
+    const hasExt = /\.\w{1,10}$/i.test(last);
+    if (hasExt && last === filename) return `${baseUrl}/${rawPath}`;
+    return filename ? `${baseUrl}/${rawPath}/${filename}` : `${baseUrl}/${rawPath}`;
   }
-
-  return dataItem?.filename ? `${baseUrl}/uploads/datasets/${dataItem.filename}` : '';
+  return filename ? `${baseUrl}/uploads/datasets/${filename}` : '';
 };
 
 const normalizeLabelSet = (labelSet) => {
