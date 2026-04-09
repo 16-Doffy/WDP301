@@ -18,6 +18,7 @@ import AnnotatorOverview from './pages/Annotator/Overview';
 import AnnotatorProjectList from './pages/Annotator/ProjectList';
 import AnnotatorProjectDetail from './pages/Annotator/ProjectDetail';
 import Workspace from './pages/Annotator/Workspace';
+import AnnotatorHistory from './pages/Annotator/History';
 import ReviewerProjectList from './pages/Reviewer/ProjectList';
 import ReviewerProjectDetailPage from './pages/Reviewer/ProjectDetail';
 import ReviewerWorkspace from './pages/Reviewer/Workspace';
@@ -29,6 +30,8 @@ import AdminUsers from './pages/Admin/Users';
 import AdminActivityLogs from './pages/Admin/ActivityLogs';
 import AdminDatasets from './pages/Admin/Datasets';
 import LayoutTailwind from './components/LayoutTailwind';
+import LayoutAnnotator from './components/LayoutAnnotator';
+import LayoutReviewer from './components/LayoutReviewer';
 
 const darkTheme = createTheme({
   palette: { mode: 'dark', primary: { main: '#3b82f6' }, background: { default: '#0f172a', paper: '#1e293b' } },
@@ -70,19 +73,26 @@ function App() {
               <Route path='/admin/activity-logs' element={<AdminActivityLogs />} />
               <Route path='/admin/datasets' element={<AdminDatasets />} />
               <Route path='/admin' element={<AdminDashboard />} />
+            </Route>
+
+            <Route element={<PrivateRoute><LayoutAnnotator /></PrivateRoute>}>
               <Route path='/annotator' element={<AnnotatorOverview />} />
               <Route path='/annotator/tasks' element={<AnnotatorProjectList />} />
               <Route path='/annotator/projects/:projectId' element={<AnnotatorProjectDetail />} />
               <Route path='/annotator/workspace/:subtopicId' element={<Workspace />} />
+              <Route path='/annotator/history' element={<AnnotatorHistory />} />
+            </Route>
+
+            <Route element={<PrivateRoute><LayoutReviewer /></PrivateRoute>}>
               <Route path='/reviewer' element={<ReviewerOverview />} />
               <Route path='/reviewer/tasks' element={<ReviewerProjectList />} />
               <Route path='/reviewer/projects/:projectId' element={<ReviewerProjectDetailPage />} />
               <Route path='/reviewer/workspace/:projectId' element={<ReviewerWorkspace />} />
               <Route path='/reviewer/tasks/:id' element={<ReviewerTask />} />
               <Route path='/reviewer/history' element={<ReviewerHistory />} />
-              <Route path='/' element={<Navigate to={getRoleRedirect()} replace />} />
-              <Route path='/dashboard' element={<ManagerDashboard />} />
             </Route>
+
+            <Route path='/' element={<Navigate to={getRoleRedirect()} replace />} />
             <Route path='*' element={<Navigate to='/dashboard' replace />} />
           </Routes>
         </Router>

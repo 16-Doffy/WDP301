@@ -9,18 +9,36 @@ import { API_URL } from '../../config/api';
 
 const getFullImageUrl = (dataItem) => {
   const baseUrl = API_URL.replace(/\/+$/, '');
+  if (!dataItem) return '';
 
   const directUrl = dataItem?.url || dataItem?.imageUrl || '';
+  // Already a full HTTP(S) URL
   if (directUrl && /^https?:\/\//i.test(directUrl)) return directUrl;
+
   const filename = dataItem?.originalName || dataItem?.filename || '';
+
+  // Normalize path: convert backslashes, strip leading slashes
   const rawPath = (dataItem?.path || directUrl || '').replace(/\\/g, '/').replace(/^\/+/, '');
+
   if (rawPath) {
-    const parts = rawPath.split('/');
+    // Find uploads/ in the path (handles both relative and absolute paths)
+    const uploadsIdx = rawPath.indexOf('uploads/');
+    let relativePath = uploadsIdx !== -1 ? rawPath.substring(uploadsIdx) : rawPath;
+
+    // Split to get the last segment (filename or subfolder)
+    const parts = relativePath.split('/');
     const last = parts[parts.length - 1];
     const hasExt = /\.\w{1,10}$/i.test(last);
-    if (hasExt && last === filename) return `${baseUrl}/${rawPath}`;
-    return filename ? `${baseUrl}/${rawPath}/${filename}` : `${baseUrl}/${rawPath}`;
+
+    if (hasExt) {
+      // Last segment is a file — it IS the full path
+      return `${baseUrl}/${relativePath}`;
+    }
+    // Last segment is a directory — append filename if available
+    return filename ? `${baseUrl}/${relativePath}/${filename}` : `${baseUrl}/${relativePath}`;
   }
+
+  // No path at all — use filename only
   return filename ? `${baseUrl}/uploads/datasets/${filename}` : '';
 };
 
@@ -331,7 +349,9 @@ const DatasetItemDetail = () => {
         let items = resp.data?.items || [];
         setAllDatasetItems(items);
         const decodedId = itemId ? decodeURIComponent(itemId) : '';
-        let found = items.find((it) => it.id?.toString?.() === decodedId || it.path === decodedId || it.imageUrl === decodedId);
+        // Prioritize path match (handles items from both Tasks and dataset.files[]),
+        // then fallback to id match for consistency
+        let found = items.find((it) => it.path === decodedId || it.id?.toString?.() === decodedId || it.imageUrl === decodedId);
         
         // If text content is missing, try to fetch it
         if (found && !found.text && (found.mimeType === 'text/plain' || found.filename?.endsWith('.txt'))) {

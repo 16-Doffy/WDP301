@@ -18,6 +18,7 @@ const ImageViewer = ({
   const imageRef = useRef(null);
   const containerRef = useRef(null);
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
+  const [imgError, setImgError] = useState(false);
 
   useEffect(() => {
     const updateImageSize = () => {
@@ -101,35 +102,53 @@ const ImageViewer = ({
       ref={containerRef}
       className="relative inline-block max-w-full"
     >
-      <img
-        ref={imageRef}
-        src={imageUrl}
-        alt="Annotation target"
-        className="block max-w-full"
-        style={{
-          maxHeight: maxHeight,
-          width: 'auto',
-          height: 'auto',
-        }}
-        onLoad={() => {
-          if (imageRef.current) {
-            const rect = imageRef.current.getBoundingClientRect();
-            setImageSize({ width: rect.width, height: rect.height });
-          }
-        }}
-      />
-      
-      {/* Render bounding boxes from annotations */}
-      {annotations.map((ann, idx) => {
-        const labelInfo = labelSet.find(l => (l.name || l) === ann.label);
-        const color = labelInfo?.color || '#3b82f6';
-        return renderBoundingBox(ann.bbox, ann.label, color, idx, false);
-      })}
-
-      {/* Render review notes (if any) */}
-      {reviewNotes && reviewNotes.map((note, idx) => {
-        return renderBoundingBox(note.bbox, note.comment || 'Note', null, idx, true);
-      })}
+      {imgError ? (
+        <div
+          className="flex flex-col items-center justify-center rounded-lg min-h-[200px]"
+          style={{ backgroundColor: '#1e293b', maxHeight }}
+        >
+          <svg className="w-12 h-12 mb-3 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+              d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+          </svg>
+          <p className="text-sm text-gray-400 mb-1">Không tải được ảnh</p>
+          <p className="text-xs text-gray-600 break-all px-4 text-center max-w-md" title={imageUrl}>
+            {imageUrl}
+          </p>
+        </div>
+      ) : (
+        <>
+          <img
+            ref={imageRef}
+            src={imageUrl}
+            alt="Annotation target"
+            className="block max-w-full"
+            style={{
+              maxHeight: maxHeight,
+              width: 'auto',
+              height: 'auto',
+            }}
+            onLoad={() => {
+              setImgError(false);
+              if (imageRef.current) {
+                const rect = imageRef.current.getBoundingClientRect();
+                setImageSize({ width: rect.width, height: rect.height });
+              }
+            }}
+            onError={() => setImgError(true)}
+          />
+          {/* Render bounding boxes from annotations */}
+          {annotations.map((ann, idx) => {
+            const labelInfo = labelSet.find(l => (l.name || l) === ann.label);
+            const color = labelInfo?.color || '#3b82f6';
+            return renderBoundingBox(ann.bbox, ann.label, color, idx, false);
+          })}
+          {/* Render review notes (if any) */}
+          {reviewNotes && reviewNotes.map((note, idx) => {
+            return renderBoundingBox(note.bbox, note.comment || 'Note', null, idx, true);
+          })}
+        </>
+      )}
     </div>
   );
 };

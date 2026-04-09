@@ -7,13 +7,20 @@ import { Dialog, DialogTitle, DialogContent, DialogActions, Button, Typography }
 const buildFileUrl = (dataItem) => {
   if (!dataItem) return '';
   const baseUrl = API_URL.replace(/\/+$/, '');
-  const rawPath = dataItem.path || '';
-  const cleanPath = rawPath.replace(/^\/+/, '');
-  if (cleanPath) {
-    if (dataItem.filename && cleanPath.endsWith(dataItem.filename)) return `${baseUrl}/${cleanPath}`;
-    return dataItem.filename ? `${baseUrl}/${cleanPath}/${dataItem.filename}` : `${baseUrl}/${cleanPath}`;
+  const directUrl = dataItem?.url || dataItem?.imageUrl || '';
+  if (directUrl && /^https?:\/\//i.test(directUrl)) return directUrl;
+  const filename = dataItem?.originalName || dataItem?.filename || '';
+  const rawPath = (dataItem?.path || directUrl || '').replace(/\\/g, '/').replace(/^\/+/, '');
+  if (rawPath) {
+    const uploadsIdx = rawPath.indexOf('uploads/');
+    const relativePath = uploadsIdx !== -1 ? rawPath.substring(uploadsIdx) : rawPath;
+    const parts = relativePath.split('/');
+    const last = parts[parts.length - 1];
+    const hasExt = /\.\w{1,10}$/i.test(last);
+    if (hasExt) return `${baseUrl}/${relativePath}`;
+    return filename ? `${baseUrl}/${relativePath}/${filename}` : `${baseUrl}/${relativePath}`;
   }
-  return dataItem.filename ? `${baseUrl}/uploads/datasets/${dataItem.filename}` : '';
+  return filename ? `${baseUrl}/uploads/datasets/${filename}` : '';
 };
 
 const getTaskKind = (t) => {
@@ -619,7 +626,66 @@ const ReviewerWorkspace = () => {
     }
   }, [projectId, subtopicFilter, currentItemId]);
 
-  useEffect(() => { fetchQueue(); }, [fetchQueue]);
+  // Fetch a single reviewed task by ID (used when navigating from History page)
+  const fetchReviewedTask = useCallback(async (taskId) => {
+    setLoading(true);
+    setFetchError(null);
+    try {
+      const res = await axios.get(`${API_URL}/api/reviews/task/${taskId}`, {
+        headers: { Authorization: 'Bearer ' + (sessionStorage.getItem('token') || localStorage.getItem('token')) }
+      });
+      const task = res.data;
+      if (!task) { setFetchError('Task not found'); setLoading(false); return; }
+
+      const itemKey = task.dataItem?.filename || task.dataItem?.path || task._id;
+      const color = stringToColor(task.annotatorId?._id || task.annotatorId || task._id);
+
+      const item = {
+        itemId: itemKey,
+        filename: task.dataItem?.filename || 'Unknown',
+        imageUrl: buildFileUrl(task.dataItem),
+        kind: getTaskKind(task),
+        status: task.status === 'approved' ? 'fully_reviewed' : (task.status === 'rejected' ? 'waiting_rework' : 'pending_review'),
+        projectName: task.projectId?.name || '',
+        projectId: task.projectId?._id,
+        subtopicName: task.subtopicId?.name || '',
+        subtopicId: task.subtopicId?._id,
+        guideline: task.projectId?.guidelines || '',
+        availableLabels: task.availableLabels || task.projectId?.availableLabels || [],
+        submissions: [{
+          submissionId: task._id,
+          annotatorId: task.annotatorId?._id || task.annotatorId,
+          annotatorName: task.annotatorId?.fullName || task.annotatorId?.username || 'Annotator',
+          status: getAnnotatorStatus(task),
+          labels: task.labels || {},
+          feedback: task.reviewComments || '',
+          color,
+          task,
+        }],
+      };
+      updateItemStatus(item);
+
+      setItems([item]);
+      setCurrentItemId(item.itemId);
+      setCurrentItem(item);
+      setActiveAnnotatorId(task.annotatorId?._id || task.annotatorId);
+      setVisibleAnnotators([task.annotatorId?._id || task.annotatorId]);
+    } catch (err) {
+      setFetchError(err.response?.data?.message || 'Không tải được task');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const taskIdFromUrl = searchParams.get('taskId');
+
+  useEffect(() => {
+    if (taskIdFromUrl) {
+      fetchReviewedTask(taskIdFromUrl);
+    } else {
+      fetchQueue();
+    }
+  }, [taskIdFromUrl, fetchQueue, fetchReviewedTask]);
 
   const handleItemSelect = (item) => {
     setCurrentItemId(item.itemId);

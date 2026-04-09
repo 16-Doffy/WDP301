@@ -81,7 +81,7 @@ router.get('/pending', auth, authorize('reviewer', 'admin'), async (req, res) =>
   try {
     const reviewerId = req.user._id;
     const reviewerIdString = reviewerId.toString();
-    const { subtopicId } = req.query;
+    const { subtopicId, projectId } = req.query;
 
     // Build base query
     const baseQuery = { status: 'submitted' };
@@ -134,6 +134,38 @@ router.get('/pending', auth, authorize('reviewer', 'admin'), async (req, res) =>
     res.json(actionableTasks);
   } catch (error) {
     console.error('Error in /api/reviews/pending:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Get a single task by ID (used by reviewer workspace to view history items)
+router.get('/task/:id', auth, authorize('reviewer', 'admin'), async (req, res) => {
+  try {
+    const reviewerId = req.user._id;
+    const reviewerIdString = reviewerId.toString();
+
+    const task = await Task.findById(req.params.id)
+      .populate('projectId', 'name labelSet guidelines questions availableLabels deadline')
+      .populate('datasetId', 'name')
+      .populate('annotatorId', 'username fullName')
+      .populate('reviewerId', 'username fullName')
+      .populate('reviewers.reviewerId', 'username fullName')
+      .populate('subtopicId', 'name guideline');
+
+    if (!task) return res.status(404).json({ message: 'Task not found' });
+
+    // Verify this reviewer is allowed to see this task
+    const isAssigned =
+      (task.reviewerId && (task.reviewerId._id?.toString?.() === reviewerIdString || task.reviewerId.toString?.() === reviewerIdString)) ||
+      (task.reviewers && task.reviewers.some(r => r.reviewerId?._id?.toString?.() === reviewerIdString)) ||
+      task.annotatorId?._id?.toString?.() === reviewerIdString;
+
+    if (!isAssigned && req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Not authorized to view this task' });
+    }
+
+    res.json(task);
+  } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 });
@@ -601,6 +633,66 @@ router.get('/projects', auth, authorize('reviewer', 'admin'), async (req, res) =
   }
 });
 
+// Get stats for all projects assigned to this reviewer (batch — avoid N+1)
+router.get('/projects/all-stats', auth, authorize('reviewer', 'admin'), async (req, res) => {
+  try {
+    const reviewerId = req.user._id;
+    const reviewerIdString = reviewerId.toString();
+
+    const tasks = await Task.find({
+      $or: [
+        { reviewers: { $elemMatch: { reviewerId: { $in: [reviewerId, reviewerIdString] } } } },
+        { reviewerId: { $in: [reviewerId, reviewerIdString] } },
+      ],
+    }).select('projectId').lean();
+
+    const projectIds = [...new Set(tasks.map((t) => t.projectId?.toString()).filter(Boolean))];
+
+    if (projectIds.length === 0) {
+      return res.json({ stats: [] });
+    }
+
+    // Aggregate stats per project in a single pass
+    const allTasks = await Task.find({
+      projectId: { $in: projectIds },
+      $or: [
+        { reviewers: { $elemMatch: { reviewerId: { $in: [reviewerId, reviewerIdString] } } } },
+        { reviewerId: { $in: [reviewerId, reviewerIdString] } },
+      ],
+    }).select('projectId status').lean();
+
+    const statsMap = {};
+    allTasks.forEach((t) => {
+      const pid = t.projectId?.toString();
+      if (!pid) return;
+      if (!statsMap[pid]) {
+        statsMap[pid] = { projectId: pid, total: 0, pending: 0, approved: 0, rejected: 0, reviewed: 0 };
+      }
+      statsMap[pid].total++;
+      if (t.status === 'submitted') statsMap[pid].pending++;
+      else if (t.status === 'approved') { statsMap[pid].approved++; statsMap[pid].reviewed++; }
+      else if (t.status === 'rejected') { statsMap[pid].rejected++; statsMap[pid].reviewed++; }
+    });
+
+    res.json({ stats: Object.values(statsMap) });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Get project by ID for reviewer (includes datasetId for display)
+router.get('/projects/:id', auth, authorize('reviewer', 'admin'), async (req, res) => {
+  try {
+    const project = await Project.findById(req.params.id)
+      .populate('managerId', 'username fullName email')
+      .populate('datasetId', 'name');
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+    res.json(project);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
 // Get tasks with deadline info for reviewer (due soon + overdue)
 router.get('/tasks/deadline', auth, authorize('reviewer', 'admin'), async (req, res) => {
   try {
@@ -721,53 +813,6 @@ router.get('/projects/:id/subtopics', auth, authorize('reviewer', 'admin'), asyn
       else if (t.status === 'rejected') sub.rejected++;
     });
     res.json(Array.from(subMap.values()));
-  } catch (error) {
-    res.status(500).json({ message: 'Server error', error: error.message });
-  }
-});
-
-// Get stats for all projects assigned to this reviewer (batch — avoid N+1)
-router.get('/projects/all-stats', auth, authorize('reviewer', 'admin'), async (req, res) => {
-  try {
-    const reviewerId = req.user._id;
-    const reviewerIdString = reviewerId.toString();
-
-    const tasks = await Task.find({
-      $or: [
-        { reviewers: { $elemMatch: { reviewerId: { $in: [reviewerId, reviewerIdString] } } } },
-        { reviewerId: { $in: [reviewerId, reviewerIdString] } },
-      ],
-    }).select('projectId').lean();
-
-    const projectIds = [...new Set(tasks.map((t) => t.projectId?.toString()).filter(Boolean))];
-
-    if (projectIds.length === 0) {
-      return res.json({ stats: [] });
-    }
-
-    // Aggregate stats per project in a single pass
-    const allTasks = await Task.find({
-      projectId: { $in: projectIds },
-      $or: [
-        { reviewers: { $elemMatch: { reviewerId: { $in: [reviewerId, reviewerIdString] } } } },
-        { reviewerId: { $in: [reviewerId, reviewerIdString] } },
-      ],
-    }).select('projectId status').lean();
-
-    const statsMap = {};
-    allTasks.forEach((t) => {
-      const pid = t.projectId?.toString();
-      if (!pid) return;
-      if (!statsMap[pid]) {
-        statsMap[pid] = { projectId: pid, total: 0, pending: 0, approved: 0, rejected: 0, reviewed: 0 };
-      }
-      statsMap[pid].total++;
-      if (t.status === 'submitted') statsMap[pid].pending++;
-      else if (t.status === 'approved') { statsMap[pid].approved++; statsMap[pid].reviewed++; }
-      else if (t.status === 'rejected') { statsMap[pid].rejected++; statsMap[pid].reviewed++; }
-    });
-
-    res.json({ stats: Object.values(statsMap) });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
   }

@@ -22,16 +22,23 @@ import { getTopics, getSubtopics } from '../../services/TopicService';
 
 const getAuthToken = () => sessionStorage.getItem('token');
 
-const getFullImageUrl = (path, imageUrl, filename) => {
+const getFullImageUrl = (dataItem) => {
   const base = API_URL.replace(/\/+$/, '');
-  if (imageUrl) return base + '/' + imageUrl.replace(/^\/+/, '');
-  if (path) {
-    const clean = path.replace(/^\/+/, '');
-    if (filename && clean.endsWith(filename)) return base + '/' + clean;
-    if (clean.startsWith('uploads/')) return base + '/' + clean;
-    return base + '/' + (filename ? clean + '/' + filename : 'uploads/datasets/' + clean);
+  if (!dataItem) return '';
+  const directUrl = dataItem?.url || dataItem?.imageUrl || '';
+  if (directUrl && /^https?:\/\//i.test(directUrl)) return directUrl;
+  const filename = dataItem?.originalName || dataItem?.filename || '';
+  const rawPath = (dataItem?.path || directUrl || '').replace(/\\/g, '/').replace(/^\/+/, '');
+  if (rawPath) {
+    const uploadsIdx = rawPath.indexOf('uploads/');
+    const relativePath = uploadsIdx !== -1 ? rawPath.substring(uploadsIdx) : rawPath;
+    const parts = relativePath.split('/');
+    const last = parts[parts.length - 1];
+    const hasExt = /\.\w{1,10}$/i.test(last);
+    if (hasExt) return `${base}/${relativePath}`;
+    return filename ? `${base}/${relativePath}/${filename}` : `${base}/${relativePath}`;
   }
-  return filename ? base + '/uploads/datasets/' + filename : '';
+  return filename ? `${base}/uploads/datasets/${filename}` : '';
 };
 
 const fmtDate = (d) => {
@@ -118,6 +125,7 @@ const Datasets = () => {
   const [detailItems, setDetailItems] = useState([]);
   const [detailSubtopicSummary, setDetailSubtopicSummary] = useState([]);
   const [detailSubtopicFilter, setDetailSubtopicFilter] = useState('__all__');
+  const [detailStatusFilter, setDetailStatusFilter] = useState('all');
   const [detailItemsLoading, setDetailItemsLoading] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportDs, setExportDs] = useState(null);
@@ -740,9 +748,42 @@ const Datasets = () => {
               )}
               {detailTab === 2 && (
                 <Box>
-                  <Typography variant="body2" sx={{ color: '#94a3b8', mb: 2 }}>
-                    Hien thi items ({detailSubtopicFilter === '__all__' ? detailItems.length : detailItems.filter(it => (it.subtopicId?.toString?.() || it.subtopicId || '__none__') === detailSubtopicFilter).length})
+                  <Typography variant="body2" sx={{ color: '#94a3b8', mb: 1 }}>
+                    Hien thi items
                   </Typography>
+
+                  {/* Status filter chips */}
+                  <Box sx={{ mb: 2, display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+                    {[
+                      { key: 'all', label: 'Tat ca', color: '#94a3b8' },
+                      { key: 'approved', label: 'Da duyet', color: '#22c55e' },
+                      { key: 'in_review', label: 'Dang review', color: '#fbbf24' },
+                      { key: 'rejected', label: 'Tu choi', color: '#ef4444' },
+                      { key: 'pending', label: 'Cho ghi nhan', color: '#64748b' },
+                    ].map((f) => {
+                      const count = detailItems.filter(it => {
+                        if (f.key === 'all') return true;
+                        if (f.key === 'pending') return !it.status || ['assigned','in_progress','completed','revised'].includes(it.status);
+                        return it.status === f.key;
+                      }).length;
+                      const active = detailStatusFilter === f.key;
+                      return (
+                        <Chip
+                          key={f.key}
+                          clickable
+                          onClick={() => setDetailStatusFilter(f.key)}
+                          label={`${f.label} (${count})`}
+                          sx={{
+                            bgcolor: active ? `${f.color}25` : 'rgba(71,85,105,0.25)',
+                            color: active ? f.color : '#94a3b8',
+                            border: `1px solid ${active ? f.color + '80' : 'rgba(148,163,184,0.3)'}`,
+                            fontWeight: active ? 700 : 500,
+                            cursor: 'pointer',
+                          }}
+                        />
+                      );
+                    })}
+                  </Box>
 
                   {!detailItemsLoading && detailSubtopicSummary.length > 0 && (
                     <Box sx={{ mb: 2, p: 1.5, borderRadius: 2, border: '1px solid #334155', bgcolor: '#0f172a' }}>
@@ -784,9 +825,18 @@ const Datasets = () => {
                   {detailItemsLoading ? <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress /></Box> : (
                     <Grid container spacing={1.5}>
                       {detailItems
-                        .filter((item) => detailSubtopicFilter === '__all__' || (item.subtopicId?.toString?.() || item.subtopicId || '__none__') === detailSubtopicFilter)
+                        .filter((item) => {
+                          const isStatusMatch =
+                            detailStatusFilter === 'all' ||
+                            (detailStatusFilter === 'pending' && (!item.status || ['assigned','in_progress','completed','revised'].includes(item.status))) ||
+                            item.status === detailStatusFilter;
+                          const isSubtopicMatch =
+                            detailSubtopicFilter === '__all__' ||
+                            (item.subtopicId?.toString?.() || item.subtopicId || '__none__') === detailSubtopicFilter;
+                          return isStatusMatch && isSubtopicMatch;
+                        })
                         .map((item, idx) => {
-                        const src = getFullImageUrl(item.path, item.imageUrl, item.filename);
+                        const src = getFullImageUrl(item);
                         const fn = item.originalName || item.filename || item.path || 'Unknown';
                         const isText = /\.(txt|csv|json|xml)$/i.test(fn) || item.mimeType?.startsWith('text/');
                         const isAudio = /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(fn) || item.mimeType?.startsWith('audio/');
