@@ -195,7 +195,7 @@ const ReviewerProjectDetail = () => {
   };
 
   const handleStartAllReview = () => {
-    navigate(`/reviewer/workspace/${projectId}`);
+    navigate(`/reviewer/workspace/${projectId}?projectId=${projectId}`);
   };
 
   const handleFinalize = async (action) => {

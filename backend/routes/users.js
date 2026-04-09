@@ -41,6 +41,102 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
+// Get current user profile
+router.get('/me', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select('-password');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Change password (own profile only)
+router.put('/me/password', auth, [
+  body('currentPassword').trim().notEmpty().withMessage('Mat khau hien tai khong duoc de trong'),
+  body('newPassword').trim().isLength({ min: 6 }).withMessage('Mat khau moi phai it nhat 6 ky tu'),
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { currentPassword, newPassword } = req.body;
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const isMatch = await user.comparePassword(currentPassword);
+    if (!isMatch) {
+      return res.status(400).json({ message: 'Mat khau hien tai khong dung' });
+    }
+
+    user.password = newPassword;
+    await user.save();
+
+    await createActivityLog(
+      req.user._id,
+      'password_change',
+      'user',
+      user._id,
+      `Changed own password`,
+      { targetUserId: user._id.toString() },
+      req
+    );
+
+    res.json({ message: 'Doi mat khau thanh cong' });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Update current user profile (own profile only)
+router.put('/me', auth, [
+  body('fullName').optional().trim().notEmpty().withMessage('Ho ten khong duoc de trong'),
+  body('specialty').optional().trim(),
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { fullName, specialty } = req.body;
+    const updateFields = {};
+    if (fullName !== undefined) updateFields.fullName = fullName;
+    if (specialty !== undefined) updateFields.specialty = specialty;
+
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      updateFields,
+      { new: true, runValidators: true }
+    ).select('-password');
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    await createActivityLog(
+      req.user._id,
+      'profile_update',
+      'user',
+      user._id,
+      `Updated own profile`,
+      { targetUserId: user._id.toString() },
+      req
+    );
+
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
 // Get user by ID
 router.get('/:id', auth, async (req, res) => {
   try {

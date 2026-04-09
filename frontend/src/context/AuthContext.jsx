@@ -18,6 +18,14 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const handleProfileUpdate = (e) => {
+      setUser(e.detail);
+    };
+    window.addEventListener('userProfileUpdated', handleProfileUpdate);
+    return () => window.removeEventListener('userProfileUpdated', handleProfileUpdate);
+  }, []);
+
+  useEffect(() => {
     const tabToken = sessionStorage.getItem(AUTH_TOKEN_KEY);
 
     if (tabToken) {
@@ -96,6 +104,7 @@ export const AuthProvider = ({ children }) => {
 
   const value = {
     user,
+    setUser,
     login,
     register,
     logout,

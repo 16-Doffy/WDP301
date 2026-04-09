@@ -87,6 +87,7 @@ router.get('/pending', auth, authorize('reviewer', 'admin'), async (req, res) =>
     // Build base query — include both submitted (new) and revised (resubmitted after rework)
     const baseQuery = { status: { $in: ['submitted', 'revised'] } };
     if (subtopicId) baseQuery.subtopicId = subtopicId;
+    if (projectId) baseQuery.projectId = projectId;
 
     const tasks = await Task.find({
       ...baseQuery,
@@ -793,15 +794,15 @@ router.get('/projects/:id/subtopics', auth, authorize('reviewer', 'admin'), asyn
           subtopicId: subId,
           subtopicName: isPopulated ? t.subtopicId.name : 'Subtopic',
           guideline: isPopulated ? t.subtopicId.guideline : '',
-          total: 0, submitted: 0, approved: 0, rejected: 0, revised: 0,
+          total: 0, submitted: 0, approved: 0, rejected: 0, revised: 0, pending: 0,
         });
       }
       const sub = subMap.get(subId);
       sub.total++;
-      if (t.status === 'submitted') sub.submitted++;  // mới submit lần đầu
+      if (t.status === 'submitted') { sub.submitted++; sub.pending++; }
       else if (t.status === 'approved') sub.approved++;
       else if (t.status === 'rejected') sub.rejected++;
-      else if (t.status === 'revised') sub.revised++; // đã reject, annotator sửa xong nộp lại
+      else if (t.status === 'revised') { sub.revised++; sub.pending++; }
     });
     res.json(Array.from(subMap.values()));
   } catch (error) {

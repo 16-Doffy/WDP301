@@ -565,6 +565,7 @@ const ReviewerWorkspace = () => {
     try {
       const params = {};
       if (subtopicFilter) params.subtopicId = subtopicFilter;
+      if (projectId) params.projectId = projectId;
       const res = await axios.get(`${API_URL}/api/reviews/pending`, { params });
       const taskList = res.data || [];
 
