@@ -711,6 +711,7 @@ router.get('/:id/status', auth, authorize('manager', 'admin'), async (req, res) 
       },
       annotators: annotatorStats,
       finalItems,
+      updatedAt: dataset.updatedAt,  // Cập nhật lần cuối của dataset
     });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });

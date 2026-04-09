@@ -457,4 +457,153 @@ router.post('/:id/reject', auth, authorize('reviewer','admin'), async (req, res)
   } catch (error) { res.status(500).json({ message: 'Server error', error: error.message }); }
 });
 
+// Export all approved tasks from a project
+router.get('/:id/export', auth, authorize('manager', 'admin'), async (req, res) => {
+  try {
+    const project = await Project.findById(req.params.id);
+    if (!project) return res.status(404).json({ message: 'Project not found' });
+
+    if (req.user.role !== 'admin' && project.managerId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    const { format = 'json' } = req.query;
+
+    // Lấy TẤT CẢ approved tasks trong project
+    const approvedTasks = await Task.find({ projectId: project._id, status: 'approved' })
+      .populate('annotatorId', 'username fullName')
+      .populate('subtopicId', 'name taskType')
+      .populate('datasetId', 'name type')
+      .select('dataItem labels reviewedAt annotatorId subtopicId datasetId');
+
+    if (approvedTasks.length === 0) {
+      return res.status(400).json({ message: 'Project chưa có task nào được approved.' });
+    }
+
+    const projectInfo = {
+      id: project._id,
+      name: project.name,
+      exportFormat: project.exportFormat || 'JSON',
+      totalExported: approvedTasks.length,
+    };
+
+    let payload;
+
+    if (format === 'json' || format === 'csv') {
+      // JSON / CSV: trả về danh sách items đã gán nhãn
+      payload = {
+        project: projectInfo,
+        items: approvedTasks.map((t) => ({
+          dataItem: t.dataItem,
+          labels: t.labels,
+          reviewedAt: t.reviewedAt,
+          annotator: t.annotatorId?.fullName || t.annotatorId?.username || 'unknown',
+          subtopic: t.subtopicId?.name || 'unknown',
+          dataset: t.datasetId?.name || 'unknown',
+        })),
+        exportedAt: new Date(),
+      };
+
+      if (format === 'csv') {
+        // Convert JSON items to CSV
+        const csvRows = [];
+        csvRows.push('filename,annotator,subtopic,dataset,reviewedAt');
+        payload.items.forEach((item) => {
+          const filename = item.dataItem?.filename || '';
+          const annotator = item.annotator || '';
+          const subtopic = item.subtopic || '';
+          const dataset = item.dataset || '';
+          const reviewedAt = item.reviewedAt ? new Date(item.reviewedAt).toISOString() : '';
+          csvRows.push(`"${filename}","${annotator}","${subtopic}","${dataset}","${reviewedAt}"`);
+        });
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="project_${project._id}_export.csv"`);
+        return res.send(csvRows.join('\n'));
+      }
+
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', `attachment; filename="project_${project._id}_export.json"`);
+      return res.json(payload);
+    }
+
+    if (format === 'coco') {
+      // COCO format
+      const coco = {
+        info: {
+          description: project.description || project.name,
+          version: '1.0',
+          project: project.name,
+          exportedAt: new Date().toISOString(),
+        },
+        licenses: [],
+        images: [],
+        annotations: [],
+        categories: [],
+      };
+
+      let annId = 1;
+      const labelSet = new Set();
+      approvedTasks.forEach((t) => {
+        const imgId = annId;
+        coco.images.push({
+          id: imgId,
+          file_name: t.dataItem?.filename || `item_${t._id}`,
+          width: t.dataItem?.width || 0,
+          height: t.dataItem?.height || 0,
+        });
+
+        if (t.labels?.objects) {
+          t.labels.objects.forEach((obj) => {
+            const catName = obj.label || 'unknown';
+            labelSet.add(catName);
+            coco.annotations.push({
+              id: annId++,
+              image_id: imgId,
+              category_id: catName,
+              bbox: obj.bbox, // [x1, y1, w, h] — giả định bbox đã là pixel
+              area: obj.bbox ? obj.bbox[2] * obj.bbox[3] : 0,
+              iscrowd: 0,
+            });
+          });
+        }
+      });
+
+      // Build categories from label names
+      let catId = 1;
+      labelSet.forEach((name) => {
+        coco.categories.push({ id: catId++, name, supercategory: project.name });
+      });
+
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', `attachment; filename="project_${project._id}_coco.json"`);
+      return res.json(coco);
+    }
+
+    if (format === 'yolo') {
+      // YOLO format — trả về zip chứa folder images/ và labels/
+      // Vì Node.js zip khó, trả về JSON mapping (annotations + filename)
+      // Client tự chuyển sang YOLO format hoặc dùng tool bên ngoài
+      const yoloData = approvedTasks.map((t) => ({
+        imageFile: t.dataItem?.filename || `item_${t._id}`,
+        labels: (t.labels?.objects || []).map((obj) => ({
+          class: obj.label || 'unknown',
+          bbox: obj.bbox, // client cần chuyển sang YOLO format (normalized)
+        })),
+        annotator: t.annotatorId?.fullName || t.annotatorId?.username || 'unknown',
+        reviewedAt: t.reviewedAt,
+      }));
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', `attachment; filename="project_${project._id}_yolo.json"`);
+      return res.json({ project: projectInfo, annotations: yoloData, note: 'Bbox values are in pixels. Convert to YOLO normalized format (x_center/width, y_center/height) by dividing by image dimensions.' });
+    }
+
+    // Default: JSON
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="project_${project._id}_export.json"`);
+    return res.json(payload);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
 module.exports = router;
