@@ -22,12 +22,13 @@ const applyMajorityDecision = (task) => {
   const decidedCount = approveCount + rejectCount;
   const totalReviewers = votes.length;
 
-  // No reviewers assigned — finalize immediately based on single reviewer field
+  // No reviewers assigned — this should not happen in normal flow (task must have reviewers)
+  // Fallback: reject the task to send it back to annotator for rework
   if (totalReviewers === 0) {
     return {
       finalized: true,
-      finalStatus: task.status === 'rejected' ? 'rejected' : 'approved',
-      winningVote: task.status === 'rejected' ? 'rejected' : 'approved',
+      finalStatus: 'rejected',  // luôn reject để annotator sửa lại
+      winningVote: 'rejected',
       approveCount,
       rejectCount,
       decidedCount,
@@ -83,8 +84,8 @@ router.get('/pending', auth, authorize('reviewer', 'admin'), async (req, res) =>
     const reviewerIdString = reviewerId.toString();
     const { subtopicId, projectId } = req.query;
 
-    // Build base query
-    const baseQuery = { status: 'submitted' };
+    // Build base query — include both submitted (new) and revised (resubmitted after rework)
+    const baseQuery = { status: { $in: ['submitted', 'revised'] } };
     if (subtopicId) baseQuery.subtopicId = subtopicId;
 
     const tasks = await Task.find({
@@ -334,9 +335,9 @@ router.post('/:id/approve', auth, authorize('reviewer', 'admin'), async (req, re
     const task = await Task.findById(req.params.id).populate('projectId', 'name guidelines deadline');
     if (!task) return res.status(404).json({ message: 'Task not found' });
 
-    if (task.status !== 'submitted') {
+    if (!['submitted', 'revised'].includes(task.status)) {
       return res.status(400).json({
-        message: `Task cannot be approved. Current status: ${task.status}. Only submitted tasks can be approved.`,
+        message: `Task cannot be approved. Current status: ${task.status}. Only submitted or revised tasks can be approved.`,
       });
     }
 
@@ -432,9 +433,9 @@ router.post(
       const task = await Task.findById(req.params.id).populate('projectId', 'name guidelines deadline');
       if (!task) return res.status(404).json({ message: 'Task not found' });
 
-      if (task.status !== 'submitted') {
+      if (!['submitted', 'revised'].includes(task.status)) {
         return res.status(400).json({
-          message: `Task cannot be rejected. Current status: ${task.status}. Only submitted tasks can be rejected.`,
+          message: `Task cannot be rejected. Current status: ${task.status}. Only submitted or revised tasks can be rejected.`,
         });
       }
 
@@ -684,8 +685,7 @@ router.get('/projects/all-stats', auth, authorize('reviewer', 'admin'), async (r
 router.get('/projects/:id', auth, authorize('reviewer', 'admin'), async (req, res) => {
   try {
     const project = await Project.findById(req.params.id)
-      .populate('managerId', 'username fullName email')
-      .populate('datasetId', 'name');
+      .populate('managerId', 'username fullName email');
     if (!project) return res.status(404).json({ message: 'Project not found' });
     res.json(project);
   } catch (error) {
@@ -760,19 +760,13 @@ router.get('/tasks/deadline', auth, authorize('reviewer', 'admin'), async (req, 
 router.get('/projects/:id/stats', auth, authorize('reviewer', 'admin'), async (req, res) => {
   try {
     const projectId = req.params.id;
-    const reviewerId = req.user._id;
-    const reviewerIdString = reviewerId.toString();
-    const tasks = await Task.find({
-      projectId: projectId,
-      $or: [
-        { reviewers: { $elemMatch: { reviewerId: { $in: [reviewerId, reviewerIdString] } } } },
-        { reviewerId: { $in: [reviewerId, reviewerIdString] } },
-      ],
-    });
+    // Lấy TẤT CẢ tasks trong project (không lọc reviewer)
+    // vì reviewer đã được phân quyền ở route level rồi
+    const tasks = await Task.find({ projectId: projectId });
     let total = 0, pending = 0, approved = 0, rejected = 0, reviewed = 0;
     tasks.forEach((t) => {
       total++;
-      if (t.status === 'submitted') pending++;
+      if (t.status === 'submitted' || t.status === 'revised') pending++;
       else if (t.status === 'approved') { approved++; reviewed++; }
       else if (t.status === 'rejected') { rejected++; reviewed++; }
     });
@@ -786,31 +780,28 @@ router.get('/projects/:id/stats', auth, authorize('reviewer', 'admin'), async (r
 router.get('/projects/:id/subtopics', auth, authorize('reviewer', 'admin'), async (req, res) => {
   try {
     const projectId = req.params.id;
-    const reviewerId = req.user._id;
-    const reviewerIdString = reviewerId.toString();
-    const tasks = await Task.find({
-      projectId: projectId,
-      $or: [
-        { reviewers: { $elemMatch: { reviewerId: { $in: [reviewerId, reviewerIdString] } } } },
-        { reviewerId: { $in: [reviewerId, reviewerIdString] } },
-      ],
-    }).populate('subtopicId', 'name guideline');
+    // Lấy TẤT CẢ tasks trong project (không lọc reviewer)
+    const tasks = await Task.find({ projectId: projectId })
+      .populate('subtopicId', 'name guideline');
     const subMap = new Map();
     tasks.forEach((t) => {
-      const subId = t.subtopicId ? t.subtopicId._id.toString() : 'unknown';
+      // Guard: subtopicId can be null or a deleted reference (raw ObjectId after populate)
+      const isPopulated = t.subtopicId && typeof t.subtopicId === 'object' && t.subtopicId._id;
+      const subId = isPopulated ? t.subtopicId._id.toString() : 'unknown';
       if (!subMap.has(subId)) {
         subMap.set(subId, {
           subtopicId: subId,
-          subtopicName: t.subtopicId ? t.subtopicId.name : 'Subtopic',
-          guideline: t.subtopicId ? t.subtopicId.guideline : '',
-          total: 0, pending: 0, approved: 0, rejected: 0,
+          subtopicName: isPopulated ? t.subtopicId.name : 'Subtopic',
+          guideline: isPopulated ? t.subtopicId.guideline : '',
+          total: 0, submitted: 0, approved: 0, rejected: 0, revised: 0,
         });
       }
       const sub = subMap.get(subId);
       sub.total++;
-      if (t.status === 'submitted') sub.pending++;
+      if (t.status === 'submitted') sub.submitted++;  // mới submit lần đầu
       else if (t.status === 'approved') sub.approved++;
       else if (t.status === 'rejected') sub.rejected++;
+      else if (t.status === 'revised') sub.revised++; // đã reject, annotator sửa xong nộp lại
     });
     res.json(Array.from(subMap.values()));
   } catch (error) {

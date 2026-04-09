@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { API_URL } from '../../config/api';
@@ -13,18 +13,30 @@ const fmtDateTime = (d) => {
 // Subtopic review status
 const getSubtopicStatus = (sub) => {
   const total = sub.total || 0;
-  const pending = sub.pending || 0;
   const approved = sub.approved || 0;
   const rejected = sub.rejected || 0;
-  const reviewed = (sub.reviewed || 0);
+  const revised = sub.revised || 0;
+  const submitted = sub.submitted || 0;   // mới submit lần đầu, chưa từng bị reject
+  const done = approved + rejected + revised; // đã qua ít nhất 1 vòng review
 
   if (total === 0) return { label: 'Chua co item', color: 'text-gray-500', icon: '○' };
-  if (reviewed === total) {
+
+  // Tất cả task đã được xử lý xong
+  if (done === total) {
     if (rejected === total) return { label: 'Da reject het', color: 'text-rose-400', icon: '✗' };
     return { label: 'Hoan tat review', color: 'text-emerald-400', icon: '✓' };
   }
-  if (rejected > 0 && pending === 0) return { label: 'Cho annotator sua', color: 'text-amber-400', icon: '↩' };
-  if (pending > 0) return { label: 'Dang cho review', color: 'text-yellow-400', icon: '⏳' };
+
+  // Annotator đã sửa xong và nộp lại → reviewer cần duyệt lại (ƯU TIÊN CAO NHẤT)
+  if (revised > 0) return { label: 'Dang review lai', color: 'text-violet-400', icon: '▶' };
+
+  // Có task bị reject và annotator CHƯA nộp lại → đang chờ annotator sửa
+  if (rejected > 0 && submitted === 0) return { label: 'Cho annotator sua', color: 'text-amber-400', icon: '↩' };
+
+  // Có task mới submit, chưa review
+  if (submitted > 0) return { label: 'Dang cho review', color: 'text-yellow-400', icon: '⏳' };
+
+  // Đang trong quá trình review
   return { label: 'Dang review', color: 'text-blue-400', icon: '▶' };
 };
 
