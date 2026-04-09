@@ -528,6 +528,9 @@ router.put('/:id', auth, authorize('manager', 'admin'), async (req, res) => {
       dataset.subtopicIds = dataset.subtopicId ? [dataset.subtopicId] : [];
     }
 
+    // Cập nhật updatedAt thủ công (Dataset model không có timestamps: true)
+    dataset.updatedAt = new Date();
+
     await dataset.save();
     res.json(dataset);
   } catch (error) {
