@@ -377,7 +377,7 @@ const TopicManagement = () => {
   const [loading, setLoading] = useState(true);
   const [topicSearch, setTopicSearch] = useState('');
   const [topicDialog, setTopicDialog] = useState({ open: false, edit: false, data: { name: '', description: '', color: '#3b82f6' } });
-  const [subtopicDialog, setSubtopicDialog] = useState({ open: false, edit: false, data: { name: '', description: '', guideline: '', taskType: 'classification' } });
+  const [subtopicDialog, setSubtopicDialog] = useState({ open: false, edit: false, data: { name: '', description: '', guideline: '', taskType: 'bbox' } });
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
 
   useEffect(() => { loadTopics(); }, []);
@@ -528,7 +528,7 @@ const TopicManagement = () => {
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                         <Typography variant="caption" fontWeight={700} sx={{ color: '#60a5fa', textTransform: 'uppercase', fontSize: '0.65rem' }}>Subtopics ({expandedTopic.subtopics?.length || 0})</Typography>
                         <Tooltip title="Add Subtopic">
-                          <IconButton size="small" sx={{ color: '#60a5fa' }} onClick={() => setSubtopicDialog({ open: true, edit: false, data: { name: '', description: '', guideline: '', taskType: 'classification' } })}>
+                          <IconButton size="small" sx={{ color: '#60a5fa' }} onClick={() => setSubtopicDialog({ open: true, edit: false, data: { name: '', description: '', guideline: '', taskType: 'bbox' } })}>
                             <AddIcon sx={{ fontSize: 16 }} />
                           </IconButton>
                         </Tooltip>
@@ -578,16 +578,10 @@ const TopicManagement = () => {
         <DialogTitle sx={{ fontWeight: 700 }}>{subtopicDialog.edit ? 'Sua Subtopic' : 'Tao Subtopic'}</DialogTitle>
         <DialogContent>
           <TextField fullWidth label="Ten Subtopic" value={subtopicDialog.data.name} onChange={e => setSubtopicDialog({ ...subtopicDialog, data: { ...subtopicDialog.data, name: e.target.value } })} sx={{ mt: 2, mb: 2, ...inputSx }} />
-          <TextField fullWidth label="Mo ta" value={subtopicDialog.data.description} onChange={e => setSubtopicDialog({ ...subtopicDialog, data: { ...subtopicDialog.data, description: e.target.value } })} multiline rows={2} sx={{ mb: 2, ...inputSx }} />
-          <TextField fullWidth label="Guideline" value={subtopicDialog.data.guideline} onChange={e => setSubtopicDialog({ ...subtopicDialog, data: { ...subtopicDialog.data, guideline: e.target.value } })} multiline rows={2} sx={{ mb: 2, ...inputSx }} />
           <FormControl fullWidth sx={{ mb: 2, ...inputSx }}>
             <InputLabel>Loai Task</InputLabel>
             <Select value={subtopicDialog.data.taskType} label="Loai Task" onChange={e => setSubtopicDialog({ ...subtopicDialog, data: { ...subtopicDialog.data, taskType: e.target.value } })}>
-              <MenuItem value="classification">Classification</MenuItem>
               <MenuItem value="bbox">Bounding Box</MenuItem>
-              <MenuItem value="ner">NER</MenuItem>
-              <MenuItem value="sentiment">Sentiment</MenuItem>
-              <MenuItem value="multi_label">Multi-label</MenuItem>
             </Select>
           </FormControl>
         </DialogContent>
