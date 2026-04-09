@@ -417,7 +417,7 @@ const Datasets = () => {
         axios.get(API_URL + '/api/datasets/' + ds._id + '/status', { headers: { Authorization: 'Bearer ' + getAuthToken() } }),
         axios.get(API_URL + '/api/datasets/' + ds._id + '/items', { headers: { Authorization: 'Bearer ' + getAuthToken() } }),
       ]);
-      setDetailDs(prev => ({ ...prev, statusData: sRes.data }));
+      setDetailDs(prev => ({ ...prev, ...sRes.data, statusData: sRes.data }));
       setDetailItems(iRes.data?.items || []);
       setDetailSubtopicSummary(iRes.data?.subtopicSummary || []);
     } catch {} finally { setDetailLoading(false); setDetailItemsLoading(false); }
@@ -581,7 +581,7 @@ const Datasets = () => {
                         </Box>
                         <Stack direction="row" spacing={1}>
                           <Button size="small" variant="outlined" startIcon={<VisibilityIcon />} onClick={() => handleOpenDetail(ds)} sx={{ flex: 1, textTransform: 'none', fontWeight: 700, borderColor: '#3b82f6', color: '#3b82f6', fontSize: '0.75rem' }}>Chi tiet</Button>
-                          {!isAdmin && <Button size="small" variant="outlined" startIcon={<EditIcon />} onClick={() => handleOpenEdit(ds)} sx={{ flex: 1, textTransform: 'none', fontWeight: 700, borderColor: '#f59e0b', color: '#f59e0b', fontSize: '0.75rem' }}>Sua</Button>}
+                          {!isAdmin && si.status !== 'ready' && <Button size="small" variant="outlined" startIcon={<EditIcon />} onClick={() => handleOpenEdit(ds)} sx={{ flex: 1, textTransform: 'none', fontWeight: 700, borderColor: '#f59e0b', color: '#f59e0b', fontSize: '0.75rem' }}>Sua</Button>}
                           <Button size="small" variant="outlined" startIcon={<DownloadIcon />} onClick={() => handleOpenExport(ds)} disabled={si.status !== 'ready'} sx={{ flex: 1, textTransform: 'none', fontWeight: 700, borderColor: si.status === 'ready' ? '#22c55e' : '#475569', color: si.status === 'ready' ? '#22c55e' : '#64748b', fontSize: '0.75rem' }}>Export</Button>
                         </Stack>
                       </CardContent>
