@@ -65,7 +65,7 @@ const SubtopicCard = ({ subtopic, selected, onSelect, onEdit, onDelete }) => (
     <ImageIcon sx={{ color: '#60a5fa', fontSize: 20, flexShrink: 0 }} />
     <Box sx={{ flex: 1, overflow: 'hidden' }}>
       <Typography variant="body2" fontWeight={600} sx={{ color: '#e2e8f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{subtopic.name}</Typography>
-      <Typography variant="caption" sx={{ color: '#64748b' }}>{subtopic.assetsCount || 0} Assets</Typography>
+      <Typography variant="caption" sx={{ color: '#64748b' }}>{subtopic.assets?.length || 0} Assets</Typography>
     </Box>
     <IconButton size="small" sx={{ color: '#60a5fa' }} onClick={e => { e.stopPropagation(); onEdit(subtopic); }}><EditIcon sx={{ fontSize: 16 }} /></IconButton>
     <IconButton size="small" sx={{ color: '#f87171' }} onClick={e => { e.stopPropagation(); onDelete(subtopic._id); }}><DeleteIcon sx={{ fontSize: 16 }} /></IconButton>

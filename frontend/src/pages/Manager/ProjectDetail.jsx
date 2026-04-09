@@ -1031,10 +1031,6 @@ const ManagerProjectDetail = () => {
             <Stack direction="row" spacing={1.5}>
               <Button variant="contained" startIcon={<InfoIcon />} onClick={() => setProjectInfoDialogOpen(true)} sx={secondaryBtnSx}>Project Info</Button>
               <Button variant="contained" startIcon={<AssessmentIcon />} onClick={() => setQualityDialogOpen(true)} sx={secondaryBtnSx}>Analytics</Button>
-              {/* <Button variant="contained" startIcon={<DownloadIcon />} onClick={() => setExportDialogOpen(true)} sx={secondaryBtnSx}>Export</Button> */}
-              {/* {!isAdmin && (
-                <Button variant="contained" startIcon={<SettingsIcon />} onClick={() => setEditDialogOpen(true)} sx={primaryBtnSx}>Settings</Button>
-              )} */}
             </Stack>
           </Box>
           </Box>

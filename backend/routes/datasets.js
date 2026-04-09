@@ -528,6 +528,9 @@ router.put('/:id', auth, authorize('manager', 'admin'), async (req, res) => {
       dataset.subtopicIds = dataset.subtopicId ? [dataset.subtopicId] : [];
     }
 
+    // Cập nhật updatedAt thủ công (Dataset model không có timestamps: true)
+    dataset.updatedAt = new Date();
+
     await dataset.save();
     res.json(dataset);
   } catch (error) {
@@ -711,6 +714,7 @@ router.get('/:id/status', auth, authorize('manager', 'admin'), async (req, res) 
       },
       annotators: annotatorStats,
       finalItems,
+      updatedAt: dataset.updatedAt,  // Cập nhật lần cuối của dataset
     });
   } catch (error) {
     res.status(500).json({ message: 'Server error', error: error.message });
